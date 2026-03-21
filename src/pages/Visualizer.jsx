@@ -12,7 +12,14 @@ const STREET_LABEL = { preflop: 'Preflop', flop: 'Flop', turn: 'Turn', river: 'R
 const CX = 360, CY = 248, RX = 300, RY = 178
 
 // ── Helpers ───────────────────────────────────────────────────────────
-const fmtChips  = n => (n ?? 0).toLocaleString('es-ES')
+const fmtChips = n => (n ?? 0).toLocaleString('es-ES')
+const makeFmt  = (displayBB, bb) => n => {
+  if (displayBB && bb > 0) {
+    const bbs = n / bb
+    return (Number.isInteger(bbs) ? bbs.toString() : bbs.toFixed(1).replace(/\.0$/, '')) + ' BB'
+  }
+  return fmtChips(n)
+}
 const streetIdx = s => STREET_ORDER.indexOf(s)
 
 function seatPositions(n) {
@@ -103,8 +110,8 @@ function CardBack({ size = 'sm' }) {
     borderRadius:7, border:'2px solid #1a4a28', boxShadow:'inset 0 0 8px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.6)', flexShrink:0 }} />
 }
 
-function badgeInfo(action) {
-  const amt = action.amount > 0 ? ` ${fmtChips(action.amount)}` : ''
+function badgeInfo(action, fmt = fmtChips) {
+  const amt = action.amount > 0 ? ` ${fmt(action.amount)}` : ''
   const map = {
     fold:    ['#232b38','#6a7a90','#3a4555', '✗ FOLD'],
     check:   ['#142040','#60a0e0','#2a4070', '✓ CHECK'],
@@ -135,6 +142,7 @@ export default function Visualizer() {
   const [curStep,    setCurStep]    = useState(0)
   const [playing,    setPlaying]    = useState(false)
   const [scale,      setScale]      = useState(1)
+  const [displayBB,  setDisplayBB]  = useState(false)
 
   const areaRef    = useRef()
   const timerRef   = useRef()
@@ -234,6 +242,7 @@ export default function Visualizer() {
     activePlayer = activeAction?.player
   }
 
+  const fmt  = makeFmt(displayBB, hand.bb)
   const bets = getBetsByStep(hand, curStep)
   const boardCards = []
   if (vi >= 1) boardCards.push(...hand.board.flop)
@@ -255,7 +264,8 @@ export default function Visualizer() {
         <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>
         <div style={hdr.center}>
           <span style={hdr.name}>{tournament?.name}</span>
-          <span style={hdr.meta}>{hand.sb}/{hand.bb} · Mesa {hand.tableNum} · {hand.datetime}</span>
+          <span style={hdr.level}>Nivel {hand.level} · {fmtChips(hand.sb)}/{fmtChips(hand.bb)}</span>
+          <span style={hdr.meta}>Mesa {hand.tableNum} · {hand.datetime}</span>
         </div>
         <div style={hdr.counter}>{curIdx + 1} / {hands.length}</div>
       </div>
@@ -265,12 +275,6 @@ export default function Visualizer() {
 
         {/* ── TABLE AREA ── */}
         <div ref={areaRef} style={ta.root}>
-
-          {/* Tournament info */}
-          <div style={ta.info}>
-            <div style={ta.infoName}>{hand.tournamentName}</div>
-            <div style={ta.infoLevel}>Nivel {hand.level} · {fmtChips(hand.sb)} / {fmtChips(hand.bb)}</div>
-          </div>
 
           {/* Table */}
           <div style={{ position:'relative', width:720, height:500, flexShrink:0,
@@ -287,7 +291,7 @@ export default function Visualizer() {
               <div style={{ display:'flex', gap:7 }}>
                 {boardCards.map((c,i) => <Card key={i} code={c} size="lg" />)}
               </div>
-              {totalWon > 0 && <div style={ta.pot}>Bote: {fmtChips(totalWon)}</div>}
+              {totalWon > 0 && <div style={ta.pot}>Bote: {fmt(totalWon)}</div>}
             </div>
 
             {/* Seats */}
@@ -309,7 +313,7 @@ export default function Visualizer() {
                 : seat.pos === 'BB' ? { background:'#1a3a1a', color:'#70e070' }
                 : { background:'#6a5000', color:'#ffe566' }
 
-              const ab = isActive && activeAction ? badgeInfo(activeAction) : null
+              const ab = isActive && activeAction ? badgeInfo(activeAction, fmt) : null
 
               return (
                 <div key={seat.num} style={{
@@ -345,7 +349,7 @@ export default function Visualizer() {
                       {isHero ? '★ Hero' : seat.player.slice(0,8)}
                     </div>
                     <div style={{ fontSize:11, color:'#40d840', fontWeight:700, marginTop:2 }}>
-                      {fmtChips(seat.chips)}
+                      {fmt(seat.chips)}
                     </div>
                   </div>
 
@@ -381,7 +385,7 @@ export default function Visualizer() {
                     textShadow:'0 1px 4px rgba(0,0,0,.95)', whiteSpace:'nowrap',
                     background:'rgba(0,0,0,.75)', border:'1px solid rgba(200,160,0,.35)',
                     borderRadius:4, padding:'2px 7px' }}>
-                    {fmtChips(amount)}
+                    {fmt(amount)}
                   </div>
                 </div>
               )
@@ -431,6 +435,16 @@ export default function Visualizer() {
                 onClick={() => setPlaying(p => !p)}>
                 {playing ? '⏸\uFE0E' : '▶\uFE0E'}
               </button>
+            </div>
+
+            {/* BB toggle */}
+            <div style={{ alignSelf:'flex-start', display:'flex', alignItems:'center', gap:7, marginLeft:4 }}>
+              <input type="checkbox" id="bb-toggle" checked={displayBB}
+                onChange={e => setDisplayBB(e.target.checked)}
+                style={{ width:15, height:15, accentColor:'#3a7abf', cursor:'pointer' }} />
+              <label htmlFor="bb-toggle" style={{ fontSize:12, color:'#6080a0', cursor:'pointer', userSelect:'none' }}>
+                Ver en Big Blinds
+              </label>
             </div>
           </div>
         </div>
@@ -503,7 +517,8 @@ const hdr = {
              borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:700, whiteSpace:'nowrap' },
   center:  { flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2 },
   name:    { fontSize:14, fontWeight:800, color:'#90b8e0' },
-  meta:    { fontSize:11, color:'#607080' },
+  level:   { fontSize:11, fontWeight:600, color:'#4a6a88', letterSpacing:'0.3px' },
+  meta:    { fontSize:10, color:'#506070' },
   counter: { fontSize:12, color:'#607080', fontWeight:700, textAlign:'right', whiteSpace:'nowrap' },
 }
 
