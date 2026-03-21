@@ -35,7 +35,7 @@ export default function Login() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <div style={styles.logo}>♠ Poker Tracker</div>
+        <div style={styles.logo}>♠ RunItBack</div>
 
         <div style={styles.tabs}>
           <button
