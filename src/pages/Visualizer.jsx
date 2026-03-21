@@ -138,7 +138,6 @@ export default function Visualizer() {
 
   const areaRef    = useRef()
   const timerRef   = useRef()
-  const handsListRef = useRef()
 
   // ── Load ──
   useEffect(() => {
@@ -203,12 +202,6 @@ export default function Visualizer() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [curIdx, hands])
-
-  // ── Scroll hands list to active ──
-  useEffect(() => {
-    const el = handsListRef.current?.querySelector(`[data-idx="${curIdx}"]`)
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [curIdx])
 
   function goHand(idx) {
     if (idx < 0 || idx >= hands.length) return
@@ -494,8 +487,7 @@ export default function Visualizer() {
                     <div key={ai} style={{ ...rp.actRow,
                       background: isHighlight ? 'rgba(255,255,255,0.07)' : 'transparent',
                       outline: isHighlight ? '1px solid rgba(255,255,255,0.12)' : 'none',
-                      borderLeft: `2px solid ${isHero ? '#c8a800' : 'transparent'}`,
-                      background2: isHero ? 'rgba(200,168,0,0.05)' : 'transparent' }}>
+                      borderLeft: `2px solid ${isHero ? '#c8a800' : 'transparent'}` }}>
                       <span style={{ fontSize:11, fontWeight:700, color: isHero ? '#ffe566' : '#90a0b8',
                         flexShrink:0, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                         {isHero ? '★ Hero' : a.player.slice(0,10)}
@@ -507,56 +499,6 @@ export default function Visualizer() {
                   )
                 })
             }
-          </div>
-
-          {/* Hands list */}
-          <div style={rp.handsHeader}>MANOS ({hands.length})</div>
-          <div ref={handsListRef} style={rp.handsList}>
-            {hands.map((h, i) => {
-              const cards  = h.holeCards?.Hero ?? []
-              const net    = heroNet(h)
-              const resCls = h.heroResult === 'won' ? '#30a860' : h.heroResult === 'folded' ? '#556070' : '#d04040'
-              const resTxt = h.heroResult === 'won' ? 'Ganó' : h.heroResult === 'folded' ? 'Fold' : 'Perdió'
-              const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
-              return (
-                <div key={i} data-idx={i}
-                  style={{ ...rp.handItem, ...(i === curIdx ? rp.handItemActive : {}) }}
-                  onClick={() => goHand(i)}>
-                  <div style={{ display:'flex', gap:3, flexShrink:0 }}>
-                    {cards.length > 0
-                      ? cards.map((c, ci) => {
-                          const suit = c.slice(-1).toLowerCase()
-                          const bg   = SUIT_BG[COLORS[suit]] || '#222'
-                          const r    = RANKS[c.slice(0,-1)] || c.slice(0,-1)
-                          const s    = SUITS[suit] || suit
-                          return (
-                            <div key={ci} style={{ width:30, height:44, borderRadius:5, background:bg,
-                              border:'1px solid rgba(0,0,0,.3)', display:'flex', flexDirection:'column',
-                              alignItems:'center', justifyContent:'center', color:'#fff', gap:1,
-                              boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0 }}>
-                              <span style={{ fontSize:14, lineHeight:1 }}>{s}</span>
-                              <span style={{ fontSize:11, fontWeight:900, lineHeight:1 }}>{r}</span>
-                            </div>
-                          )
-                        })
-                      : [0,1].map(ci => (
-                          <div key={ci} style={{ width:30, height:44, borderRadius:5,
-                            background:'linear-gradient(145deg,#2a6a38,#163c1e)', border:'1px solid #1a4a28' }} />
-                        ))
-                    }
-                  </div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:9, color:'#2e4050', fontWeight:700 }}>#{i+1}</div>
-                    <div style={{ fontSize:12, fontWeight:800, color:resCls }}>{resTxt}</div>
-                  </div>
-                  {net !== null && (
-                    <div style={{ fontSize:11, fontWeight:800, color:netCol, flexShrink:0 }}>
-                      {(net >= 0 ? '+' : '') + fmtChips(net)}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
           </div>
         </div>
       </div>
@@ -571,7 +513,7 @@ function highlightIdx(step, street) {
 }
 
 // ── Styles ────────────────────────────────────────────────────────────
-const page = { minHeight:'100vh', background:'radial-gradient(ellipse at 50% 45%,#585858 0%,#2c2c2c 40%,#0e0e0e 100%)',
+const page = { height:'100vh', background:'radial-gradient(ellipse at 50% 45%,#585858 0%,#2c2c2c 40%,#0e0e0e 100%)',
   display:'flex', flexDirection:'column', fontFamily:"'Segoe UI',system-ui,sans-serif", color:'#dde0e8', overflow:'hidden' }
 
 const hdr = {
@@ -637,15 +579,8 @@ const rp = {
   logBoard:    { display:'flex', alignItems:'center', gap:5, padding:'8px 10px',
                  background:'#0a1018', borderBottom:'1px solid #1e2a3a', flexWrap:'wrap' },
   boardLbl:    { fontSize:9, color:'#3a5060', fontWeight:700, letterSpacing:1 },
-  actionList:  { flex:'0 0 auto', maxHeight:160, overflowY:'auto', padding:8, borderBottom:'1px solid #1e2a3a' },
+  actionList:  { flex:1, overflowY:'auto', padding:8 },
   actRow:      { padding:'4px 8px', marginBottom:3, borderRadius:4, fontSize:11, lineHeight:1.4,
                  display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:6,
                  cursor:'pointer', transition:'background 0.1s' },
-  handsHeader: { padding:'8px 12px', fontSize:10, fontWeight:800, letterSpacing:1, color:'#3a5060',
-                 borderBottom:'1px solid #1e2a3a', background:'#0a1018', flexShrink:0 },
-  handsList:   { flex:1, overflowY:'auto' },
-  handItem:    { padding:'8px 10px', cursor:'pointer', borderBottom:'1px solid #0f1820',
-                 borderLeft:'3px solid transparent', transition:'background 0.12s',
-                 display:'flex', alignItems:'center', gap:10 },
-  handItemActive: { background:'#111e2e', borderLeftColor:'#3a7abf' },
 }
