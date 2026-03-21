@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Tournament from './pages/Tournament'
 
 function PrivateRoute({ children }) {
   const { user } = useAuth()
@@ -18,6 +19,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+      <Route path="/tournament/:id" element={<PrivateRoute><Tournament /></PrivateRoute>} />
     </Routes>
   )
 }

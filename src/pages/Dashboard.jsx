@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament } from '../lib/parser'
 import { saveTournament, fetchTournaments } from '../lib/db'
 
 export default function Dashboard() {
   const { user, signOut } = useAuth()
+  const navigate = useNavigate()
   const fileInputRef = useRef()
 
   const [tournaments, setTournaments] = useState([])
@@ -124,7 +126,7 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {tournaments.map(t => (
-                  <tr key={t.id} style={styles.tr}>
+                  <tr key={t.id} style={styles.tr} onClick={() => navigate(`/tournament/${t.id}`)}>
                     <td style={styles.tdName}>{t.name}</td>
                     <td style={styles.tdDate}>{formatDate(t.date)}</td>
                     <td style={styles.tdHands}>{t.hands_count}</td>
