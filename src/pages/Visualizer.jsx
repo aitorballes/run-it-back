@@ -247,9 +247,6 @@ export default function Visualizer() {
   const positions = seatPositions(ordered.length)
   const totalWon  = hand.winners.reduce((s, w) => s + w.amount, 0) || hand.totalPot
 
-  // Street actions for log
-  const streetActions = hand.actions[street] || []
-
   return (
     <div style={page}>
 
@@ -440,65 +437,53 @@ export default function Visualizer() {
 
         {/* ── RIGHT PANEL ── */}
         <div style={rp.root}>
-
-          {/* Action log */}
-          <div style={rp.streetTabs}>
-            {STREET_ORDER.map(s => {
-              const hasActs = (hand.actions[s] || []).length > 0
+          <div style={rp.handsHeader}>MANOS ({hands.length})</div>
+          <div style={rp.handsList}>
+            {hands.map((h, i) => {
+              const cards  = h.holeCards?.Hero ?? []
+              const net    = heroNet(h)
+              const resCls = h.heroResult === 'won' ? '#30a860' : h.heroResult === 'folded' ? '#556070' : '#d04040'
+              const resTxt = h.heroResult === 'won' ? 'Ganó' : h.heroResult === 'folded' ? 'Fold' : 'Perdió'
+              const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
               return (
-                <div key={s} style={{ ...rp.tab, ...(hasActs ? rp.tabLive : {}), ...(s === street ? rp.tabActive : {}) }}
-                  onClick={() => jumpToStreet(s)}>
-                  {s.toUpperCase()}
+                <div key={i} data-idx={i}
+                  style={{ ...rp.handItem, ...(i === curIdx ? rp.handItemActive : {}) }}
+                  onClick={() => goHand(i)}>
+                  <div style={{ display:'flex', gap:3, flexShrink:0 }}>
+                    {cards.length > 0
+                      ? cards.map((c, ci) => {
+                          const suit = c.slice(-1).toLowerCase()
+                          const bg   = SUIT_BG[COLORS[suit]] || '#222'
+                          const r    = RANKS[c.slice(0,-1)] || c.slice(0,-1)
+                          const s    = SUITS[suit] || suit
+                          return (
+                            <div key={ci} style={{ width:30, height:44, borderRadius:5, background:bg,
+                              border:'1px solid rgba(0,0,0,.3)', display:'flex', flexDirection:'column',
+                              alignItems:'center', justifyContent:'center', color:'#fff', gap:1,
+                              boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0 }}>
+                              <span style={{ fontSize:14, lineHeight:1 }}>{s}</span>
+                              <span style={{ fontSize:11, fontWeight:900, lineHeight:1 }}>{r}</span>
+                            </div>
+                          )
+                        })
+                      : [0,1].map(ci => (
+                          <div key={ci} style={{ width:30, height:44, borderRadius:5,
+                            background:'linear-gradient(145deg,#2a6a38,#163c1e)', border:'1px solid #1a4a28' }} />
+                        ))
+                    }
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:9, color:'#2e4050', fontWeight:700 }}>#{i+1}</div>
+                    <div style={{ fontSize:12, fontWeight:800, color:resCls }}>{resTxt}</div>
+                  </div>
+                  {net !== null && (
+                    <div style={{ fontSize:11, fontWeight:800, color:netCol, flexShrink:0 }}>
+                      {(net >= 0 ? '+' : '') + fmtChips(net)}
+                    </div>
+                  )}
                 </div>
               )
             })}
-          </div>
-
-          <div style={rp.logBoard}>
-            <span style={rp.boardLbl}>BOARD</span>
-            {boardCards.length > 0
-              ? boardCards.map((c,i) => <Card key={i} code={c} size="sm" />)
-              : <span style={{ color:'#3a5060', fontSize:11 }}>—</span>}
-          </div>
-
-          <div style={rp.actionList}>
-            {streetActions.length === 0
-              ? <div style={{ color:'#3a4a5a', fontSize:11, padding:'10px', textAlign:'center' }}>Sin acciones</div>
-              : streetActions.map((a, ai) => {
-                  const isHero = a.player === 'Hero'
-                  const isHighlight = ai === highlightIdx(step, street)
-                  const typeColors = {
-                    fold:'#556070', check:'#5090d0', call:'#50b0d0',
-                    raise:'#d0a030', bet:'#d07030', won:'#40d070',
-                    'post-sb':'#50b0e0', 'post-bb':'#50d060',
-                  }
-                  const descColor = a.allin ? '#e04040' : typeColors[a.type] || '#607080'
-                  const desc = a.type === 'fold' ? 'fold'
-                    : a.type === 'check' ? 'check'
-                    : a.type === 'call'  ? `call ${fmtChips(a.amount)}`
-                    : a.type === 'raise' ? `raise → ${fmtChips(a.amount)}`
-                    : a.type === 'bet'   ? `bet ${fmtChips(a.amount)}`
-                    : a.type === 'won'   ? `ganó ${fmtChips(a.amount)}`
-                    : a.type === 'post-sb' ? `post SB ${fmtChips(a.amount)}`
-                    : a.type === 'post-bb' ? `post BB ${fmtChips(a.amount)}`
-                    : a.type === 'uncalled' ? `devuelto ${fmtChips(a.amount)}`
-                    : a.type
-                  return (
-                    <div key={ai} style={{ ...rp.actRow,
-                      background: isHighlight ? 'rgba(255,255,255,0.07)' : 'transparent',
-                      outline: isHighlight ? '1px solid rgba(255,255,255,0.12)' : 'none',
-                      borderLeft: `2px solid ${isHero ? '#c8a800' : 'transparent'}` }}>
-                      <span style={{ fontSize:11, fontWeight:700, color: isHero ? '#ffe566' : '#90a0b8',
-                        flexShrink:0, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {isHero ? '★ Hero' : a.player.slice(0,10)}
-                      </span>
-                      <span style={{ fontSize:10, color: descColor }}>
-                        {desc}{a.allin ? <span style={{ fontSize:9, color:'#e04040', fontWeight:700, marginLeft:4 }}>ALL-IN</span> : null}
-                      </span>
-                    </div>
-                  )
-                })
-            }
           </div>
         </div>
       </div>
@@ -506,11 +491,6 @@ export default function Visualizer() {
   )
 }
 
-function highlightIdx(step, street) {
-  if (!step || step.type !== 'action') return -1
-  if (step.street !== street) return -1
-  return step.idx
-}
 
 // ── Styles ────────────────────────────────────────────────────────────
 const page = { height:'100vh', background:'radial-gradient(ellipse at 50% 45%,#585858 0%,#2c2c2c 40%,#0e0e0e 100%)',
@@ -569,18 +549,13 @@ const ctrlBtnPlaying = {
 }
 
 const rp = {
-  root:        { width:280, background:'#0f1520', borderLeft:'1px solid #1e2a3a',
-                 display:'flex', flexDirection:'column', overflow:'hidden', flexShrink:0 },
-  streetTabs:  { display:'flex', background:'#0a1018', borderBottom:'1px solid #1e2a3a' },
-  tab:         { flex:1, padding:'7px 2px', textAlign:'center', fontSize:10, fontWeight:700,
-                 letterSpacing:'0.5px', cursor:'pointer', color:'#3a4a5c', borderBottom:'2px solid transparent', transition:'all 0.15s' },
-  tabLive:     { color:'#6080a0' },
-  tabActive:   { color:'#60c0ff', borderBottomColor:'#60c0ff', background:'#0d1825' },
-  logBoard:    { display:'flex', alignItems:'center', gap:5, padding:'8px 10px',
-                 background:'#0a1018', borderBottom:'1px solid #1e2a3a', flexWrap:'wrap' },
-  boardLbl:    { fontSize:9, color:'#3a5060', fontWeight:700, letterSpacing:1 },
-  actionList:  { flex:1, overflowY:'auto', padding:8 },
-  actRow:      { padding:'4px 8px', marginBottom:3, borderRadius:4, fontSize:11, lineHeight:1.4,
-                 display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:6,
-                 cursor:'pointer', transition:'background 0.1s' },
+  root:           { width:280, background:'#0f1520', borderLeft:'1px solid #1e2a3a',
+                    display:'flex', flexDirection:'column', overflow:'hidden', flexShrink:0 },
+  handsHeader:    { padding:'8px 12px', fontSize:10, fontWeight:800, letterSpacing:1, color:'#3a5060',
+                    borderBottom:'1px solid #1e2a3a', background:'#0a1018', flexShrink:0 },
+  handsList:      { flex:1, overflowY:'auto' },
+  handItem:       { padding:'8px 10px', cursor:'pointer', borderBottom:'1px solid #0f1820',
+                    borderLeft:'3px solid transparent', transition:'background 0.12s',
+                    display:'flex', alignItems:'center', gap:10 },
+  handItemActive: { background:'#111e2e', borderLeftColor:'#3a7abf' },
 }
