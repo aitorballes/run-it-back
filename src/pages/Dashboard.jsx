@@ -225,7 +225,7 @@ export default function Dashboard() {
               {hasFilters && <span style={s.filterDot} />}
             </button>
 
-            {uploading && progress ? (
+            {!isMobile && (uploading && progress ? (
               <div style={s.progressWrap}>
                 <div style={s.progressBar}>
                   <div style={{ ...s.progressFill, width: `${(progress.current / progress.total) * 100}%` }} />
@@ -240,7 +240,7 @@ export default function Dashboard() {
               >
                 + Cargar torneos
               </button>
-            )}
+            ))}
             {!isMobile && <span style={s.email}>{user?.email}</span>}
             <button style={s.signOutBtn} onClick={signOut}>Salir</button>
           </div>
@@ -299,24 +299,24 @@ export default function Dashboard() {
                       onClick={() => toggleDay(day)}>
                       <div style={s.sessionTop}>
                         <div>
-                          <div style={s.sessionDay}>{formatDayHeader(day)}</div>
+                          <div style={{ ...s.sessionDay, fontSize: isMobile ? 11 : 13 }}>{formatDayHeader(day)}</div>
                         </div>
                         <span style={{ fontSize: 11, color: '#2a5070', transition: 'transform 0.2s',
                           display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
                       </div>
                       <div style={s.sessionStats}>
                         <div style={s.stat}>
-                          <span style={s.statValue}>{items.length}</span>
+                          <span style={{ ...s.statValue, fontSize: isMobile ? 14 : 18 }}>{items.length}</span>
                           <span style={s.statLabel}>torneos</span>
                         </div>
                         <div style={s.statDivider} />
                         <div style={s.stat}>
-                          <span style={s.statValue}>{totalHands.toLocaleString('es-ES')}</span>
+                          <span style={{ ...s.statValue, fontSize: isMobile ? 14 : 18 }}>{totalHands.toLocaleString('es-ES')}</span>
                           <span style={s.statLabel}>manos</span>
                         </div>
                         <div style={s.statDivider} />
                         <div style={s.stat}>
-                          <span style={s.statValue}>{timeRange}</span>
+                          <span style={{ ...s.statValue, fontSize: isMobile ? 12 : 18, whiteSpace: 'nowrap' }}>{timeRange}</span>
                           <span style={s.statLabel}>horario</span>
                         </div>
                       </div>
