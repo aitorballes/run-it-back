@@ -226,7 +226,7 @@ function badgeInfo(action, fmt = fmtChips) {
 
 // ── Main Component ────────────────────────────────────────────────────
 export default function Visualizer() {
-  const { id } = useParams()
+  const { id, token } = useParams()
   const navigate = useNavigate()
 
   const [tournament, setTournament] = useState(null)
@@ -252,11 +252,21 @@ export default function Visualizer() {
   useEffect(() => {
     async function load() {
       try {
-        const { data: t } = await supabase.from('tournaments').select('*').eq('id', id).single()
+        let t, tournamentId
+        if (token) {
+          const { data } = await supabase.from('tournaments').select('*').eq('share_token', token).single()
+          t = data
+          tournamentId = data?.id
+        } else {
+          const { data } = await supabase.from('tournaments').select('*').eq('id', id).single()
+          t = data
+          tournamentId = id
+        }
         setTournament(t)
+        if (!tournamentId) return
         const { data: rows } = await supabase
-          .from('hands').select('raw').eq('tournament_id', id).order('id', { ascending: true })
-        const sorted = rows
+          .from('hands').select('raw').eq('tournament_id', tournamentId).order('id', { ascending: true })
+        const sorted = (rows || [])
           .map(r => r.raw)
           .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''))
         setHands(sorted)
@@ -264,7 +274,7 @@ export default function Visualizer() {
       finally { setLoading(false) }
     }
     load()
-  }, [id])
+  }, [id, token])
 
   // ── Rescale ──
   useEffect(() => {
@@ -363,6 +373,7 @@ export default function Visualizer() {
   }
 
   if (loading) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Cargando...</div>
+  if (!tournament && token) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Torneo no encontrado o enlace inválido.</div>
   if (!hands.length) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Sin manos.</div>
 
   const hasFilters = filterPlayed || filterCards.length > 0
@@ -415,7 +426,7 @@ export default function Visualizer() {
 
       {/* ── HEADER ── */}
       <div style={hdr.root}>
-        <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>
+        {!token && <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>}
         <div style={hdr.center}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <img

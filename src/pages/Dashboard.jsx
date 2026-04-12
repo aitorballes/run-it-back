@@ -8,7 +8,7 @@ import psIcon from '../assets/pokerstars.png'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
-import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary } from '../lib/db'
+import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken } from '../lib/db'
 
 function extractBuyin(name) {
   if (!name) return null
@@ -35,6 +35,8 @@ export default function Dashboard() {
   const [confirmDelete,    setConfirmDelete]    = useState(null) // { id, name }
   const [deleting,         setDeleting]         = useState(false)
   const [isMobile,         setIsMobile]         = useState(() => window.innerWidth < 768)
+  const [openMenu,         setOpenMenu]         = useState(null) // tournament id with open menu
+  const [copied,           setCopied]           = useState(false)
 
   async function handleDelete() {
     if (!confirmDelete) return
@@ -49,6 +51,26 @@ export default function Dashboard() {
       setDeleting(false)
     }
   }
+
+  async function handleShare(tournamentDbId) {
+    setOpenMenu(null)
+    try {
+      const token = await generateShareToken(tournamentDbId)
+      const url = `${window.location.origin}/share/${token}`
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  useEffect(() => {
+    if (!openMenu) return
+    function handleClick() { setOpenMenu(null) }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [openMenu])
 
   function toggleDay(day) {
     setExpandedDays(prev => {
@@ -347,12 +369,24 @@ export default function Dashboard() {
                               </div>
                             </div>
                             <div style={s.rowBadge}>{t.hands_count} manos</div>
-                            <button
-                              style={s.deleteBtn}
-                              onClick={e => { e.stopPropagation(); setConfirmDelete({ id: t.id, name: t.name }) }}
-                            >
-                              🗑
-                            </button>
+                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                              <button
+                                style={s.menuBtn}
+                                onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === t.id ? null : t.id) }}
+                              >
+                                ⋯
+                              </button>
+                              {openMenu === t.id && (
+                                <div style={s.dropdown} onClick={e => e.stopPropagation()}>
+                                  <button style={s.dropdownItem} onClick={() => { setOpenMenu(null); setConfirmDelete({ id: t.id, name: t.name }) }}>
+                                    Eliminar
+                                  </button>
+                                  <button style={s.dropdownItem} onClick={() => handleShare(t.id)}>
+                                    Compartir
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                             <div style={s.rowArrow}>›</div>
                           </div>
                         ))}
@@ -365,6 +399,11 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* COPIED TOAST */}
+      {copied && (
+        <div style={s.toast}>¡Enlace copiado!</div>
+      )}
 
       {/* DELETE CONFIRM MODAL */}
       {confirmDelete && (
@@ -766,15 +805,59 @@ const s = {
     padding: '3px 10px',
     flexShrink: 0,
   },
-  deleteBtn: {
+  menuBtn: {
     background: 'none',
     border: 'none',
-    fontSize: 14,
+    fontSize: 20,
     cursor: 'pointer',
-    opacity: 0.35,
-    padding: '2px 4px',
+    opacity: 0.45,
+    padding: '2px 6px',
     flexShrink: 0,
     lineHeight: 1,
+    color: '#dde0e8',
+    letterSpacing: 2,
+  },
+  dropdown: {
+    position: 'absolute',
+    right: 0,
+    top: '100%',
+    marginTop: 4,
+    background: 'linear-gradient(160deg, #131c2c 0%, #0c1420 100%)',
+    border: '1px solid #2a3a52',
+    borderRadius: 10,
+    overflow: 'hidden',
+    zIndex: 50,
+    minWidth: 130,
+    boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+  },
+  dropdownItem: {
+    display: 'block',
+    width: '100%',
+    background: 'none',
+    border: 'none',
+    borderBottom: '1px solid #1a2a3a',
+    padding: '10px 16px',
+    color: '#c0d8f0',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  toast: {
+    position: 'fixed',
+    bottom: 28,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: '#0e2a1a',
+    border: '1px solid #2a6a3a',
+    color: '#50d080',
+    padding: '10px 26px',
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 700,
+    zIndex: 200,
+    boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
+    whiteSpace: 'nowrap',
   },
   rowArrow: {
     fontSize: 20,

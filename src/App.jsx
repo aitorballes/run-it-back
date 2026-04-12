@@ -23,6 +23,7 @@ function AppRoutes() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
       <Route path="/tournament/:id" element={<PrivateRoute><Visualizer /></PrivateRoute>} />
+      <Route path="/share/:token" element={<Visualizer />} />
     </Routes>
   )
 }
