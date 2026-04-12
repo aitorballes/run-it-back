@@ -18,6 +18,30 @@ const STREET_LABEL = { preflop: 'Preflop', flop: 'Flop', turn: 'Turn', river: 'R
 const DECK_RANKS   = ['A','K','Q','J','T','9','8','7','6','5','4','3','2']
 const DECK_SUITS   = ['s','h','d','c']
 const CX = 400, CY = 270, RX = 368, RY = 228
+
+// Position labels by offset from BTN (clockwise), indexed by table size
+const POS_LABELS = {
+  2:  ['BTN','BB'],
+  3:  ['BTN','SB','BB'],
+  4:  ['BTN','SB','BB','CO'],
+  5:  ['BTN','SB','BB','HJ','CO'],
+  6:  ['BTN','SB','BB','LJ','HJ','CO'],
+  7:  ['BTN','SB','BB','UTG','LJ','HJ','CO'],
+  8:  ['BTN','SB','BB','UTG','UTG+1','LJ','HJ','CO'],
+  9:  ['BTN','SB','BB','UTG','UTG+1','MP','LJ','HJ','CO'],
+  10: ['BTN','SB','BB','UTG','UTG+1','MP','MP+1','LJ','HJ','CO'],
+}
+
+function getPositionLabel(seatNum, seats, buttonSeatNum) {
+  const sorted = [...seats].sort((a, b) => a.num - b.num)
+  const n = sorted.length
+  const btnIdx = sorted.findIndex(s => s.num === buttonSeatNum)
+  if (btnIdx < 0) return ''
+  const seatIdx = sorted.findIndex(s => s.num === seatNum)
+  if (seatIdx < 0) return ''
+  const offset = (seatIdx - btnIdx + n) % n
+  return (POS_LABELS[n] ?? [])[offset] ?? ''
+}
 const FELT_IRX = 318, FELT_IRY = 182  // felt inner semi-axes (inside the rail)
 
 // Returns a point just inside the felt rim in the direction of seat (px,py)
@@ -276,8 +300,8 @@ export default function Visualizer() {
       if (['SELECT','INPUT'].includes(e.target.tagName)) return
       if (e.key === ' ') { e.preventDefault(); setPlaying(p => !p) }
       if (e.shiftKey) {
-        if (e.key === 'ArrowLeft')  goHand(curIdx - 1)
-        if (e.key === 'ArrowRight') goHand(curIdx + 1)
+        if (e.key === 'ArrowLeft')  goHand(displayHandsWithIdx[dispIdx - 1]?.i)
+        if (e.key === 'ArrowRight') goHand(displayHandsWithIdx[dispIdx + 1]?.i)
       } else {
         if (e.key === 'ArrowLeft')  { setPlaying(false); setCurStep(s => Math.max(0, s - 1)) }
         if (e.key === 'ArrowRight') { setPlaying(false); setCurStep(s => {
@@ -303,6 +327,13 @@ export default function Visualizer() {
     setFilterPlayed(draftPlayed)
     setFilterCards(draftCards)
     setShowFilter(false)
+    // Jump to first hand that passes the new filter
+    const firstIdx = hands.findIndex(h => {
+      if (draftPlayed && heroFoldedPreflop(h)) return false
+      if (draftCards.length > 0 && !draftCards.every(c => (h.holeCards?.Hero ?? []).includes(c))) return false
+      return true
+    })
+    if (firstIdx >= 0) { setCurIdx(firstIdx); setCurStep(0); setPlaying(false) }
   }
   function clearFilter() {
     setFilterPlayed(false); setFilterCards([])
@@ -337,6 +368,7 @@ export default function Visualizer() {
       }
       return true
     })
+  const dispIdx = displayHandsWithIdx.findIndex(({ i }) => i === curIdx)
 
   const hand    = hands[curIdx]
   const seq     = hand.sequence
@@ -396,7 +428,7 @@ export default function Visualizer() {
           </button>
           <div style={{ textAlign:'right' }}>
             <div style={{ fontSize:11, color:'#70aaff', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.3px' }}>#{hand.id}</div>
-            <div style={hdr.counter}>{curIdx + 1} / {hands.length}</div>
+            <div style={hdr.counter}>{dispIdx + 1} / {displayHandsWithIdx.length}</div>
           </div>
         </div>
       </div>
@@ -449,14 +481,14 @@ export default function Visualizer() {
               const isActive = seat.player === activePlayer
               const cards    = hand.holeCards[seat.player]
 
-              const badgeTxt = seat.num === hand.buttonSeat ? 'BTN'
-                : seat.pos === 'SB' ? 'SB' : seat.pos === 'BB' ? 'BB'
-                : isHero ? 'HERO' : ''
-              const badgeStyle = seat.num === hand.buttonSeat
-                ? { background:'#8c6010', color:'#ffe580' }
-                : seat.pos === 'SB' ? { background:'#1a4060', color:'#70c0ff' }
-                : seat.pos === 'BB' ? { background:'#1a3a1a', color:'#70e070' }
-                : { background:'#6a5000', color:'#ffe566' }
+              const posLabel   = getPositionLabel(seat.num, hand.seats, hand.buttonSeat)
+              const badgeTxt   = posLabel
+              const badgeStyle = posLabel === 'BTN' ? { background:'#8c6010', color:'#ffe580' }
+                : posLabel === 'SB'  ? { background:'#1a4060', color:'#70c0ff' }
+                : posLabel === 'BB'  ? { background:'#1a3a1a', color:'#70e070' }
+                : posLabel === 'CO'  ? { background:'#2a1040', color:'#c080f0' }
+                : posLabel === 'HJ'  ? { background:'#102040', color:'#6090d0' }
+                : { background:'#101828', color:'#4a6878' }
 
               const ab = isActive && activeAction ? badgeInfo(activeAction, fmt) : null
 
@@ -465,11 +497,11 @@ export default function Visualizer() {
                   position:'absolute', left:pos.x, top:pos.y,
                   transform:'translate(-50%,-50%)',
                   display:'flex', flexDirection:'column', alignItems:'center',
-                  gap:2, width:114, opacity: isFolded ? 0.35 : 1, pointerEvents:'none' }}>
+                  gap:2, width:114, opacity: isFolded ? 0.35 : 1, pointerEvents:'none', zIndex:2 }}>
 
-                  {/* Cards — always on top */}
+                  {/* Cards — opponents only at showdown (last step) */}
                   <div style={{ display:'flex', gap:3 }}>
-                    {cards
+                    {cards && (isHero || curStep === seq.length - 1)
                       ? cards.map((c,ci) => <Card key={ci} code={c} size="lg" />)
                       : [0,1].map(ci => <CardBack key={ci} size="lg" />)}
                   </div>
@@ -588,7 +620,7 @@ export default function Visualizer() {
             {/* Step nav */}
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               {[
-                { id:'prev',     icon:'⏮\uFE0E', disabled: curIdx === 0,            action: () => goHand(curIdx-1) },
+                { id:'prev',     icon:'⏮\uFE0E', disabled: dispIdx <= 0,            action: () => goHand(displayHandsWithIdx[dispIdx-1]?.i) },
                 { id:'stepPrev', icon:'⏪\uFE0E', disabled: curStep <= 0,            action: () => { setPlaying(false); setCurStep(s => Math.max(0, s-1)) } },
               ].map(b => <button key={b.id} style={ctrlBtn} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
 
@@ -599,12 +631,12 @@ export default function Visualizer() {
 
               {[
                 { id:'stepNext', icon:'⏩\uFE0E', disabled: curStep >= seq.length-1, action: () => { setPlaying(false); setCurStep(s => Math.min(seq.length-1, s+1)) } },
-                { id:'next',     icon:'⏭\uFE0E', disabled: curIdx >= hands.length-1,action: () => goHand(curIdx+1) },
+                { id:'next',     icon:'⏭\uFE0E', disabled: dispIdx >= displayHandsWithIdx.length-1, action: () => goHand(displayHandsWithIdx[dispIdx+1]?.i) },
               ].map(b => <button key={b.id} style={ctrlBtn} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
             </div>
 
             {/* BB toggle */}
-            <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:7, alignSelf:'flex-start' }}>
               <input type="checkbox" id="bb-toggle" checked={displayBB}
                 onChange={e => setDisplayBB(e.target.checked)}
                 style={{ width:15, height:15, accentColor:'#3a7abf', cursor:'pointer' }} />
