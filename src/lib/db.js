@@ -97,8 +97,8 @@ export async function fetchTournaments(userId) {
 }
 
 export async function deleteAllTournaments(userId) {
+  const HAND_BATCH = 200
   const TOUR_BATCH = 20
-  const HAND_BATCH = 300
 
   const { data: tours, error: toursErr } = await supabase
     .from('tournaments')
@@ -108,52 +108,43 @@ export async function deleteAllTournaments(userId) {
   if (toursErr) throw toursErr
   if (!tours?.length) return
 
-  // Process in batches to avoid Supabase URL length limits
-  for (let i = 0; i < tours.length; i += TOUR_BATCH) {
-    const tourIds = tours.slice(i, i + TOUR_BATCH).map(t => t.id)
-
-    const { data: hands } = await supabase
-      .from('hands')
-      .select('id')
-      .in('tournament_id', tourIds)
-
-    if (hands?.length) {
-      const handIds = hands.map(h => h.id)
-      for (let j = 0; j < handIds.length; j += HAND_BATCH) {
-        const { error: actErr } = await supabase
-          .from('actions')
-          .delete()
-          .in('hand_id', handIds.slice(j, j + HAND_BATCH))
-        if (actErr) throw actErr
-      }
+  // Delete hands in batches per group of tournaments (CASCADE handles actions)
+  const tourIds = tours.map(t => t.id)
+  for (let i = 0; i < tourIds.length; i += TOUR_BATCH) {
+    const batch = tourIds.slice(i, i + TOUR_BATCH)
+    while (true) {
+      const { data: hands } = await supabase
+        .from('hands')
+        .select('id')
+        .in('tournament_id', batch)
+        .limit(HAND_BATCH)
+      if (!hands?.length) break
+      const { error } = await supabase.from('hands').delete().in('id', hands.map(h => h.id))
+      if (error) throw error
     }
-
-    const { error: handsErr } = await supabase.from('hands').delete().in('tournament_id', tourIds)
-    if (handsErr) throw handsErr
-
-    const { error: tourErr } = await supabase.from('tournaments').delete().in('id', tourIds)
-    if (tourErr) throw tourErr
   }
+
+  const { error } = await supabase.from('tournaments').delete().eq('user_id', userId)
+  if (error) throw error
 }
 
 export async function deleteTournament(tournamentDbId) {
-  // Borrar acciones → manos → torneo (en orden por FK)
-  const { data: hands } = await supabase
-    .from('hands')
-    .select('id')
-    .eq('tournament_id', tournamentDbId)
+  const HAND_BATCH = 200
 
-  if (hands?.length) {
-    const handIds = hands.map(h => h.id)
-    const { error: actErr } = await supabase.from('actions').delete().in('hand_id', handIds)
-    if (actErr) throw actErr
+  // Delete hands in batches (CASCADE handles actions automatically)
+  while (true) {
+    const { data: hands } = await supabase
+      .from('hands')
+      .select('id')
+      .eq('tournament_id', tournamentDbId)
+      .limit(HAND_BATCH)
+    if (!hands?.length) break
+    const { error } = await supabase.from('hands').delete().in('id', hands.map(h => h.id))
+    if (error) throw error
   }
 
-  const { error: handsErr } = await supabase.from('hands').delete().eq('tournament_id', tournamentDbId)
-  if (handsErr) throw handsErr
-
-  const { error: tourErr } = await supabase.from('tournaments').delete().eq('id', tournamentDbId)
-  if (tourErr) throw tourErr
+  const { error } = await supabase.from('tournaments').delete().eq('id', tournamentDbId)
+  if (error) throw error
 }
 
 export async function updateTournamentSummary(tournamentId, userId, data) {
