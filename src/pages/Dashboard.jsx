@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [draft,         setDraft]         = useState(EMPTY_FILTERS)
   const [confirmDelete,    setConfirmDelete]    = useState(null) // { id, name }
   const [deleting,         setDeleting]         = useState(false)
+  const [isMobile,         setIsMobile]         = useState(() => window.innerWidth < 768)
 
   async function handleDelete() {
     if (!confirmDelete) return
@@ -74,6 +75,11 @@ export default function Dashboard() {
   }
 
   useEffect(() => { loadTournaments() }, [])
+  useEffect(() => {
+    const fn = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', fn)
+    return () => window.removeEventListener('resize', fn)
+  }, [])
 
   async function loadTournaments() {
     try {
@@ -235,7 +241,7 @@ export default function Dashboard() {
                 + Cargar torneos
               </button>
             )}
-            <span style={s.email}>{user?.email}</span>
+            {!isMobile && <span style={s.email}>{user?.email}</span>}
             <button style={s.signOutBtn} onClick={signOut}>Salir</button>
           </div>
         </div>
@@ -249,7 +255,7 @@ export default function Dashboard() {
       )}
 
       {/* CONTENT */}
-      <div style={s.content}>
+      <div style={{ ...s.content, padding: isMobile ? '20px 12px' : '48px 24px' }}>
         {loading ? (
           <div style={s.hint}>Cargando...</div>
         ) : tournaments.length === 0 ? (
@@ -363,7 +369,7 @@ export default function Dashboard() {
       {/* DELETE CONFIRM MODAL */}
       {confirmDelete && (
         <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setConfirmDelete(null)}>
-          <div style={{ ...s.modal, width: 380 }}>
+          <div style={{ ...s.modal, width: 'min(380px, calc(100vw - 32px))' }}>
             <div style={s.modalHeader}>
               <span style={s.modalTitle}>Borrar torneo</span>
               <button style={s.modalClose} onClick={() => setConfirmDelete(null)}>✕</button>
@@ -890,7 +896,7 @@ const s = {
     background: 'linear-gradient(160deg, #131c2c 0%, #0c1420 100%)',
     border: '1px solid #2a3a52',
     borderRadius: 18,
-    width: 420,
+    width: 'min(420px, calc(100vw - 32px))',
     boxShadow: '0 30px 90px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.04)',
     overflow: 'hidden',
   },

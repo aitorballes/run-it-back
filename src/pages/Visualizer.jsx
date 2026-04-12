@@ -237,11 +237,13 @@ export default function Visualizer() {
   const [playing,    setPlaying]    = useState(false)
   const [scale,      setScale]      = useState(1)
   const [displayBB,  setDisplayBB]  = useState(false)
-  const [showFilter,   setShowFilter]   = useState(false)
-  const [filterPlayed, setFilterPlayed] = useState(false)
-  const [filterCards,  setFilterCards]  = useState([])
-  const [draftPlayed,  setDraftPlayed]  = useState(false)
-  const [draftCards,   setDraftCards]   = useState([])
+  const [showFilter,      setShowFilter]      = useState(false)
+  const [filterPlayed,    setFilterPlayed]    = useState(false)
+  const [filterCards,     setFilterCards]     = useState([])
+  const [draftPlayed,     setDraftPlayed]     = useState(false)
+  const [draftCards,      setDraftCards]      = useState([])
+  const [showMobileHands, setShowMobileHands] = useState(false)
+  const [isMobile,        setIsMobile]        = useState(() => window.innerWidth < 768)
 
   const areaRef    = useRef()
   const timerRef   = useRef()
@@ -277,6 +279,12 @@ export default function Visualizer() {
     window.addEventListener('resize', rescale)
     return () => window.removeEventListener('resize', rescale)
   }, [loading])
+
+  useEffect(() => {
+    const fn = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', fn)
+    return () => window.removeEventListener('resize', fn)
+  }, [])
 
   // ── Autoplay ──
   useEffect(() => {
@@ -315,7 +323,7 @@ export default function Visualizer() {
 
   function goHand(idx) {
     if (idx < 0 || idx >= hands.length) return
-    setPlaying(false); setCurIdx(idx); setCurStep(0)
+    setPlaying(false); setCurIdx(idx); setCurStep(0); setShowMobileHands(false)
   }
 
   function openFilter() {
@@ -421,6 +429,11 @@ export default function Visualizer() {
           <span style={hdr.meta}>Mesa {hand.tableNum} · {hand.datetime}</span>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
+          {isMobile && (
+            <button style={hdr.handsBtn} onClick={() => setShowMobileHands(true)}>
+              ☰ {dispIdx+1}/{displayHandsWithIdx.length}
+            </button>
+          )}
           <button style={{ ...hdr.filterBtn, ...(hasFilters ? hdr.filterBtnActive : {}) }} onClick={openFilter}>
             <span style={{ fontSize:15, lineHeight:1 }}>⌕</span>
             Filtrar
@@ -648,7 +661,7 @@ export default function Visualizer() {
         </div>
 
         {/* ── RIGHT PANEL ── */}
-        <div style={rp.root}>
+        <div style={{ ...rp.root, display: isMobile ? 'none' : 'flex' }}>
 
           {/* Header */}
           <div style={rp.handsHeader}>
@@ -705,6 +718,73 @@ export default function Visualizer() {
           </div>
         </div>
       </div>
+
+      {/* ── MOBILE HANDS DRAWER ── */}
+      {isMobile && showMobileHands && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:50,
+          display:'flex', flexDirection:'column', justifyContent:'flex-end' }}
+          onClick={() => setShowMobileHands(false)}>
+          <div style={{ background:'#0f1520', borderTop:'1px solid #1e2a3a',
+            borderTopLeftRadius:18, borderTopRightRadius:18,
+            maxHeight:'72vh', display:'flex', flexDirection:'column', overflow:'hidden' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ padding:'12px 16px', fontSize:10, fontWeight:800, letterSpacing:1,
+              color:'#3a5060', borderBottom:'1px solid #1e2a3a', background:'#0a1018',
+              display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+              <span>MANOS ({displayHandsWithIdx.length}{hasFilters ? ` / ${hands.length}` : ''})</span>
+              <button style={{ background:'none', border:'none', color:'#3a5060', cursor:'pointer',
+                fontSize:18, lineHeight:1 }} onClick={() => setShowMobileHands(false)}>✕</button>
+            </div>
+            <div style={{ ...rp.handsList }}>
+              {displayHandsWithIdx.map(({ h, i }) => {
+                const cards  = h.holeCards?.Hero ?? []
+                const net    = heroNet(h)
+                const resCls = h.heroResult === 'won' ? '#30a860' : h.heroResult === 'folded' ? '#556070' : '#d04040'
+                const resTxt = h.heroResult === 'won' ? 'Ganó' : h.heroResult === 'folded' ? 'Fold' : 'Perdió'
+                const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
+                return (
+                  <div key={i} data-idx={i}
+                    style={{ ...rp.handItem, ...(i === curIdx ? rp.handItemActive : {}) }}
+                    onClick={() => goHand(i)}>
+                    <div style={{ display:'flex', gap:3, flexShrink:0 }}>
+                      {cards.length > 0
+                        ? cards.map((c, ci) => {
+                            const suit = c.slice(-1).toLowerCase()
+                            const bg   = SUIT_BG[COLORS[suit]] || '#222'
+                            const r    = RANKS[c.slice(0,-1)] || c.slice(0,-1)
+                            const sv   = SUITS[suit] || suit
+                            return (
+                              <div key={ci} style={{ width:30, height:44, borderRadius:5, background:bg,
+                                border:'1px solid rgba(0,0,0,.3)', display:'flex', flexDirection:'column',
+                                alignItems:'center', justifyContent:'center', color:'#fff', gap:1,
+                                boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0 }}>
+                                <span style={{ fontSize:14, lineHeight:1 }}>{sv}</span>
+                                <span style={{ fontSize:11, fontWeight:900, lineHeight:1 }}>{r}</span>
+                              </div>
+                            )
+                          })
+                        : [0,1].map(ci => (
+                            <div key={ci} style={{ width:30, height:44, borderRadius:5,
+                              background:'linear-gradient(145deg,#2a6a38,#163c1e)', border:'1px solid #1a4a28' }} />
+                          ))
+                      }
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:9, color:'#2e4050', fontWeight:700 }}>#{i+1}</div>
+                      <div style={{ fontSize:12, fontWeight:800, color:resCls }}>{resTxt}</div>
+                    </div>
+                    {net !== null && (
+                      <div style={{ fontSize:11, fontWeight:800, color:netCol, flexShrink:0 }}>
+                        {(net >= 0 ? '+' : '') + fmtChips(net)}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── FILTER MODAL ── */}
       {showFilter && (
@@ -802,6 +882,9 @@ const hdr = {
                      border:'1px solid #2a4a62', borderRadius:8, padding:'6px 13px',
                      color:'#4a7090', fontSize:13, fontWeight:700, cursor:'pointer', position:'relative' },
   filterBtnActive: { border:'1px solid #3a6a9a', color:'#70b0e0' },
+  handsBtn:        { display:'flex', alignItems:'center', gap:5, background:'none',
+                     border:'1px solid #2a4a62', borderRadius:8, padding:'6px 12px',
+                     color:'#4a7090', fontSize:12, fontWeight:700, cursor:'pointer' },
   filterDot:       { position:'absolute', top:4, right:4, width:6, height:6,
                      borderRadius:'50%', background:'#60b0ff' },
 }
@@ -863,7 +946,7 @@ const modal = {
   backdrop: { position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)',
               display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 },
   root:     { background:'linear-gradient(160deg,#131c2c 0%,#0c1420 100%)', border:'1px solid #2a3a52',
-              borderRadius:18, width:420, boxShadow:'0 30px 90px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.04)',
+              borderRadius:18, width:'min(420px, calc(100vw - 32px))', boxShadow:'0 30px 90px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.04)',
               overflow:'hidden' },
   header:   { display:'flex', alignItems:'center', justifyContent:'space-between',
               padding:'18px 22px 14px', borderBottom:'1px solid #1a2a3a' },
