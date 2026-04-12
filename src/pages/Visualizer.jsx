@@ -55,6 +55,18 @@ function feltRim(px, py, inset = 0) {
   return { x: CX + nx * r, y: CY + ny * r }
 }
 
+// Returns a point `gap` px outside the near face of the seat container, toward center.
+// W/H are the approximate half-extents of the seat box (cards + badge + seat).
+function seatEdge(px, py, gap) {
+  const dx = px - CX, dy = py - CY
+  const len = Math.sqrt(dx * dx + dy * dy)
+  if (len < 1) return { x: CX, y: CY }
+  const nx = dx / len, ny = dy / len
+  const extent = Math.abs(nx) * 57 + Math.abs(ny) * 80 // half-width=57, half-height=80
+  const d = Math.max(0, len - extent - gap)
+  return { x: CX + nx * d, y: CY + ny * d }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────
 const fmtChips = n => (n ?? 0).toLocaleString('es-ES')
 const makeFmt  = (displayBB, bb) => n => {
@@ -570,7 +582,9 @@ export default function Visualizer() {
               const btnIdx = ordered.findIndex(s => s.num === hand.buttonSeat)
               if (btnIdx < 0) return null
               const pos = positions[btnIdx]
-              const rim = feltRim(pos.x, pos.y, 14)
+              const isHeroBtn = ordered[btnIdx]?.player === 'Hero'
+              const adjY = pos.y + (isHeroBtn ? -20 : 0)
+              const rim = seatEdge(pos.x, adjY, 15)
               return (
                 <div style={{ position:'absolute', pointerEvents:'none',
                   left: rim.x,
@@ -592,7 +606,9 @@ export default function Visualizer() {
               const si = ordered.findIndex(s => s.player === player)
               if (si < 0) return null
               const pos = positions[si]
-              const rim = feltRim(pos.x, pos.y, 50)
+              const isHeroChip = ordered[si]?.player === 'Hero'
+              const adjY = pos.y + (isHeroChip ? -20 : 0)
+              const rim = seatEdge(pos.x, adjY, 45)
               return (
                 <div key={player} style={{ position:'absolute',
                   left: rim.x,
