@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import ggIcon from '../assets/ggpoker.png'
+import wmIcon from '../assets/winamax.png'
+import icon888 from '../assets/888poker.png'
+import coinIcon from '../assets/coinpoker.png'
+import ipokerIcon from '../assets/ipoker.png'
+import psIcon from '../assets/pokerstars.png'
 
 // ── Constants ─────────────────────────────────────────────────────────
 const SUITS       = { h: '♥', d: '♦', s: '♠', c: '♣' }
@@ -9,7 +15,21 @@ const RANKS       = { T: '10', J: 'J', Q: 'Q', K: 'K', A: 'A' }
 const SUIT_BG     = { hearts: '#c0202a', diamonds: '#1a50c8', spades: '#222230', clubs: '#1a8a2a' }
 const STREET_ORDER = ['preflop', 'flop', 'turn', 'river']
 const STREET_LABEL = { preflop: 'Preflop', flop: 'Flop', turn: 'Turn', river: 'River' }
-const CX = 360, CY = 248, RX = 300, RY = 178
+const DECK_RANKS   = ['A','K','Q','J','T','9','8','7','6','5','4','3','2']
+const DECK_SUITS   = ['s','h','d','c']
+const CX = 400, CY = 270, RX = 368, RY = 228
+const FELT_IRX = 318, FELT_IRY = 182  // felt inner semi-axes (inside the rail)
+
+// Returns a point just inside the felt rim in the direction of seat (px,py)
+function feltRim(px, py, inset = 0) {
+  const dx = px - CX, dy = py - CY
+  const len = Math.sqrt(dx * dx + dy * dy)
+  if (len < 1) return { x: CX, y: CY }
+  const nx = dx / len, ny = dy / len
+  const a = FELT_IRX - inset, b = FELT_IRY - inset
+  const r = (a * b) / Math.sqrt(b * b * nx * nx + a * a * ny * ny)
+  return { x: CX + nx * r, y: CY + ny * r }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────
 const fmtChips = n => (n ?? 0).toLocaleString('es-ES')
@@ -53,6 +73,45 @@ function getAllinByStep(hand, upTo) {
   return s
 }
 
+function getPotByStep(hand, stepIdx) {
+  if (!hand.sequence.length || stepIdx < 0) return 0
+
+  let pot = 0
+  // Track total committed per player per street to handle raise increments correctly
+  const committed = new Map() // 'street:player' → total committed this street
+
+  const maxStep = Math.min(stepIdx, hand.sequence.length - 1)
+  for (let i = 0; i <= maxStep; i++) {
+    const step = hand.sequence[i]
+    if (!step || step.type !== 'action') continue
+    const a = hand.actions[step.street]?.[step.idx]
+    if (!a) continue
+
+    const key = `${step.street}:${a.player}`
+    const prev = committed.get(key) ?? 0
+
+    if (['post-sb', 'post-bb', 'bet'].includes(a.type) && a.amount > 0) {
+      pot += a.amount
+      committed.set(key, prev + a.amount)
+    } else if (a.type === 'call' && a.amount > 0) {
+      pot += a.amount
+      committed.set(key, prev + a.amount)
+    } else if (a.type === 'raise' && a.amount > 0) {
+      // raise.amount is the total raise-to, not the increment
+      const increment = Math.max(0, a.amount - prev)
+      pot += increment
+      committed.set(key, a.amount)
+    } else if (a.type === 'uncalled' && a.amount > 0) {
+      pot -= a.amount
+    }
+  }
+
+  // Antes are not in the sequence — approximate with ante × seats
+  if (hand.ante > 0) pot += hand.ante * hand.seats.length
+
+  return pot
+}
+
 function getBetsByStep(hand, stepIdx) {
   const bets = new Map()
   if (!hand.sequence.length || stepIdx < 0) return bets
@@ -70,6 +129,10 @@ function getBetsByStep(hand, stepIdx) {
     }
   }
   return bets
+}
+
+function heroFoldedPreflop(hand) {
+  return (hand.actions?.preflop ?? []).some(a => a.player === 'Hero' && a.type === 'fold')
 }
 
 function heroNet(hand) {
@@ -106,8 +169,15 @@ function Card({ code, size = 'sm' }) {
 
 function CardBack({ size = 'sm' }) {
   const d = { sm:[44,62], md:[58,82], lg:[70,98] }[size]
-  return <div style={{ width:d[0], height:d[1], background:'linear-gradient(145deg,#2a6a38,#163c1e)',
-    borderRadius:7, border:'2px solid #1a4a28', boxShadow:'inset 0 0 8px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.6)', flexShrink:0 }} />
+  return (
+    <div style={{ width:d[0], height:d[1], flexShrink:0, borderRadius:7, position:'relative', overflow:'hidden',
+      background:'linear-gradient(145deg, #a01818 0%, #6a0c0c 50%, #460808 100%)',
+      border:'2px solid #801010',
+      boxShadow:'0 2px 8px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,80,80,.15)' }}>
+      <div style={{ position:'absolute', inset:4, border:'1px solid rgba(200,60,60,0.25)', borderRadius:3 }} />
+      <div style={{ position:'absolute', inset:7, border:'1px solid rgba(200,60,60,0.15)', borderRadius:2 }} />
+    </div>
+  )
 }
 
 function badgeInfo(action, fmt = fmtChips) {
@@ -143,6 +213,11 @@ export default function Visualizer() {
   const [playing,    setPlaying]    = useState(false)
   const [scale,      setScale]      = useState(1)
   const [displayBB,  setDisplayBB]  = useState(false)
+  const [showFilter,   setShowFilter]   = useState(false)
+  const [filterPlayed, setFilterPlayed] = useState(false)
+  const [filterCards,  setFilterCards]  = useState([])
+  const [draftPlayed,  setDraftPlayed]  = useState(false)
+  const [draftCards,   setDraftCards]   = useState([])
 
   const areaRef    = useRef()
   const timerRef   = useRef()
@@ -155,7 +230,10 @@ export default function Visualizer() {
         setTournament(t)
         const { data: rows } = await supabase
           .from('hands').select('raw').eq('tournament_id', id).order('id', { ascending: true })
-        setHands(rows.map(r => r.raw))
+        const sorted = rows
+          .map(r => r.raw)
+          .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''))
+        setHands(sorted)
       } catch(e) { console.error(e) }
       finally { setLoading(false) }
     }
@@ -169,7 +247,7 @@ export default function Visualizer() {
       if (!area) return
       const availW = area.clientWidth - 24
       const availH = area.clientHeight - 130
-      setScale(Math.min(availW / 720, availH / 500, 1.0))
+      setScale(Math.min(availW / 800, availH / 540, 1.0))
     }
     rescale()
     window.addEventListener('resize', rescale)
@@ -216,6 +294,29 @@ export default function Visualizer() {
     setPlaying(false); setCurIdx(idx); setCurStep(0)
   }
 
+  function openFilter() {
+    setDraftPlayed(filterPlayed)
+    setDraftCards([...filterCards])
+    setShowFilter(true)
+  }
+  function applyFilter() {
+    setFilterPlayed(draftPlayed)
+    setFilterCards(draftCards)
+    setShowFilter(false)
+  }
+  function clearFilter() {
+    setFilterPlayed(false); setFilterCards([])
+    setDraftPlayed(false);  setDraftCards([])
+    setShowFilter(false)
+  }
+  function toggleDraftCard(code) {
+    setDraftCards(prev => {
+      if (prev.includes(code)) return prev.filter(c => c !== code)
+      if (prev.length >= 2) return [prev[1], code]
+      return [...prev, code]
+    })
+  }
+
   function jumpToStreet(street) {
     const h = hands[curIdx]
     const start = h?.streetStartStep[street]
@@ -224,6 +325,18 @@ export default function Visualizer() {
 
   if (loading) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Cargando...</div>
   if (!hands.length) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Sin manos.</div>
+
+  const hasFilters = filterPlayed || filterCards.length > 0
+  const displayHandsWithIdx = hands
+    .map((h, i) => ({ h, i }))
+    .filter(({ h }) => {
+      if (filterPlayed && heroFoldedPreflop(h)) return false
+      if (filterCards.length > 0) {
+        const heroCards = h.holeCards?.Hero ?? []
+        if (!filterCards.every(c => heroCards.includes(c))) return false
+      }
+      return true
+    })
 
   const hand    = hands[curIdx]
   const seq     = hand.sequence
@@ -242,8 +355,9 @@ export default function Visualizer() {
     activePlayer = activeAction?.player
   }
 
-  const fmt  = makeFmt(displayBB, hand.bb)
-  const bets = getBetsByStep(hand, curStep)
+  const fmt        = makeFmt(displayBB, hand.bb)
+  const bets       = getBetsByStep(hand, curStep)
+  const runningPot = getPotByStep(hand, curStep)
   const boardCards = []
   if (vi >= 1) boardCards.push(...hand.board.flop)
   if (vi >= 2 && hand.board.turn)  boardCards.push(hand.board.turn)
@@ -263,11 +377,28 @@ export default function Visualizer() {
       <div style={hdr.root}>
         <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>
         <div style={hdr.center}>
-          <span style={hdr.name}>{tournament?.name}</span>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <img
+              src={{ winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }[tournament?.platform] ?? ggIcon}
+              alt={tournament?.platform || 'ggpoker'}
+              style={{ width:22, height:22, borderRadius:5, objectFit:'contain', flexShrink:0 }}
+            />
+            <span style={hdr.name}>{tournament?.name}</span>
+          </div>
           <span style={hdr.level}>Nivel {hand.level} · {fmtChips(hand.sb)}/{fmtChips(hand.bb)}</span>
           <span style={hdr.meta}>Mesa {hand.tableNum} · {hand.datetime}</span>
         </div>
-        <div style={hdr.counter}>{curIdx + 1} / {hands.length}</div>
+        <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
+          <button style={{ ...hdr.filterBtn, ...(hasFilters ? hdr.filterBtnActive : {}) }} onClick={openFilter}>
+            <span style={{ fontSize:15, lineHeight:1 }}>⌕</span>
+            Filtrar
+            {hasFilters && <span style={hdr.filterDot} />}
+          </button>
+          <div style={{ textAlign:'right' }}>
+            <div style={{ fontSize:11, color:'#70aaff', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.3px' }}>#{hand.id}</div>
+            <div style={hdr.counter}>{curIdx + 1} / {hands.length}</div>
+          </div>
+        </div>
       </div>
 
       {/* ── BODY ── */}
@@ -277,26 +408,40 @@ export default function Visualizer() {
         <div ref={areaRef} style={ta.root}>
 
           {/* Table */}
-          <div style={{ position:'relative', width:720, height:500, flexShrink:0,
+          <div style={{ position:'relative', width:800, height:540, flexShrink:0,
             transform:`scale(${scale})`, transformOrigin:'top center',
-            marginBottom: Math.round(500*(scale-1))+'px',
-            marginLeft: Math.round(720*(scale-1)/2)+'px',
-            marginRight: Math.round(720*(scale-1)/2)+'px' }}>
+            marginBottom: Math.round(540*(scale-1))+'px',
+            marginLeft: Math.round(800*(scale-1)/2)+'px',
+            marginRight: Math.round(800*(scale-1)/2)+'px' }}>
 
             {/* Felt */}
-            <div style={ta.felt} />
+            <div style={ta.felt}>
+              {/* Watermark */}
+              <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+                fontSize:160, color:'rgba(255,255,255,0.022)', pointerEvents:'none', userSelect:'none', lineHeight:1 }}>♠</div>
+            </div>
 
             {/* Board */}
             <div style={ta.boardWrap}>
-              <div style={{ display:'flex', gap:7 }}>
-                {boardCards.map((c,i) => <Card key={i} code={c} size="lg" />)}
-              </div>
-              {totalWon > 0 && <div style={ta.pot}>Bote: {fmt(totalWon)}</div>}
+              {boardCards.length > 0 && (
+                <div style={{ display:'flex', gap:7 }}>
+                  {boardCards.map((c,i) => <Card key={i} code={c} size="lg" />)}
+                </div>
+              )}
+              {runningPot > 0 && (
+                <div style={ta.pot}>
+                  <span style={{ fontSize:10, color:'rgba(255,200,0,0.5)', fontWeight:600, letterSpacing:1, textTransform:'uppercase' }}>Bote total</span>
+                  <span style={{ fontSize:16, color:'#ffd060', fontWeight:900, textShadow:'0 0 20px rgba(255,200,0,0.5)', letterSpacing:'0.5px' }}>
+                    {fmt(runningPot)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Seats */}
             {ordered.map((seat, i) => {
-              const pos      = positions[i]
+              const isHeroSeat = seat.player === 'Hero'
+              const pos = { ...positions[i], y: positions[i].y + (isHeroSeat ? -20 : 0) }
               const isHero   = seat.player === 'Hero'
               const isFolded = foldedPlayers.has(seat.player)
               const isAllin  = allinPlayers.has(seat.player)
@@ -322,14 +467,12 @@ export default function Visualizer() {
                   display:'flex', flexDirection:'column', alignItems:'center',
                   gap:2, width:114, opacity: isFolded ? 0.35 : 1, pointerEvents:'none' }}>
 
-                  {/* Top cards */}
-                  {!isHero && (
-                    <div style={{ display:'flex', gap:3, marginBottom:2 }}>
-                      {cards
-                        ? cards.map((c,ci) => <Card key={ci} code={c} size="sm" />)
-                        : [0,1].map(ci => <CardBack key={ci} size="sm" />)}
-                    </div>
-                  )}
+                  {/* Cards — always on top */}
+                  <div style={{ display:'flex', gap:3 }}>
+                    {cards
+                      ? cards.map((c,ci) => <Card key={ci} code={c} size="lg" />)
+                      : [0,1].map(ci => <CardBack key={ci} size="lg" />)}
+                  </div>
 
                   {/* Position badge */}
                   {badgeTxt && (
@@ -340,15 +483,17 @@ export default function Visualizer() {
 
                   {/* Seat box */}
                   <div style={{
-                    background: isHero ? 'linear-gradient(to bottom,#252010,#181600)' : 'linear-gradient(to bottom,#222830,#161c24)',
-                    border:`1px solid ${isWinner ? '#ffe566' : isHero ? '#b89800' : isAllin ? '#cc3333' : '#30384a'}`,
-                    borderRadius:6, padding:'5px 8px', textAlign:'center', width:'100%',
-                    boxShadow: isWinner ? '0 0 10px #c8a80066' : 'none' }}>
-                    <div style={{ fontSize:11, fontWeight:700, color: isHero ? '#ffe566' : '#c8d4e8',
+                    background: isHero
+                      ? 'linear-gradient(to bottom,#2a2210,#1a1600)'
+                      : 'linear-gradient(to bottom,#1a2035,#101520)',
+                    border:`1px solid ${isWinner ? '#ffe566' : isActive ? '#5090d0' : isHero ? '#c8a800' : isAllin ? '#cc3333' : '#253045'}`,
+                    borderRadius:8, padding:'5px 8px', textAlign:'center', width:'100%',
+                    boxShadow: isWinner ? '0 0 14px rgba(200,168,0,0.4)' : isActive ? '0 0 10px rgba(60,130,220,0.35)' : '0 2px 8px rgba(0,0,0,0.6)' }}>
+                    <div style={{ fontSize:11, fontWeight:800, color: isHero ? '#ffe566' : '#c8d4e8',
                       whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:96 }}>
-                      {isHero ? '★ Hero' : seat.player.slice(0,8)}
+                      {isHero ? '★ Hero' : seat.player.slice(0,10)}
                     </div>
-                    <div style={{ fontSize:11, color:'#40d840', fontWeight:700, marginTop:2 }}>
+                    <div style={{ fontSize:11, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700, marginTop:2 }}>
                       {fmt(seat.chips)}
                     </div>
                   </div>
@@ -360,31 +505,57 @@ export default function Visualizer() {
                       {ab.label}
                     </div>
                   )}
-
-                  {/* Hero bottom cards */}
-                  {isHero && cards && (
-                    <div style={{ display:'flex', gap:3, marginTop:4 }}>
-                      {cards.map((c,ci) => <Card key={ci} code={c} size="md" />)}
-                    </div>
-                  )}
                 </div>
               )
             })}
+
+            {/* Dealer button */}
+            {(() => {
+              const btnIdx = ordered.findIndex(s => s.num === hand.buttonSeat)
+              if (btnIdx < 0) return null
+              const pos = positions[btnIdx]
+              const rim = feltRim(pos.x, pos.y, 14)
+              return (
+                <div style={{ position:'absolute', pointerEvents:'none',
+                  left: rim.x,
+                  top:  rim.y,
+                  transform:'translate(-50%,-50%)',
+                  width:22, height:22, borderRadius:'50%',
+                  background:'radial-gradient(circle at 38% 35%, #ffe898, #c89000)',
+                  border:'2px solid #806000',
+                  boxShadow:'0 2px 8px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,240,150,.4)',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:9, fontWeight:900, color:'#3a2000' }}>
+                  D
+                </div>
+              )
+            })()}
 
             {/* Chip bets */}
             {Array.from(bets.entries()).map(([player, amount]) => {
               const si = ordered.findIndex(s => s.player === player)
               if (si < 0) return null
               const pos = positions[si]
+              const rim = feltRim(pos.x, pos.y, 50)
               return (
                 <div key={player} style={{ position:'absolute',
-                  left: pos.x + (CX - pos.x) * 0.38,
-                  top:  pos.y + (CY - pos.y) * 0.38,
-                  transform:'translate(-50%,-50%)', pointerEvents:'none' }}>
-                  <div style={{ fontSize:11, fontWeight:800, color:'#ffe080',
-                    textShadow:'0 1px 4px rgba(0,0,0,.95)', whiteSpace:'nowrap',
-                    background:'rgba(0,0,0,.75)', border:'1px solid rgba(200,160,0,.35)',
-                    borderRadius:4, padding:'2px 7px' }}>
+                  left: rim.x,
+                  top:  rim.y,
+                  transform:'translate(-50%,-50%)', pointerEvents:'none',
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                  {/* Chip stack */}
+                  <div style={{ width:28, height:28, borderRadius:'50%',
+                    background:'radial-gradient(circle at 38% 35%, #6699ee, #1a3aaa)',
+                    border:'2px solid rgba(120,170,255,0.5)',
+                    boxShadow:'0 3px 10px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.2)',
+                    display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <div style={{ width:17, height:17, borderRadius:'50%',
+                      border:'1px dashed rgba(150,200,255,0.35)' }} />
+                  </div>
+                  {/* Amount */}
+                  <div style={{ fontSize:10, fontWeight:800, color:'#ffe080',
+                    textShadow:'0 1px 6px rgba(0,0,0,1)', whiteSpace:'nowrap',
+                    background:'rgba(0,0,0,.8)', borderRadius:3, padding:'1px 6px' }}>
                     {fmt(amount)}
                   </div>
                 </div>
@@ -393,7 +564,7 @@ export default function Visualizer() {
           </div>
 
           {/* ── Controls ── */}
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, flexShrink:0 }}>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop:80 }}>
 
             {/* Street nav */}
             <div style={{ display:'flex', gap:8 }}>
@@ -417,28 +588,23 @@ export default function Visualizer() {
             {/* Step nav */}
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               {[
-                { id:'prev',      icon:'⏮\uFE0E', disabled: curIdx === 0,           action: () => goHand(curIdx-1) },
-                { id:'stepPrev',  icon:'⏪\uFE0E', disabled: curStep <= 0,           action: () => { setPlaying(false); setCurStep(s => Math.max(0, s-1)) } },
-              ].map(b => <button key={b.id} style={ctrlBtn} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
-
-              <div style={{ minWidth:80, textAlign:'center' }}>
-                <div style={{ fontSize:12, color:'#8090a8', fontWeight:700 }}>{curIdx+1} / {hands.length}</div>
-                <div style={{ fontSize:10, color:'#4a6070' }}>paso {curStep+1}/{seq.length} · {STREET_LABEL[street]}</div>
-              </div>
-
-              {[
-                { id:'stepNext', icon:'⏩\uFE0E', disabled: curStep >= seq.length-1, action: () => { setPlaying(false); setCurStep(s => Math.min(seq.length-1, s+1)) } },
-                { id:'next',     icon:'⏭\uFE0E', disabled: curIdx >= hands.length-1,action: () => goHand(curIdx+1) },
+                { id:'prev',     icon:'⏮\uFE0E', disabled: curIdx === 0,            action: () => goHand(curIdx-1) },
+                { id:'stepPrev', icon:'⏪\uFE0E', disabled: curStep <= 0,            action: () => { setPlaying(false); setCurStep(s => Math.max(0, s-1)) } },
               ].map(b => <button key={b.id} style={ctrlBtn} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
 
               <button style={{ ...ctrlBtn, ...(playing ? ctrlBtnPlaying : {}) }}
                 onClick={() => setPlaying(p => !p)}>
                 {playing ? '⏸\uFE0E' : '▶\uFE0E'}
               </button>
+
+              {[
+                { id:'stepNext', icon:'⏩\uFE0E', disabled: curStep >= seq.length-1, action: () => { setPlaying(false); setCurStep(s => Math.min(seq.length-1, s+1)) } },
+                { id:'next',     icon:'⏭\uFE0E', disabled: curIdx >= hands.length-1,action: () => goHand(curIdx+1) },
+              ].map(b => <button key={b.id} style={ctrlBtn} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
             </div>
 
             {/* BB toggle */}
-            <div style={{ alignSelf:'flex-start', display:'flex', alignItems:'center', gap:7, marginLeft:4 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:7 }}>
               <input type="checkbox" id="bb-toggle" checked={displayBB}
                 onChange={e => setDisplayBB(e.target.checked)}
                 style={{ width:15, height:15, accentColor:'#3a7abf', cursor:'pointer' }} />
@@ -451,9 +617,15 @@ export default function Visualizer() {
 
         {/* ── RIGHT PANEL ── */}
         <div style={rp.root}>
-          <div style={rp.handsHeader}>MANOS ({hands.length})</div>
+
+          {/* Header */}
+          <div style={rp.handsHeader}>
+            MANOS ({displayHandsWithIdx.length}{hasFilters ? ` / ${hands.length}` : ''})
+          </div>
+
+          {/* Hand list */}
           <div style={rp.handsList}>
-            {hands.map((h, i) => {
+            {displayHandsWithIdx.map(({ h, i }) => {
               const cards  = h.holeCards?.Hero ?? []
               const net    = heroNet(h)
               const resCls = h.heroResult === 'won' ? '#30a860' : h.heroResult === 'folded' ? '#556070' : '#d04040'
@@ -501,13 +673,87 @@ export default function Visualizer() {
           </div>
         </div>
       </div>
+
+      {/* ── FILTER MODAL ── */}
+      {showFilter && (
+        <div style={modal.backdrop} onClick={e => e.target === e.currentTarget && setShowFilter(false)}>
+          <div style={modal.root}>
+            <div style={modal.header}>
+              <span style={modal.title}>Filtrar manos</span>
+              <button style={modal.close} onClick={() => setShowFilter(false)}>✕</button>
+            </div>
+
+            <div style={modal.body}>
+              {/* Manos jugadas */}
+              <div style={modal.field}>
+                <label style={modal.fieldLabel}>Manos jugadas</label>
+                <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+                  <input type="checkbox" checked={draftPlayed}
+                    onChange={e => setDraftPlayed(e.target.checked)}
+                    style={{ accentColor:'#3a7abf', width:14, height:14, cursor:'pointer' }} />
+                  <span style={{ fontSize:13, color:'#c8d4e8' }}>Solo manos no foldeadas preflop</span>
+                </label>
+              </div>
+
+              {/* Buscar cartas */}
+              <div style={modal.field}>
+                <label style={modal.fieldLabel}>Buscar cartas ({draftCards.length}/2)</label>
+                <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                  {DECK_SUITS.map(suit => (
+                    <div key={suit} style={{ display:'flex', gap:2 }}>
+                      {DECK_RANKS.map(rank => {
+                        const code = rank + suit
+                        const sel  = draftCards.includes(code)
+                        const bg   = SUIT_BG[COLORS[suit]]
+                        return (
+                          <div key={code} onClick={() => toggleDraftCard(code)} style={{
+                            width:26, height:36, borderRadius:4,
+                            background: sel ? '#1a5090' : bg,
+                            border:`1px solid ${sel ? '#70c0ff' : 'rgba(0,0,0,0.5)'}`,
+                            boxShadow: sel ? '0 0 6px rgba(100,180,255,0.5)' : 'none',
+                            display:'flex', flexDirection:'column', alignItems:'center',
+                            justifyContent:'center', cursor:'pointer', flexShrink:0,
+                            opacity: sel ? 1 : 0.82, transition:'all 0.1s' }}>
+                            <span style={{ fontSize:11, lineHeight:1, color:'#fff' }}>{SUITS[suit]}</span>
+                            <span style={{ fontSize:9, fontWeight:900, lineHeight:1, color:'#fff' }}>
+                              {RANKS[rank] || rank}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </div>
+                {draftCards.length > 0 && (
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10 }}>
+                    <span style={{ fontSize:11, color:'#4a6880' }}>Seleccionadas:</span>
+                    <div style={{ display:'flex', gap:4 }}>
+                      {draftCards.map(c => <Card key={c} code={c} size="sm" />)}
+                    </div>
+                    <button onClick={() => setDraftCards([])} style={{
+                      marginLeft:'auto', fontSize:11, background:'#2a1a1a', color:'#d06060',
+                      border:'1px solid #4a2020', borderRadius:6, padding:'4px 9px', cursor:'pointer' }}>
+                      ✕ Borrar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={modal.footer}>
+              <button style={modal.clearBtn} onClick={clearFilter}>Limpiar</button>
+              <button style={modal.applyBtn} onClick={applyFilter}>Aplicar filtros</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 
 // ── Styles ────────────────────────────────────────────────────────────
-const page = { height:'100vh', background:'radial-gradient(ellipse at 50% 45%,#585858 0%,#2c2c2c 40%,#0e0e0e 100%)',
+const page = { height:'100vh', background:'radial-gradient(ellipse at 30% 20%,#1a2a3a 0%,#0d1520 40%,#050b10 100%)',
   display:'flex', flexDirection:'column', fontFamily:"'Segoe UI',system-ui,sans-serif", color:'#dde0e8', overflow:'hidden' }
 
 const hdr = {
@@ -519,7 +765,13 @@ const hdr = {
   name:    { fontSize:14, fontWeight:800, color:'#90b8e0' },
   level:   { fontSize:11, fontWeight:600, color:'#4a6a88', letterSpacing:'0.3px' },
   meta:    { fontSize:10, color:'#506070' },
-  counter: { fontSize:12, color:'#607080', fontWeight:700, textAlign:'right', whiteSpace:'nowrap' },
+  counter:         { fontSize:12, color:'#607080', fontWeight:700, textAlign:'right', whiteSpace:'nowrap' },
+  filterBtn:       { display:'flex', alignItems:'center', gap:6, background:'none',
+                     border:'1px solid #2a4a62', borderRadius:8, padding:'6px 13px',
+                     color:'#4a7090', fontSize:13, fontWeight:700, cursor:'pointer', position:'relative' },
+  filterBtnActive: { border:'1px solid #3a6a9a', color:'#70b0e0' },
+  filterDot:       { position:'absolute', top:4, right:4, width:6, height:6,
+                     borderRadius:'50%', background:'#60b0ff' },
 }
 
 const ta = {
@@ -528,15 +780,15 @@ const ta = {
   info:      { display:'flex', flexDirection:'column', alignItems:'center', gap:3, flexShrink:0 },
   infoName:  { fontSize:15, fontWeight:800, color:'#90b8e0' },
   infoLevel: { fontSize:12, fontWeight:600, color:'#4a6a88' },
-  felt:      { position:'absolute', top:88, left:78, right:78, bottom:88,
-               background:'radial-gradient(ellipse at 50% 40%,#2e7a3c 0%,#1c5228 60%,#113a1c 100%)',
-               borderRadius:'50%', border:'22px solid #1a1a1a',
-               boxShadow:'0 0 0 5px #4e4e4e,0 0 0 6px #1a1a1a,0 16px 60px rgba(0,0,0,.98),inset 0 0 70px rgba(0,0,0,.25)' },
+  felt:      { position:'absolute', top:62, left:56, right:56, bottom:62,
+               background:'radial-gradient(ellipse at 50% 38%, #1e4070 0%, #102348 55%, #070f28 100%)',
+               borderRadius:'50%', border:'26px solid #080808',
+               boxShadow:'0 0 0 3px #1a1a1a, 0 0 0 4px #0a0a0a, 0 0 0 6px rgba(150,120,40,0.18), 0 20px 80px rgba(0,0,0,.98), inset 0 0 90px rgba(0,0,0,.35)' },
   boardWrap: { position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-56%)',
-               display:'flex', flexDirection:'column', alignItems:'center', gap:6 },
-  pot:       { background:'#0e0e0e', border:'1px solid #2a5a2a', borderRadius:5, padding:'4px 18px',
-               fontSize:13, color:'#50e050', fontWeight:700, textAlign:'center',
-               textShadow:'0 0 10px rgba(60,220,60,.5)', letterSpacing:'0.5px' },
+               display:'flex', flexDirection:'column', alignItems:'center', gap:8 },
+  pot:       { background:'rgba(0,0,0,0.75)', border:'1px solid rgba(200,160,0,0.25)', borderRadius:8,
+               padding:'5px 22px', display:'flex', flexDirection:'column', alignItems:'center', gap:1,
+               backdropFilter:'blur(4px)' },
 }
 
 const stBtn = {
@@ -566,11 +818,32 @@ const ctrlBtnPlaying = {
 const rp = {
   root:           { width:280, background:'#0f1520', borderLeft:'1px solid #1e2a3a',
                     display:'flex', flexDirection:'column', overflow:'hidden', flexShrink:0 },
-  handsHeader:    { padding:'8px 12px', fontSize:10, fontWeight:800, letterSpacing:1, color:'#3a5060',
+  handsHeader:    { padding:'7px 12px', fontSize:10, fontWeight:800, letterSpacing:1, color:'#3a5060',
                     borderBottom:'1px solid #1e2a3a', background:'#0a1018', flexShrink:0 },
   handsList:      { flex:1, overflowY:'auto' },
   handItem:       { padding:'8px 10px', cursor:'pointer', borderBottom:'1px solid #0f1820',
                     borderLeft:'3px solid transparent', transition:'background 0.12s',
                     display:'flex', alignItems:'center', gap:10 },
   handItemActive: { background:'#111e2e', borderLeftColor:'#3a7abf' },
+}
+
+const modal = {
+  backdrop: { position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)',
+              display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 },
+  root:     { background:'linear-gradient(160deg,#131c2c 0%,#0c1420 100%)', border:'1px solid #2a3a52',
+              borderRadius:18, width:420, boxShadow:'0 30px 90px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.04)',
+              overflow:'hidden' },
+  header:   { display:'flex', alignItems:'center', justifyContent:'space-between',
+              padding:'18px 22px 14px', borderBottom:'1px solid #1a2a3a' },
+  title:    { fontSize:14, fontWeight:800, color:'#c0d8f0', letterSpacing:'0.3px' },
+  close:    { background:'none', border:'none', color:'#3a5a70', cursor:'pointer', fontSize:14, padding:'2px 6px' },
+  body:     { padding:'20px 22px', display:'flex', flexDirection:'column', gap:18 },
+  field:    { display:'flex', flexDirection:'column', gap:8 },
+  fieldLabel: { fontSize:10, fontWeight:800, color:'#3a6080', letterSpacing:'1px', textTransform:'uppercase' },
+  footer:   { display:'flex', gap:10, padding:'14px 22px 20px', borderTop:'1px solid #1a2a3a' },
+  clearBtn: { flex:1, background:'none', border:'1px solid #2a3a52', borderRadius:9, padding:'10px',
+              color:'#4a7090', fontSize:13, fontWeight:700, cursor:'pointer' },
+  applyBtn: { flex:2, background:'linear-gradient(135deg,#1e5cad,#0c3080)', border:'1px solid #2a4a80',
+              borderRadius:9, padding:'10px', color:'#d0e8ff', fontSize:13, fontWeight:800,
+              cursor:'pointer', boxShadow:'0 4px 20px rgba(20,60,160,0.35)' },
 }
