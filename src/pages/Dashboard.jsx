@@ -8,7 +8,7 @@ import psIcon from '../assets/pokerstars.png'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
-import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken } from '../lib/db'
+import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds } from '../lib/db'
 
 function extractBuyin(name) {
   if (!name) return null
@@ -137,11 +137,24 @@ export default function Dashboard() {
       if (handTexts.length > 0) {
         const allHands = handTexts.flatMap(t => parseFile(t))
         const grouped  = groupByTournament(allHands)
-        setProgress({ current: 0, total: grouped.length })
-        for (const tournament of grouped) {
-          const result = await saveTournament(tournament, user.id)
-          result.skipped ? skipped++ : saved++
-          setProgress(p => ({ ...p, current: p.current + 1 }))
+
+        // Dedup en batch: una sola query para todos los torneos
+        const existingIds = await fetchExistingTournamentIds(user.id, grouped.map(t => t.id))
+        const toSave = grouped.filter(t => !existingIds.has(t.id))
+        skipped = grouped.length - toSave.length
+        saved   = toSave.length
+
+        setProgress({ current: skipped, total: grouped.length })
+
+        // Saves en paralelo (3 a la vez)
+        const CONCURRENCY = 3
+        for (let i = 0; i < toSave.length; i += CONCURRENCY) {
+          await Promise.all(
+            toSave.slice(i, i + CONCURRENCY).map(async t => {
+              await saveTournament(t, user.id)
+              setProgress(p => ({ ...p, current: p.current + 1 }))
+            })
+          )
         }
       }
 

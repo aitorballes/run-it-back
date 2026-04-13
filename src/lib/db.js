@@ -1,17 +1,24 @@
 import { supabase } from './supabase'
 import { calcHeroNet } from './parser'
 
+const HAND_BATCH   = 200
+const ACTION_BATCH = 1000
+
+export async function fetchExistingTournamentIds(userId, tournamentIds) {
+  const CHUNK = 50
+  const result = new Set()
+  for (let i = 0; i < tournamentIds.length; i += CHUNK) {
+    const { data } = await supabase
+      .from('tournaments')
+      .select('tournament_id')
+      .eq('user_id', userId)
+      .in('tournament_id', tournamentIds.slice(i, i + CHUNK))
+    data?.forEach(r => result.add(r.tournament_id))
+  }
+  return result
+}
+
 export async function saveTournament(tournament, userId) {
-  // Evitar duplicados: comprobar si ya existe este torneo para este usuario
-  const { data: existing } = await supabase
-    .from('tournaments')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('tournament_id', tournament.id)
-    .single()
-
-  if (existing) return { id: existing.id, skipped: true }
-
   // Hora de la última mano del torneo
   const lastHandDatetime = tournament.hands
     .map(h => h.datetime).filter(Boolean).sort().pop() || null
@@ -33,7 +40,7 @@ export async function saveTournament(tournament, userId) {
 
   if (tourErr) throw tourErr
 
-  // Insertar manos y acciones en lotes
+  // Insertar manos en lotes
   const handsToInsert = tournament.hands.map(h => ({
     tournament_id: tourRow.id,
     hand_id:       h.id,
@@ -48,21 +55,24 @@ export async function saveTournament(tournament, userId) {
     raw:           h,
   }))
 
-  const { data: insertedHands, error: handsErr } = await supabase
-    .from('hands')
-    .insert(handsToInsert)
-    .select('id, hand_id')
+  const insertedHands = []
+  for (let i = 0; i < handsToInsert.length; i += HAND_BATCH) {
+    const { data, error } = await supabase
+      .from('hands')
+      .insert(handsToInsert.slice(i, i + HAND_BATCH))
+      .select('id, hand_id')
+    if (error) throw error
+    insertedHands.push(...data)
+  }
 
-  if (handsErr) throw handsErr
-
-  // Insertar acciones (para filtros futuros)
-  const actionsToInsert = []
+  // Mapear hand_id → db id para construir acciones
+  const handIdMap = new Map(insertedHands.map(h => [h.hand_id, h.id]))
   const streets = ['preflop', 'flop', 'turn', 'river']
+  const actionsToInsert = []
 
-  tournament.hands.forEach((hand, i) => {
-    const dbHandId = insertedHands[i]?.id
-    if (!dbHandId) return
-
+  for (const hand of tournament.hands) {
+    const dbHandId = handIdMap.get(hand.id)
+    if (!dbHandId) continue
     for (const street of streets) {
       for (const act of (hand.actions[street] || [])) {
         actionsToInsert.push({
@@ -75,14 +85,17 @@ export async function saveTournament(tournament, userId) {
         })
       }
     }
-  })
-
-  if (actionsToInsert.length > 0) {
-    const { error: actErr } = await supabase.from('actions').insert(actionsToInsert)
-    if (actErr) throw actErr
   }
 
-  return { id: tourRow.id, skipped: false }
+  // Insertar acciones en lotes
+  for (let i = 0; i < actionsToInsert.length; i += ACTION_BATCH) {
+    const { error } = await supabase
+      .from('actions')
+      .insert(actionsToInsert.slice(i, i + ACTION_BATCH))
+    if (error) throw error
+  }
+
+  return { id: tourRow.id }
 }
 
 export async function fetchTournaments(userId) {
