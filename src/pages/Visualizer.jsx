@@ -617,7 +617,7 @@ export default function Visualizer() {
                       whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:96 }}>
                       {isHero ? '★ Hero' : seat.player.slice(0,10)}
                     </div>
-                    <div style={{ fontSize:11, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700, marginTop:2 }}>
+                    <div style={{ fontSize:13, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700, marginTop:2 }}>
                       {fmt(seat.chips)}
                     </div>
                   </div>
@@ -729,16 +729,14 @@ export default function Visualizer() {
                 { id:'stepNext', icon:'⏩\uFE0E', disabled: curStep >= seq.length-1, action: () => { setPlaying(false); setCurStep(s => Math.min(seq.length-1, s+1)) } },
                 { id:'next',     icon:'⏭\uFE0E', disabled: dispIdx >= displayHandsWithIdx.length-1, action: () => goHand(displayHandsWithIdx[dispIdx+1]?.i) },
               ].map(b => <button key={b.id} style={ctrlBtn} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
-            </div>
 
-            {/* BB toggle */}
-            <div style={{ display:'flex', alignItems:'center', gap:7, alignSelf:'flex-start' }}>
-              <input type="checkbox" id="bb-toggle" checked={displayBB}
-                onChange={e => setDisplayBB(e.target.checked)}
-                style={{ width:15, height:15, accentColor:'#3a7abf', cursor:'pointer' }} />
-              <label htmlFor="bb-toggle" style={{ fontSize:12, color:'#6080a0', cursor:'pointer', userSelect:'none' }}>
-                Ver en Big Blinds
-              </label>
+              {/* BB toggle */}
+              <button style={{ ...ctrlBtn, ...(displayBB ? ctrlBtnPlaying : {}), fontSize:13, fontWeight:900, width:46, marginLeft:14 }}
+                onClick={() => setDisplayBB(p => !p)}>
+                {displayBB
+                  ? <span style={{ textDecoration:'line-through', textDecorationThickness:2 }}>BB</span>
+                  : 'BB'}
+              </button>
             </div>
           </div>
         </div>
