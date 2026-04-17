@@ -250,7 +250,7 @@ export default function Visualizer() {
   const [curStep,    setCurStep]    = useState(0)
   const [playing,    setPlaying]    = useState(false)
   const [scale,      setScale]      = useState(1)
-  const [displayBB,  setDisplayBB]  = useState(false)
+  const [displayBB,  setDisplayBB]  = useState(true)
   const [showFilter,      setShowFilter]      = useState(false)
   const [filterPlayed,    setFilterPlayed]    = useState(false)
   const [filterCards,     setFilterCards]     = useState([])
