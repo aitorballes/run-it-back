@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { generateHandShareToken, fetchHandByShareToken } from '../lib/db'
 import ggIcon from '../assets/ggpoker.png'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
@@ -238,7 +239,7 @@ function badgeInfo(action, fmt = fmtChips) {
 
 // ── Main Component ────────────────────────────────────────────────────
 export default function Visualizer() {
-  const { id, token } = useParams()
+  const { id, token, handToken } = useParams()
   const navigate = useNavigate()
 
   const [tournament, setTournament] = useState(null)
@@ -252,8 +253,11 @@ export default function Visualizer() {
   const [showFilter,      setShowFilter]      = useState(false)
   const [filterPlayed,    setFilterPlayed]    = useState(false)
   const [filterCards,     setFilterCards]     = useState([])
+  const [filterPositions, setFilterPositions] = useState([])
   const [draftPlayed,     setDraftPlayed]     = useState(false)
   const [draftCards,      setDraftCards]      = useState([])
+  const [draftPositions,  setDraftPositions]  = useState([])
+  const [handCopied,      setHandCopied]      = useState(false)
   const [showMobileHands, setShowMobileHands] = useState(false)
   const [isMobile,        setIsMobile]        = useState(() => window.innerWidth < 768)
 
@@ -264,6 +268,13 @@ export default function Visualizer() {
   useEffect(() => {
     async function load() {
       try {
+        if (handToken) {
+          const row = await fetchHandByShareToken(handToken)
+          const { data: t } = await supabase.from('tournaments').select('*').eq('id', row.tournament_id).single()
+          setTournament(t)
+          setHands([{ ...row.raw, _dbId: row.id }])
+          return
+        }
         let t, tournamentId
         if (token) {
           const { data } = await supabase.from('tournaments').select('*').eq('share_token', token).single()
@@ -277,16 +288,16 @@ export default function Visualizer() {
         setTournament(t)
         if (!tournamentId) return
         const { data: rows } = await supabase
-          .from('hands').select('raw').eq('tournament_id', tournamentId).order('id', { ascending: true })
+          .from('hands').select('id, raw').eq('tournament_id', tournamentId).order('id', { ascending: true })
         const sorted = (rows || [])
-          .map(r => r.raw)
+          .map(r => ({ ...r.raw, _dbId: r.id }))
           .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''))
         setHands(sorted)
       } catch(e) { console.error(e) }
       finally { setLoading(false) }
     }
     load()
-  }, [id, token])
+  }, [id, token, handToken])
 
   // ── Rescale ──
   useEffect(() => {
@@ -294,7 +305,7 @@ export default function Visualizer() {
       const area = areaRef.current
       if (!area) return
       const availW = area.clientWidth - 24
-      const availH = area.clientHeight - 130
+      const availH = area.clientHeight - 150
       setScale(Math.min(availW / 800, availH / 540, 1.0))
     }
     rescale()
@@ -351,23 +362,30 @@ export default function Visualizer() {
   function openFilter() {
     setDraftPlayed(filterPlayed)
     setDraftCards([...filterCards])
+    setDraftPositions([...filterPositions])
     setShowFilter(true)
   }
   function applyFilter() {
     setFilterPlayed(draftPlayed)
     setFilterCards(draftCards)
+    setFilterPositions(draftPositions)
     setShowFilter(false)
     // Jump to first hand that passes the new filter
     const firstIdx = hands.findIndex(h => {
       if (draftPlayed && heroFoldedPreflop(h)) return false
       if (draftCards.length > 0 && !draftCards.every(c => (h.holeCards?.Hero ?? []).includes(c))) return false
+      if (draftPositions.length > 0) {
+        const heroSeat = h.seats.find(s => s.player === 'Hero')
+        const heroPos  = heroSeat ? getPositionLabel(heroSeat.num, h.seats, h.buttonSeat) : ''
+        if (!draftPositions.includes(heroPos)) return false
+      }
       return true
     })
     if (firstIdx >= 0) { setCurIdx(firstIdx); setCurStep(0); setPlaying(false) }
   }
   function clearFilter() {
-    setFilterPlayed(false); setFilterCards([])
-    setDraftPlayed(false);  setDraftCards([])
+    setFilterPlayed(false); setFilterCards([]); setFilterPositions([])
+    setDraftPlayed(false);  setDraftCards([]);  setDraftPositions([])
     setShowFilter(false)
   }
   function toggleDraftCard(code) {
@@ -377,6 +395,22 @@ export default function Visualizer() {
       return [...prev, code]
     })
   }
+  function toggleDraftPosition(pos) {
+    setDraftPositions(prev =>
+      prev.includes(pos) ? prev.filter(p => p !== pos) : [...prev, pos]
+    )
+  }
+
+  async function shareCurrentHand() {
+    const dbId = hands[curIdx]?._dbId
+    if (!dbId) return
+    try {
+      const t = await generateHandShareToken(dbId)
+      await navigator.clipboard.writeText(`${window.location.origin}/hand-share/${t}`)
+      setHandCopied(true)
+      setTimeout(() => setHandCopied(false), 2500)
+    } catch(e) { console.error(e) }
+  }
 
   function jumpToStreet(street) {
     const h = hands[curIdx]
@@ -385,10 +419,10 @@ export default function Visualizer() {
   }
 
   if (loading) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Cargando...</div>
-  if (!tournament && token) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Torneo no encontrado o enlace inválido.</div>
+  if (!tournament && (token || handToken)) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Contenido no encontrado o enlace inválido.</div>
   if (!hands.length) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Sin manos.</div>
 
-  const hasFilters = filterPlayed || filterCards.length > 0
+  const hasFilters = filterPlayed || filterCards.length > 0 || filterPositions.length > 0
   const displayHandsWithIdx = hands
     .map((h, i) => ({ h, i }))
     .filter(({ h }) => {
@@ -396,6 +430,11 @@ export default function Visualizer() {
       if (filterCards.length > 0) {
         const heroCards = h.holeCards?.Hero ?? []
         if (!filterCards.every(c => heroCards.includes(c))) return false
+      }
+      if (filterPositions.length > 0) {
+        const heroSeat = h.seats.find(s => s.player === 'Hero')
+        const heroPos  = heroSeat ? getPositionLabel(heroSeat.num, h.seats, h.buttonSeat) : ''
+        if (!filterPositions.includes(heroPos)) return false
       }
       return true
     })
@@ -438,7 +477,7 @@ export default function Visualizer() {
 
       {/* ── HEADER ── */}
       <div style={hdr.root}>
-        {!token && <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>}
+        {!token && !handToken && <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>}
         <div style={hdr.center}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <img
@@ -452,20 +491,29 @@ export default function Visualizer() {
           <span style={hdr.meta}>Mesa {hand.tableNum} · {hand.datetime}</span>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
-          {isMobile && (
+          {!handToken && isMobile && (
             <button style={hdr.handsBtn} onClick={() => setShowMobileHands(true)}>
               ☰ {dispIdx+1}/{displayHandsWithIdx.length}
             </button>
           )}
-          <button style={{ ...hdr.filterBtn, ...(hasFilters ? hdr.filterBtnActive : {}) }} onClick={openFilter}>
-            <span style={{ fontSize:15, lineHeight:1 }}>⌕</span>
-            Filtrar
-            {hasFilters && <span style={hdr.filterDot} />}
-          </button>
-          <div style={{ textAlign:'right' }}>
-            <div style={{ fontSize:11, color:'#70aaff', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.3px' }}>#{hand.id}</div>
-            <div style={hdr.counter}>{dispIdx + 1} / {displayHandsWithIdx.length}</div>
-          </div>
+          {!handToken && (
+            <button style={{ ...hdr.filterBtn, ...(hasFilters ? hdr.filterBtnActive : {}) }} onClick={openFilter}>
+              <span style={{ fontSize:15, lineHeight:1 }}>⌕</span>
+              Filtrar
+              {hasFilters && <span style={hdr.filterDot} />}
+            </button>
+          )}
+          {!token && !handToken && (
+            <button style={hdr.filterBtn} onClick={shareCurrentHand}>
+              {handCopied ? '✓ Copiado' : '⤴ Compartir'}
+            </button>
+          )}
+          {!handToken && (
+            <div style={{ textAlign:'right' }}>
+              <div style={{ fontSize:11, color:'#70aaff', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.3px' }}>#{hand.id}</div>
+              <div style={hdr.counter}>{dispIdx + 1} / {displayHandsWithIdx.length}</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -688,7 +736,7 @@ export default function Visualizer() {
         </div>
 
         {/* ── RIGHT PANEL ── */}
-        <div style={{ ...rp.root, display: isMobile ? 'none' : 'flex' }}>
+        <div style={{ ...rp.root, display: isMobile || handToken ? 'none' : 'flex' }}>
 
           {/* Header */}
           <div style={rp.handsHeader}>
@@ -834,6 +882,36 @@ export default function Visualizer() {
                 </label>
               </div>
 
+              {/* Posición del Hero */}
+              <div style={modal.field}>
+                <label style={modal.fieldLabel}>Posición del Hero</label>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                  {['BTN','CO','HJ','LJ','MP','MP+1','UTG','UTG+1','SB','BB'].map(pos => {
+                    const sel = draftPositions.includes(pos)
+                    return (
+                      <button key={pos} onClick={() => toggleDraftPosition(pos)} style={{
+                        padding:'5px 11px', borderRadius:7, fontSize:12, fontWeight:700,
+                        cursor:'pointer', border:`1px solid ${sel ? '#70c0ff' : '#2a3a52'}`,
+                        background: sel ? '#1a5090' : 'rgba(255,255,255,0.04)',
+                        color: sel ? '#d0e8ff' : '#4a6880',
+                        boxShadow: sel ? '0 0 6px rgba(100,180,255,0.3)' : 'none',
+                        transition:'all 0.1s'
+                      }}>
+                        {pos}
+                      </button>
+                    )
+                  })}
+                </div>
+                {draftPositions.length > 0 && (
+                  <button onClick={() => setDraftPositions([])} style={{
+                    alignSelf:'flex-start', fontSize:11, background:'#2a1a1a', color:'#d06060',
+                    border:'1px solid #4a2020', borderRadius:6, padding:'4px 9px', cursor:'pointer', marginTop:2
+                  }}>
+                    ✕ Borrar
+                  </button>
+                )}
+              </div>
+
               {/* Buscar cartas */}
               <div style={modal.field}>
                 <label style={modal.fieldLabel}>Buscar cartas ({draftCards.length}/2)</label>
@@ -918,7 +996,7 @@ const hdr = {
 
 const ta = {
   root:      { flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-               position:'relative', overflow:'hidden', gap:10 },
+               position:'relative', overflow:'hidden', gap:10, paddingTop:20 },
   info:      { display:'flex', flexDirection:'column', alignItems:'center', gap:3, flexShrink:0 },
   infoName:  { fontSize:15, fontWeight:800, color:'#90b8e0' },
   infoLevel: { fontSize:12, fontWeight:600, color:'#4a6a88' },

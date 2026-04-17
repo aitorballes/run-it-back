@@ -198,6 +198,25 @@ export async function generateShareToken(tournamentDbId) {
   return data.share_token
 }
 
+export async function generateHandShareToken(handDbId) {
+  const { data: existing } = await supabase
+    .from('hands').select('share_token').eq('id', handDbId).single()
+  if (existing?.share_token) return existing.share_token
+  const token = crypto.randomUUID()
+  const { data, error } = await supabase
+    .from('hands').update({ share_token: token }).eq('id', handDbId)
+    .select('share_token').single()
+  if (error) throw error
+  return data.share_token
+}
+
+export async function fetchHandByShareToken(handToken) {
+  const { data, error } = await supabase
+    .from('hands').select('id, raw, tournament_id').eq('share_token', handToken).single()
+  if (error) throw error
+  return data
+}
+
 export async function fetchHands(tournamentDbId) {
   const { data, error } = await supabase
     .from('hands')
