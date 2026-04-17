@@ -25,6 +25,7 @@ function AppRoutes() {
       <Route path="/tournament/:id" element={<PrivateRoute><Visualizer /></PrivateRoute>} />
       <Route path="/share/:token" element={<Visualizer />} />
       <Route path="/hand-share/:handToken" element={<Visualizer />} />
+      <Route path="/study/results" element={<PrivateRoute><Visualizer /></PrivateRoute>} />
     </Routes>
   )
 }

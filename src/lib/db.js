@@ -217,6 +217,24 @@ export async function fetchHandByShareToken(handToken) {
   return data
 }
 
+export async function fetchAllUserHands(userId) {
+  const { data: tours } = await supabase
+    .from('tournaments').select('id, name').eq('user_id', userId)
+  if (!tours?.length) return []
+  const tourMap = new Map(tours.map(t => [t.id, t.name]))
+  const tourIds = tours.map(t => t.id)
+  const CHUNK = 20
+  const results = []
+  for (let i = 0; i < tourIds.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('hands').select('id, raw, tournament_id')
+      .in('tournament_id', tourIds.slice(i, i + CHUNK))
+    if (error) throw error
+    if (data) results.push(...data.map(h => ({ ...h, tournamentName: tourMap.get(h.tournament_id) })))
+  }
+  return results
+}
+
 export async function fetchHands(tournamentDbId) {
   const { data, error } = await supabase
     .from('hands')

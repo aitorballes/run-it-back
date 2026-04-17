@@ -8,7 +8,8 @@ import psIcon from '../assets/pokerstars.png'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
-import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds } from '../lib/db'
+import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchAllUserHands } from '../lib/db'
+import { getPositionLabel, heroFoldedPreflop, preflopRaiseCount, playersWhoSawFlop } from '../lib/handUtils'
 
 function extractBuyin(name) {
   if (!name) return null
@@ -17,6 +18,8 @@ function extractBuyin(name) {
 }
 
 const EMPTY_FILTERS = { name: '', dateFrom: '', dateTo: '', buyinMin: '', buyinMax: '' }
+const EMPTY_STUDY   = { positions: [], notFoldedPreflop: false, potType: null, players: null }
+const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
 
 export default function Dashboard() {
   const { user, signOut } = useAuth()
@@ -37,6 +40,49 @@ export default function Dashboard() {
   const [isMobile,         setIsMobile]         = useState(() => window.innerWidth < 768)
   const [openMenu,         setOpenMenu]         = useState(null) // tournament id with open menu
   const [copied,           setCopied]           = useState(false)
+  const [showStudy,        setShowStudy]        = useState(false)
+  const [studyDraft,       setStudyDraft]       = useState(EMPTY_STUDY)
+  const [studyLoading,     setStudyLoading]     = useState(false)
+  const [studyNoResults,   setStudyNoResults]   = useState(false)
+  const [studyError,       setStudyError]       = useState(null)
+
+  async function handleStudySearch() {
+    setStudyLoading(true)
+    setStudyNoResults(false)
+    setStudyError(null)
+    try {
+      const rows = await fetchAllUserHands(user.id)
+      const matched = rows.filter(({ raw: h }) => {
+        if (studyDraft.positions.length > 0) {
+          const heroSeat = h.seats?.find(s => s.player === 'Hero')
+          if (!heroSeat) return false
+          const pos = getPositionLabel(heroSeat.num, h.seats, h.buttonSeat)
+          if (!studyDraft.positions.includes(pos)) return false
+        }
+        if (studyDraft.notFoldedPreflop && heroFoldedPreflop(h)) return false
+        if (studyDraft.potType === 'srp'      && preflopRaiseCount(h) !== 1) return false
+        if (studyDraft.potType === 'threebet' && preflopRaiseCount(h) < 2)   return false
+        if (studyDraft.players !== null) {
+          if (!h.board?.flop?.length) return false
+          const cnt = playersWhoSawFlop(h)
+          if (studyDraft.players === 'hu'       && cnt !== 2) return false
+          if (studyDraft.players === 'multiway' && cnt < 3)   return false
+        }
+        return true
+      })
+      if (matched.length === 0) {
+        setStudyNoResults(true)
+      } else {
+        setShowStudy(false)
+        navigate('/study/results', { state: { studyHands: matched } })
+      }
+    } catch (e) {
+      console.error(e)
+      setStudyError('Error al buscar manos. Inténtalo de nuevo.')
+    } finally {
+      setStudyLoading(false)
+    }
+  }
 
   async function handleDelete() {
     if (!confirmDelete) return
@@ -253,6 +299,11 @@ export default function Dashboard() {
           <div style={s.headerRight}>
             <input ref={fileInputRef} type="file" accept=".txt" multiple style={{ display:'none' }} onChange={handleFiles} />
 
+            {/* Study button */}
+            <button style={s.studyBtn} onClick={() => { setStudyDraft(EMPTY_STUDY); setStudyNoResults(false); setStudyError(null); setShowStudy(true) }}>
+              ♟ Estudia tu juego
+            </button>
+
             {/* Filter button */}
             <button style={{ ...s.filterBtn, ...(hasFilters ? s.filterBtnActive : {}) }} onClick={openFilter}>
               <span style={{ fontSize: 15, lineHeight: 1 }}>⌕</span>
@@ -444,6 +495,92 @@ export default function Dashboard() {
                 disabled={deleting}
               >
                 {deleting ? 'Borrando...' : 'Sí, borrar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STUDY MODAL */}
+      {showStudy && (
+        <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setShowStudy(false)}>
+          <div style={s.modal}>
+            <div style={s.modalHeader}>
+              <span style={s.modalTitle}>♟ Estudia tu juego</span>
+              <button style={s.modalClose} onClick={() => setShowStudy(false)}>✕</button>
+            </div>
+
+            <div style={s.modalBody}>
+              {/* Posición */}
+              <div style={s.field}>
+                <label style={s.fieldLabel}>Posición del Hero</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {ALL_POSITIONS.map(pos => {
+                    const active = studyDraft.positions.includes(pos)
+                    return (
+                      <button key={pos}
+                        style={{ ...s.chipBtn, ...(active ? s.chipBtnActive : {}) }}
+                        onClick={() => setStudyDraft(d => ({
+                          ...d,
+                          positions: active ? d.positions.filter(p => p !== pos) : [...d.positions, pos],
+                        }))}
+                      >{pos}</button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Solo jugadas */}
+              <div style={s.field}>
+                <label style={s.checkLabel}>
+                  <input type="checkbox" checked={studyDraft.notFoldedPreflop}
+                    onChange={e => setStudyDraft(d => ({ ...d, notFoldedPreflop: e.target.checked }))}
+                    style={{ accentColor: '#50d080', width: 15, height: 15 }} />
+                  Solo manos jugadas (Hero no foldea preflop)
+                </label>
+              </div>
+
+              {/* Tipo de bote */}
+              <div style={s.field}>
+                <label style={s.fieldLabel}>Tipo de bote</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[{ value: null, label: 'Cualquiera' }, { value: 'srp', label: 'SRP' }, { value: 'threebet', label: '3-bet pot' }].map(opt => {
+                    const active = studyDraft.potType === opt.value
+                    return (
+                      <button key={String(opt.value)}
+                        style={{ ...s.chipBtn, flex: 1, ...(active ? s.chipBtnActive : {}) }}
+                        onClick={() => setStudyDraft(d => ({ ...d, potType: opt.value }))}
+                      >{opt.label}</button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Jugadores en el bote */}
+              <div style={s.field}>
+                <label style={s.fieldLabel}>Jugadores en el bote</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[{ value: null, label: 'Cualquiera' }, { value: 'hu', label: 'Heads Up' }, { value: 'multiway', label: 'Multiway' }].map(opt => {
+                    const active = studyDraft.players === opt.value
+                    return (
+                      <button key={String(opt.value)}
+                        style={{ ...s.chipBtn, flex: 1, ...(active ? s.chipBtnActive : {}) }}
+                        onClick={() => setStudyDraft(d => ({ ...d, players: opt.value }))}
+                      >{opt.label}</button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {studyError && <div style={s.studyError}>{studyError}</div>}
+              {studyNoResults && <div style={s.studyNoResults}>No se encontraron manos con esos filtros.</div>}
+            </div>
+
+            <div style={s.modalFooter}>
+              <button style={s.clearBtn} onClick={() => setShowStudy(false)} disabled={studyLoading}>Cancelar</button>
+              <button style={{ ...s.studySearchBtn, opacity: studyLoading ? 0.6 : 1 }}
+                onClick={handleStudySearch} disabled={studyLoading}>
+                {studyLoading ? 'Buscando...' : 'Buscar manos'}
               </button>
             </div>
           </div>
@@ -1098,5 +1235,39 @@ const s = {
     fontWeight: 800,
     cursor: 'pointer',
     boxShadow: '0 4px 20px rgba(20,60,160,0.35)',
+  },
+  chipBtn: {
+    background: 'none', border: '1px solid #2a3a52', borderRadius: 7,
+    padding: '7px 13px', color: '#4a7090', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  },
+  chipBtnActive: { background: 'rgba(60,180,120,0.12)', border: '1px solid #3a8a5a', color: '#50d080' },
+  checkLabel: {
+    display: 'flex', alignItems: 'center', gap: 9,
+    cursor: 'pointer', fontSize: 13, color: '#7ab0d8', fontWeight: 600,
+  },
+  studyError: {
+    fontSize: 12, color: '#e07070', background: 'rgba(160,30,30,0.1)',
+    border: '1px solid rgba(160,30,30,0.2)', borderRadius: 8, padding: '10px 14px',
+  },
+  studyNoResults: {
+    fontSize: 12, color: '#4a7090', background: 'rgba(30,60,90,0.1)',
+    border: '1px solid rgba(30,60,90,0.2)', borderRadius: 8, padding: '10px 14px',
+  },
+  studySearchBtn: {
+    flex: 2,
+    background: 'linear-gradient(135deg, #1a3a20, #0c2014)', border: '1px solid #2a6a3a',
+    borderRadius: 9, padding: '10px', color: '#50d080', fontSize: 13, fontWeight: 800,
+    cursor: 'pointer', boxShadow: '0 4px 20px rgba(20,100,50,0.3)',
+  },
+  studyBtn: {
+    background: 'linear-gradient(135deg, #1a3a20, #0c2014)',
+    border: '1px solid #2a6a3a',
+    borderRadius: 8,
+    padding: '7px 14px',
+    color: '#50d080',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 2px 12px rgba(20,100,50,0.25)',
   },
 }

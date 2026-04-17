@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateHandShareToken, fetchHandByShareToken } from '../lib/db'
 import ggIcon from '../assets/ggpoker.png'
@@ -241,6 +241,7 @@ function badgeInfo(action, fmt = fmtChips) {
 export default function Visualizer() {
   const { id, token, handToken } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [tournament, setTournament] = useState(null)
   const [hands,      setHands]      = useState([])
@@ -268,6 +269,13 @@ export default function Visualizer() {
   useEffect(() => {
     async function load() {
       try {
+        if (location.state?.studyHands) {
+          const rows = location.state.studyHands
+          setTournament({ name: 'Búsqueda', isStudy: true })
+          setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
+          setLoading(false)
+          return
+        }
         if (handToken) {
           const row = await fetchHandByShareToken(handToken)
           const { data: t } = await supabase.from('tournaments').select('*').eq('id', row.tournament_id).single()
@@ -485,7 +493,7 @@ export default function Visualizer() {
               alt={tournament?.platform || 'ggpoker'}
               style={{ width:22, height:22, borderRadius:5, objectFit:'contain', flexShrink:0 }}
             />
-            <span style={hdr.name}>{tournament?.name}</span>
+            <span style={hdr.name}>{hand._tournamentName ?? tournament?.name}</span>
           </div>
           <span style={hdr.level}>Nivel {hand.level} · {fmtChips(hand.sb)}/{fmtChips(hand.bb)}</span>
           <span style={hdr.meta}>Mesa {hand.tableNum} · {hand.datetime}</span>
