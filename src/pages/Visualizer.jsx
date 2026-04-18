@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { generateHandShareToken, fetchHandByShareToken } from '../lib/db'
 import ggIcon from '../assets/ggpoker.png'
@@ -242,6 +243,7 @@ export default function Visualizer() {
   const { id, token, handToken } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
 
   const [tournament, setTournament] = useState(null)
   const [hands,      setHands]      = useState([])
@@ -486,6 +488,12 @@ export default function Visualizer() {
       {/* ── HEADER ── */}
       <div style={hdr.root}>
         {!token && !handToken && <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>}
+        {(token || handToken) && (
+          <a href="#" style={hdr.logo} onClick={e => { e.preventDefault(); navigate(user ? '/' : '/login') }}>
+            <span style={hdr.logoSpade}>♠</span>
+            <span style={hdr.logoText}>RunItBack</span>
+          </a>
+        )}
         <div style={hdr.center}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <img
@@ -716,9 +724,9 @@ export default function Visualizer() {
             {/* Step nav */}
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               {[
-                { id:'prev',     icon:'⏮\uFE0E', disabled: dispIdx <= 0,            action: () => goHand(displayHandsWithIdx[dispIdx-1]?.i) },
+                { id:'prev',     icon:'⏮\uFE0E', disabled: dispIdx <= 0 || displayHandsWithIdx.length <= 1,            action: () => goHand(displayHandsWithIdx[dispIdx-1]?.i) },
                 { id:'stepPrev', icon:'⏪\uFE0E', disabled: curStep <= 0,            action: () => { setPlaying(false); setCurStep(s => Math.max(0, s-1)) } },
-              ].map(b => <button key={b.id} style={ctrlBtn} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
+              ].map(b => <button key={b.id} style={{ ...ctrlBtn, ...(b.disabled ? ctrlBtnDisabled : {}) }} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
 
               <button style={{ ...ctrlBtn, ...(playing ? ctrlBtnPlaying : {}) }}
                 onClick={() => setPlaying(p => !p)}>
@@ -727,8 +735,8 @@ export default function Visualizer() {
 
               {[
                 { id:'stepNext', icon:'⏩\uFE0E', disabled: curStep >= seq.length-1, action: () => { setPlaying(false); setCurStep(s => Math.min(seq.length-1, s+1)) } },
-                { id:'next',     icon:'⏭\uFE0E', disabled: dispIdx >= displayHandsWithIdx.length-1, action: () => goHand(displayHandsWithIdx[dispIdx+1]?.i) },
-              ].map(b => <button key={b.id} style={ctrlBtn} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
+                { id:'next',     icon:'⏭\uFE0E', disabled: dispIdx >= displayHandsWithIdx.length-1 || displayHandsWithIdx.length <= 1, action: () => goHand(displayHandsWithIdx[dispIdx+1]?.i) },
+              ].map(b => <button key={b.id} style={{ ...ctrlBtn, ...(b.disabled ? ctrlBtnDisabled : {}) }} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
 
               {/* BB toggle */}
               <button style={{ ...ctrlBtn, ...(displayBB ? ctrlBtnPlaying : {}), fontSize:13, fontWeight:900, width:46, marginLeft:14 }}
@@ -982,6 +990,9 @@ const page = { height:'100vh', background:'radial-gradient(ellipse at 30% 20%,#1
 const hdr = {
   root:    { background:'#1a1e2a', borderBottom:'1px solid #2a3040', padding:'8px 16px',
              display:'flex', alignItems:'center', gap:16, flexShrink:0, flexWrap:'wrap' },
+  logo:    { display:'flex', alignItems:'center', gap:6, textDecoration:'none', flexShrink:0 },
+  logoSpade: { fontSize:20, color:'#60b0ff', textShadow:'0 0 16px rgba(60,140,255,0.6)', lineHeight:1 },
+  logoText:  { fontSize:14, fontWeight:800, color:'#e8f0ff', letterSpacing:'0.5px' },
   back:    { background:'#1a2838', color:'#5080a8', border:'1px solid #2a3a50', padding:'5px 12px',
              borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:700, whiteSpace:'nowrap' },
   center:  { flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2 },
@@ -1039,6 +1050,11 @@ const ctrlBtn = {
 const ctrlBtnPlaying = {
   background:'linear-gradient(to bottom,#3a8040 0%,#1e5028 100%)',
   color:'#a0ffa0', borderColor:'#2a6030',
+}
+const ctrlBtnDisabled = {
+  background:'linear-gradient(to bottom,#3a3a3a 0%,#252525 100%)',
+  color:'#484848', borderColor:'#303030', cursor:'default',
+  boxShadow:'none',
 }
 
 const rp = {
