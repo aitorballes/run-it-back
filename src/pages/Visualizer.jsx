@@ -150,6 +150,39 @@ function getPotByStep(hand, stepIdx) {
   return pot
 }
 
+function getStacksByStep(hand, stepIdx) {
+  const stacks = new Map()
+  for (const seat of hand.seats) {
+    stacks.set(seat.player, seat.chips - (hand.ante > 0 ? hand.ante : 0))
+  }
+  if (!hand.sequence.length || stepIdx < 0) return stacks
+
+  const committed = new Map() // 'street:player' → total committed this street
+  const maxStep = Math.min(stepIdx, hand.sequence.length - 1)
+  for (let i = 0; i <= maxStep; i++) {
+    const step = hand.sequence[i]
+    if (!step || step.type !== 'action') continue
+    const a = hand.actions[step.street]?.[step.idx]
+    if (!a) continue
+
+    const key = `${step.street}:${a.player}`
+    const prev = committed.get(key) ?? 0
+    const cur = stacks.get(a.player) ?? 0
+
+    if (['post-sb', 'post-bb', 'bet', 'call'].includes(a.type) && a.amount > 0) {
+      stacks.set(a.player, cur - a.amount)
+      committed.set(key, prev + a.amount)
+    } else if (a.type === 'raise' && a.amount > 0) {
+      const increment = Math.max(0, a.amount - prev)
+      stacks.set(a.player, cur - increment)
+      committed.set(key, a.amount)
+    } else if (a.type === 'uncalled' && a.amount > 0) {
+      stacks.set(a.player, cur + a.amount)
+    }
+  }
+  return stacks
+}
+
 function getBetsByStep(hand, stepIdx) {
   const bets = new Map()
   if (!hand.sequence.length || stepIdx < 0) return bets
@@ -469,6 +502,7 @@ export default function Visualizer() {
 
   const fmt        = makeFmt(displayBB, hand.bb)
   const bets       = getBetsByStep(hand, curStep)
+  const stacks     = getStacksByStep(hand, curStep)
   const runningPot = getPotByStep(hand, curStep)
   const boardCards = []
   if (vi >= 1) boardCards.push(...hand.board.flop)
@@ -626,7 +660,7 @@ export default function Visualizer() {
                       {isHero ? '★ Hero' : seat.player.slice(0,10)}
                     </div>
                     <div style={{ fontSize:13, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700, marginTop:2 }}>
-                      {fmt(seat.chips)}
+                      {fmt(stacks.get(seat.player) ?? seat.chips)}
                     </div>
                   </div>
 
