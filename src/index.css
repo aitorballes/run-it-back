@@ -8,3 +8,23 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #080e18;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e3a52;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a5070;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1e3a52 #080e18;
+}

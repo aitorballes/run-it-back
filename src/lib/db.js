@@ -235,6 +235,47 @@ export async function fetchAllUserHands(userId) {
   return results
 }
 
+export async function fetchTournamentsInRange(userId, fromDate, toDate) {
+  // fromDate/toDate are "YYYY-MM-DD"; DB stores "YYYY/MM/DD HH:MM:SS"
+  const from = fromDate.replace(/-/g, '/')
+  const to   = toDate.replace(/-/g, '/') + ' 99:99:99'
+
+  const { data, error } = await supabase
+    .from('tournaments')
+    .select('id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at')
+    .eq('user_id', userId)
+    .gte('date', from)
+    .lte('date', to)
+    .order('date', { ascending: false })
+
+  if (error) throw error
+  return data
+}
+
+export async function fetchHandsBatch(tournamentDbIds) {
+  if (!tournamentDbIds.length) return new Map()
+  const CHUNK = 20
+  const result = new Map()
+
+  for (let i = 0; i < tournamentDbIds.length; i += CHUNK) {
+    const chunk = tournamentDbIds.slice(i, i + CHUNK)
+    const { data, error } = await supabase
+      .from('hands')
+      .select('id, hand_id, raw, tournament_id')
+      .in('tournament_id', chunk)
+      .order('id', { ascending: true })
+    if (error) throw error
+    if (data) {
+      for (const hand of data) {
+        if (!result.has(hand.tournament_id)) result.set(hand.tournament_id, [])
+        result.get(hand.tournament_id).push(hand)
+      }
+    }
+  }
+
+  return result
+}
+
 export async function fetchHands(tournamentDbId) {
   const { data, error } = await supabase
     .from('hands')

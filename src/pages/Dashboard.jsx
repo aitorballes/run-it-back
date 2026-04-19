@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
+import { strToU8, zipSync } from 'fflate'
+import { serializeTournament, serializeSummary } from '../lib/serializer'
+import { fetchTournamentsInRange, fetchHandsBatch } from '../lib/db'
 import ggIcon from '../assets/ggpoker.png'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
@@ -39,12 +42,148 @@ export default function Dashboard() {
   const [deleting,         setDeleting]         = useState(false)
   const [isMobile,         setIsMobile]         = useState(() => window.innerWidth < 768)
   const [openMenu,         setOpenMenu]         = useState(null) // tournament id with open menu
-  const [copied,           setCopied]           = useState(false)
+  const [toast,            setToast]            = useState(null)
   const [showStudy,        setShowStudy]        = useState(false)
   const [studyDraft,       setStudyDraft]       = useState(EMPTY_STUDY)
   const [studyLoading,     setStudyLoading]     = useState(false)
   const [studyNoResults,   setStudyNoResults]   = useState(false)
   const [studyError,       setStudyError]       = useState(null)
+
+  const [showListMenu,      setShowListMenu]      = useState(false)
+  const [showExport,        setShowExport]        = useState(false)
+  const [exportDateFrom,    setExportDateFrom]    = useState('')
+  const [exportDateTo,      setExportDateTo]      = useState('')
+  const [exportTournaments, setExportTournaments] = useState([])
+  const [exportSelected,    setExportSelected]    = useState(new Set())
+  const [exportLoading,     setExportLoading]     = useState(false)
+  const [exporting,         setExporting]         = useState(false)
+  const [exportProgress,    setExportProgress]    = useState(null)
+  const [exportDone,        setExportDone]        = useState(null)
+  const [exportError,       setExportError]       = useState(null)
+  const [exportLoaded,      setExportLoaded]      = useState(false)
+
+  const [confirmDeleteSession, setConfirmDeleteSession] = useState(null) // { day, items }
+  const [deletingSession,      setDeletingSession]      = useState(false)
+  const [openSessionMenu,      setOpenSessionMenu]      = useState(null)  // day key
+
+  function sanitizeFilename(name) {
+    return (name || 'torneo').replace(/[^a-zA-Z0-9_\-.]/g, '_').slice(0, 80)
+  }
+
+  function downloadBlob(uint8Array, filename, mime) {
+    const blob = new Blob([uint8Array], { type: mime })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = filename
+    document.body.appendChild(a); a.click()
+    document.body.removeChild(a); URL.revokeObjectURL(url)
+  }
+
+  function downloadText(text, filename) {
+    downloadBlob(new TextEncoder().encode(text), filename, 'text/plain')
+  }
+
+  function openExportModal() {
+    setShowExport(true)
+    setExportTournaments([])
+    setExportSelected(new Set())
+    setExportLoading(false)
+    setExporting(false)
+    setExportProgress(null)
+    setExportDone(null)
+    setExportError(null)
+    setExportLoaded(false)
+  }
+
+  async function loadExportTournaments() {
+    if (!exportDateFrom || !exportDateTo) return
+    setExportLoading(true)
+    setExportError(null)
+    setExportDone(null)
+    setExportLoaded(false)
+    try {
+      const data = await fetchTournamentsInRange(user.id, exportDateFrom, exportDateTo)
+      setExportTournaments(data)
+      setExportSelected(new Set(data.map(t => t.id)))
+      setExportLoaded(true)
+    } catch (e) {
+      console.error(e)
+      setExportError('Error al cargar torneos.')
+    } finally {
+      setExportLoading(false)
+    }
+  }
+
+  function toggleExportTournament(id) {
+    setExportSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleExportAll() {
+    const allSelected = exportTournaments.every(t => exportSelected.has(t.id))
+    setExportSelected(allSelected ? new Set() : new Set(exportTournaments.map(t => t.id)))
+  }
+
+  function toggleExportSession(items) {
+    const allSelected = items.every(t => exportSelected.has(t.id))
+    setExportSelected(prev => {
+      const next = new Set(prev)
+      if (allSelected) { items.forEach(t => next.delete(t.id)) }
+      else             { items.forEach(t => next.add(t.id)) }
+      return next
+    })
+  }
+
+  async function handleExport() {
+    const selected = exportTournaments.filter(t => exportSelected.has(t.id))
+    if (!selected.length) return
+    setExporting(true)
+    setExportProgress({ current: 0, total: selected.length })
+    setExportError(null)
+    setExportDone(null)
+    try {
+      const handsMap = await fetchHandsBatch(selected.map(t => t.id))
+      let totalHands = 0
+      const files = {}
+
+      for (let i = 0; i < selected.length; i++) {
+        const t = selected[i]
+        const hands = handsMap.get(t.id) || []
+        totalHands += hands.length
+        const text    = serializeTournament(t, hands)
+        const summary = serializeSummary(t)
+        const fname   = `${sanitizeFilename(t.name)}_${t.tournament_id}`
+
+        if (selected.length === 1) {
+          downloadText(text, `${fname}.txt`)
+          if (summary) downloadText(summary, `${fname}_summary.txt`)
+        } else {
+          files[`${fname}.txt`] = strToU8(text)
+          if (summary) files[`${fname}_summary.txt`] = strToU8(summary)
+        }
+        setExportProgress({ current: i + 1, total: selected.length })
+      }
+
+      if (selected.length > 1) {
+        const zip = zipSync(files)
+        downloadBlob(zip, `torneos_${exportDateFrom}_${exportDateTo}.zip`, 'application/zip')
+      }
+
+      setShowExport(false)
+      const msg = `${selected.length} torneo${selected.length !== 1 ? 's' : ''} exportado${selected.length !== 1 ? 's' : ''} · ${totalHands} manos`
+      setToast(msg)
+      setTimeout(() => setToast(null), 3500)
+    } catch (e) {
+      console.error(e)
+      setExportError('Error al exportar. Inténtalo de nuevo.')
+    } finally {
+      setExporting(false)
+      setExportProgress(null)
+    }
+  }
 
   async function handleStudySearch() {
     setStudyLoading(true)
@@ -84,6 +223,22 @@ export default function Dashboard() {
     }
   }
 
+  async function handleDeleteSession() {
+    if (!confirmDeleteSession) return
+    setDeletingSession(true)
+    try {
+      for (const t of confirmDeleteSession.items) {
+        await deleteTournament(t.id)
+      }
+      setConfirmDeleteSession(null)
+      await loadTournaments()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setDeletingSession(false)
+    }
+  }
+
   async function handleDelete() {
     if (!confirmDelete) return
     setDeleting(true)
@@ -104,8 +259,8 @@ export default function Dashboard() {
       const token = await generateShareToken(tournamentDbId)
       const url = `${window.location.origin}/share/${token}`
       await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
+      setToast('¡Enlace copiado!')
+      setTimeout(() => setToast(null), 2500)
     } catch (e) {
       console.error(e)
     }
@@ -117,6 +272,20 @@ export default function Dashboard() {
     document.addEventListener('click', handleClick)
     return () => document.removeEventListener('click', handleClick)
   }, [openMenu])
+
+  useEffect(() => {
+    if (!showListMenu) return
+    function handleClick() { setShowListMenu(false) }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [showListMenu])
+
+  useEffect(() => {
+    if (!openSessionMenu) return
+    function handleClick() { setOpenSessionMenu(null) }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [openSessionMenu])
 
   function toggleDay(day) {
     setExpandedDays(prev => {
@@ -217,10 +386,12 @@ export default function Dashboard() {
       if (skipped           > 0) parts.push(`${skipped} ya existía${skipped > 1 ? 'n' : ''}`)
       if (summariesUpdated  > 0) parts.push(`${summariesUpdated} resumen${summariesUpdated > 1 ? 'es' : ''} actualizado${summariesUpdated > 1 ? 's' : ''}`)
       setUploadStatus({ ok: true, message: parts.join(' · ') || 'Sin cambios' })
+      setTimeout(() => setUploadStatus(null), 4000)
       await loadTournaments()
     } catch (err) {
       console.error(err)
       setUploadStatus({ ok: false, message: 'Error al procesar los archivos.' })
+      setTimeout(() => setUploadStatus(null), 4000)
     } finally {
       setUploading(false)
       setProgress(null)
@@ -292,41 +463,27 @@ export default function Dashboard() {
       {/* HEADER */}
       <div style={s.header}>
         <div style={s.headerInner}>
-          <div style={s.logo}>
-            <span style={s.logoSpade}>♠</span>
-            <span style={s.logoText}>RunItBack</span>
-          </div>
-          <div style={s.headerRight}>
-            <input ref={fileInputRef} type="file" accept=".txt" multiple style={{ display:'none' }} onChange={handleFiles} />
-
-            {/* Study button */}
-            <button style={s.studyBtn} onClick={() => { setStudyDraft(EMPTY_STUDY); setStudyNoResults(false); setStudyError(null); setShowStudy(true) }}>
-              ♟ Estudia tu juego
-            </button>
-
-            {/* Filter button */}
-            <button style={{ ...s.filterBtn, ...(hasFilters ? s.filterBtnActive : {}) }} onClick={openFilter}>
-              <span style={{ fontSize: 15, lineHeight: 1 }}>⌕</span>
-              Filtrar
-              {hasFilters && <span style={s.filterDot} />}
-            </button>
-
-            {!isMobile && (uploading && progress ? (
-              <div style={s.progressWrap}>
-                <div style={s.progressBar}>
-                  <div style={{ ...s.progressFill, width: `${(progress.current / progress.total) * 100}%` }} />
-                </div>
-                <span style={s.progressText}>{progress.current} / {progress.total} torneos</span>
+          <input ref={fileInputRef} type="file" accept=".txt" multiple style={{ display: 'none' }} onChange={handleFiles} />
+          <div style={s.headerLeft}>
+            <div style={s.logo}>
+              <span style={s.logoSpade}>♠</span>
+              <span style={s.logoText}>RunItBack</span>
+            </div>
+            {uploading && progress ? (
+              <div style={s.headerProgress}>
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,70,140,0.25)', width: `${(progress.current / progress.total) * 100}%`, transition: 'width 0.2s', borderRadius: 8 }} />
+                <span style={s.toolbarProgressText}>{progress.current}/{progress.total} torneos</span>
               </div>
             ) : (
-              <button
-                style={{ ...s.uploadBtn, opacity: uploading ? 0.6 : 1 }}
-                onClick={() => fileInputRef.current.click()}
-                disabled={uploading}
-              >
-                + Cargar torneos
+              <button style={s.importBtn} onClick={() => fileInputRef.current.click()} disabled={uploading}>
+                + Importar torneos
               </button>
-            ))}
+            )}
+          </div>
+          <div style={s.headerRight}>
+            <button style={s.studyBtn} onClick={() => { setStudyDraft(EMPTY_STUDY); setStudyNoResults(false); setStudyError(null); setShowStudy(true) }}>
+              🎓 Estudia tu juego
+            </button>
             {!isMobile && <span style={s.email}>{user?.email}</span>}
             <button style={s.signOutBtn} onClick={signOut}>Salir</button>
           </div>
@@ -364,6 +521,37 @@ export default function Dashboard() {
                   <button style={s.clearFiltersBtn} onClick={clearFilter}>✕ Limpiar filtros</button>
                 </span>
               )}
+              <button
+                style={{ ...s.listFilterBtn, ...(hasFilters ? s.listFilterBtnActive : {}) }}
+                onClick={openFilter}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <circle cx="11" cy="11" r="7"/>
+                  <line x1="16.5" y1="16.5" x2="22" y2="22"/>
+                </svg>
+                Filtrar
+                {hasFilters && <span style={s.filterDot} />}
+              </button>
+              <div style={{ position: 'relative' }}>
+                <button
+                  style={s.listMenuBtn}
+                  onClick={e => { e.stopPropagation(); setShowListMenu(v => !v) }}
+                >
+                  ⋯
+                </button>
+                {showListMenu && (
+                  <div style={s.listMenuDropdown} onClick={e => e.stopPropagation()}>
+                    <button style={{ ...s.dropdownItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} onClick={() => { setShowListMenu(false); openExportModal() }}>
+                      Exportar torneos
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <polyline points="8 18 12 22 16 18"/>
+                        <line x1="12" y1="22" x2="12" y2="9"/>
+                        <path d="M4 9V3h16v6"/>
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div style={s.list}>
@@ -387,8 +575,36 @@ export default function Dashboard() {
                         <div>
                           <div style={{ ...s.sessionDay, fontSize: isMobile ? 11 : 13 }}>{formatDayHeader(day)}</div>
                         </div>
-                        <span style={{ fontSize: 11, color: '#2a5070', transition: 'transform 0.2s',
-                          display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+                        {/* Session context menu */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ position: 'relative' }}>
+                            <button
+                              style={s.menuBtn}
+                              onClick={e => { e.stopPropagation(); setOpenSessionMenu(openSessionMenu === day ? null : day) }}
+                            >
+                              ⋯
+                            </button>
+                            {openSessionMenu === day && (
+                              <div style={{ ...s.dropdown, minWidth: 160 }} onClick={e => e.stopPropagation()}>
+                                <button
+                                  style={{ ...s.dropdownItem, color: '#e07070', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
+                                  onClick={() => { setOpenSessionMenu(null); setConfirmDeleteSession({ day, items }) }}
+                                >
+                                  Eliminar sesión
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e07070" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6l-1 14H6L5 6"/>
+                                    <line x1="10" y1="11" x2="10" y2="17"/>
+                                    <line x1="14" y1="11" x2="14" y2="17"/>
+                                    <path d="M9 6V4h6v2"/>
+                                  </svg>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <span style={{ fontSize: 11, color: '#2a5070', transition: 'transform 0.2s',
+                            display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+                        </div>
                       </div>
                       <div style={s.sessionStats}>
                         <div style={s.stat}>
@@ -441,12 +657,24 @@ export default function Dashboard() {
                                 ⋯
                               </button>
                               {openMenu === t.id && (
-                                <div style={s.dropdown} onClick={e => e.stopPropagation()}>
-                                  <button style={s.dropdownItem} onClick={() => { setOpenMenu(null); setConfirmDelete({ id: t.id, name: t.name }) }}>
-                                    Eliminar
-                                  </button>
-                                  <button style={s.dropdownItem} onClick={() => handleShare(t.id)}>
+                                <div style={{ ...s.dropdown, minWidth: 160 }} onClick={e => e.stopPropagation()}>
+                                  <button style={{ ...s.dropdownItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} onClick={() => handleShare(t.id)}>
                                     Compartir
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                      <polyline points="8 6 12 2 16 6"/>
+                                      <line x1="12" y1="2" x2="12" y2="15"/>
+                                      <path d="M4 15v6h16v-6"/>
+                                    </svg>
+                                  </button>
+                                  <button style={{ ...s.dropdownItem, color: '#e07070', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} onClick={() => { setOpenMenu(null); setConfirmDelete({ id: t.id, name: t.name }) }}>
+                                    Eliminar
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e07070" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                      <polyline points="3 6 5 6 21 6"/>
+                                      <path d="M19 6l-1 14H6L5 6"/>
+                                      <line x1="10" y1="11" x2="10" y2="17"/>
+                                      <line x1="14" y1="11" x2="14" y2="17"/>
+                                      <path d="M9 6V4h6v2"/>
+                                    </svg>
                                   </button>
                                 </div>
                               )}
@@ -464,9 +692,9 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* COPIED TOAST */}
-      {copied && (
-        <div style={s.toast}>¡Enlace copiado!</div>
+      {/* TOAST */}
+      {toast && (
+        <div style={s.toast}>{toast}</div>
       )}
 
       {/* DELETE CONFIRM MODAL */}
@@ -501,12 +729,44 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* DELETE SESSION CONFIRM MODAL */}
+      {confirmDeleteSession && (
+        <div style={s.backdrop} onClick={e => e.target === e.currentTarget && !deletingSession && setConfirmDeleteSession(null)}>
+          <div style={{ ...s.modal, width: 'min(380px, calc(100vw - 32px))' }}>
+            <div style={s.modalHeader}>
+              <span style={s.modalTitle}>Borrar sesión</span>
+              <button style={s.modalClose} onClick={() => !deletingSession && setConfirmDeleteSession(null)}>✕</button>
+            </div>
+            <div style={{ padding: '22px 22px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ fontSize: 13, color: '#8ab0cc', margin: 0 }}>
+                ¿Seguro que quieres borrar esta sesión? Se eliminarán todos sus torneos. Esta acción no se puede deshacer.
+              </p>
+              <p style={{ fontSize: 12, color: '#3a6080', margin: 0, fontWeight: 700 }}>
+                {formatDayHeader(confirmDeleteSession.day)} — {confirmDeleteSession.items.length} torneo{confirmDeleteSession.items.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <div style={s.modalFooter}>
+              <button style={s.clearBtn} onClick={() => setConfirmDeleteSession(null)} disabled={deletingSession}>
+                Cancelar
+              </button>
+              <button
+                style={{ ...s.applyBtn, background: 'linear-gradient(135deg, #8a1a1a, #5a0a0a)', borderColor: '#6a2020', opacity: deletingSession ? 0.6 : 1 }}
+                onClick={handleDeleteSession}
+                disabled={deletingSession}
+              >
+                {deletingSession ? 'Borrando...' : `Sí, borrar sesión`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* STUDY MODAL */}
       {showStudy && (
         <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setShowStudy(false)}>
           <div style={s.modal}>
             <div style={s.modalHeader}>
-              <span style={s.modalTitle}>♟ Estudia tu juego</span>
+              <span style={s.modalTitle}>🎓 Estudia tu juego</span>
               <button style={s.modalClose} onClick={() => setShowStudy(false)}>✕</button>
             </div>
 
@@ -667,6 +927,156 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* EXPORT MODAL */}
+      {showExport && (
+        <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setShowExport(false)}>
+          <div style={{ ...s.modal, width: 'min(700px, calc(100vw - 32px))' }}>
+            <div style={s.modalHeader}>
+              <span style={s.modalTitle}>Exportar torneos</span>
+              <button style={s.modalClose} onClick={() => setShowExport(false)}>✕</button>
+            </div>
+
+            <div style={s.modalBody}>
+              {/* Date range */}
+              <div style={s.field}>
+                <label style={s.fieldLabel}>Rango de fechas</label>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <input
+                    style={{ ...s.fieldInput, flex: 1 }}
+                    type="date"
+                    value={exportDateFrom}
+                    onChange={e => { setExportDateFrom(e.target.value); setExportLoaded(false) }}
+                  />
+                  <span style={{ color: '#3a5a70', fontSize: 12, flexShrink: 0 }}>—</span>
+                  <input
+                    style={{ ...s.fieldInput, flex: 1 }}
+                    type="date"
+                    value={exportDateTo}
+                    onChange={e => { setExportDateTo(e.target.value); setExportLoaded(false) }}
+                  />
+                </div>
+              </div>
+
+              {/* Load button (visible before loading) */}
+              {!exportLoaded && (
+                <button
+                  style={{ ...s.applyBtn, opacity: exportLoading || !exportDateFrom || !exportDateTo ? 0.5 : 1 }}
+                  onClick={loadExportTournaments}
+                  disabled={exportLoading || !exportDateFrom || !exportDateTo}
+                >
+                  {exportLoading ? 'Cargando...' : 'Cargar torneos'}
+                </button>
+              )}
+
+              {/* Tournament list */}
+              {exportLoaded && (
+                <>
+                  {exportTournaments.length === 0 ? (
+                    <div style={{ fontSize: 13, color: '#4a7090', textAlign: 'center', padding: '10px 0' }}>
+                      No hay torneos en ese rango de fechas.
+                    </div>
+                  ) : (
+                    <>
+                      {/* Select all + counter */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <label style={{ ...s.checkLabel, fontSize: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={exportTournaments.every(t => exportSelected.has(t.id))}
+                            onChange={toggleExportAll}
+                            style={{ accentColor: '#50d080', width: 14, height: 14 }}
+                          />
+                          Seleccionar todos
+                        </label>
+                        <span style={{ fontSize: 11, color: '#4a7090', fontWeight: 700 }}>
+                          {exportSelected.size}/{exportTournaments.length}
+                        </span>
+                      </div>
+
+                      {/* Scrollable grouped list */}
+                      <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {groupByDay(exportTournaments).map(({ day, items }) => {
+                          const allSel  = items.every(t => exportSelected.has(t.id))
+                          const someSel = items.some(t => exportSelected.has(t.id))
+                          return (
+                            <div key={day}>
+                              {/* Session header */}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #1a2a3a', background: 'rgba(255,255,255,0.02)', borderRadius: '6px 6px 0 0' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={allSel}
+                                  ref={el => { if (el) el.indeterminate = !allSel && someSel }}
+                                  onChange={() => toggleExportSession(items)}
+                                  style={{ accentColor: '#50d080', width: 14, height: 14, flexShrink: 0 }}
+                                />
+                                <span style={{ flex: 1, fontSize: 12, fontWeight: 800, color: '#5a8aaa', textTransform: 'capitalize', letterSpacing: '0.2px' }}>
+                                  {formatDayHeader(day)}
+                                </span>
+                                <span style={{ fontSize: 11, color: '#2a5070', fontWeight: 700, flexShrink: 0 }}>
+                                  {items.length} torneo{items.length !== 1 ? 's' : ''}
+                                </span>
+                              </label>
+                              {/* Tournament rows */}
+                              {items.map(t => (
+                                <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 6px 6px 28px', cursor: 'pointer', borderBottom: '1px solid #0e1828' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={exportSelected.has(t.id)}
+                                    onChange={() => toggleExportTournament(t.id)}
+                                    style={{ accentColor: '#50d080', width: 14, height: 14, flexShrink: 0 }}
+                                  />
+                                  <span style={{ flex: 1, fontSize: 12, color: '#7ab0d8', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {t.name}
+                                  </span>
+                                  <span style={{ fontSize: 11, color: '#2a5070', flexShrink: 0 }}>
+                                    {t.hands_count} manos
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Progress bar */}
+                      {exporting && exportProgress && (
+                        <div style={s.progressWrap}>
+                          <div style={s.progressBar}>
+                            <div style={{ ...s.progressFill, width: `${(exportProgress.current / exportProgress.total) * 100}%` }} />
+                          </div>
+                          <span style={s.progressText}>{exportProgress.current} / {exportProgress.total} torneos</span>
+                        </div>
+                      )}
+
+
+                      {/* Error message */}
+                      {exportError && (
+                        <div style={s.studyError}>{exportError}</div>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div style={s.modalFooter}>
+              <button style={s.clearBtn} onClick={() => setShowExport(false)}>
+                Cerrar
+              </button>
+              {exportLoaded && exportTournaments.length > 0 && (
+                <button
+                  style={{ ...s.applyBtn, opacity: exporting || exportSelected.size === 0 ? 0.5 : 1 }}
+                  onClick={handleExport}
+                  disabled={exporting || exportSelected.size === 0}
+                >
+                  {exporting ? 'Exportando...' : `Exportar ${exportSelected.size} torneo${exportSelected.size !== 1 ? 's' : ''}`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -693,24 +1103,29 @@ const s = {
 
   // Header
   header: {
-    background: 'rgba(10,15,25,0.85)',
-    borderBottom: '1px solid #1a2a3a',
-    backdropFilter: 'blur(10px)',
+    background: 'rgba(10,15,25,0.92)',
+    borderBottom: '1px solid #0e1828',
+    backdropFilter: 'blur(12px)',
     flexShrink: 0,
-    zIndex: 2,
+    zIndex: 3,
   },
   headerInner: {
-    maxWidth: 860,
-    margin: '0 auto',
-    padding: '12px 24px',
+    padding: '11px 24px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 16,
   },
   logo: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   logoSpade: {
     fontSize: 22,
@@ -727,58 +1142,52 @@ const s = {
   headerRight: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
+    flexShrink: 0,
   },
-  filterBtn: {
+  headerProgress: {
+    position: 'relative',
+    padding: '7px 14px',
+    minWidth: 130,
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    background: 'none',
-    border: '1px solid #2a4a62',
+    overflow: 'hidden',
+    background: 'rgba(8,14,26,0.8)',
+    border: '1px solid #1a2e44',
     borderRadius: 8,
-    padding: '6px 13px',
-    color: '#4a7090',
-    fontSize: 13,
+  },
+  toolbarProgressText: {
+    fontSize: 11,
     fontWeight: 700,
-    cursor: 'pointer',
+    color: '#5a90c0',
+    letterSpacing: '0.3px',
     position: 'relative',
-  },
-  filterBtnActive: {
-    border: '1px solid #3a6a9a',
-    color: '#70b0e0',
-  },
-  filterDot: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 6,
-    height: 6,
-    borderRadius: '50%',
-    background: '#60b0ff',
-  },
-  uploadBtn: {
-    background: 'linear-gradient(135deg, #1e5cad, #0c3080)',
-    border: '1px solid #2a4a80',
-    borderRadius: 8,
-    padding: '7px 16px',
-    color: '#d0e8ff',
-    fontSize: 13,
-    fontWeight: 700,
-    cursor: 'pointer',
-    boxShadow: '0 2px 12px rgba(20,60,160,0.35)',
-  },
-  email: {
-    fontSize: 12,
-    color: '#4a7090',
+    zIndex: 1,
   },
   signOutBtn: {
     background: 'none',
-    border: '1px solid #2a4a62',
+    border: '1px solid #1a3048',
     borderRadius: 6,
-    color: '#4a7090',
+    color: '#3a6080',
     padding: '5px 12px',
     cursor: 'pointer',
     fontSize: 12,
+    fontWeight: 600,
+  },
+  filterDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 5,
+    height: 5,
+    borderRadius: '50%',
+    background: '#60b0ff',
+  },
+  email: {
+    fontSize: 11,
+    color: '#2a4a62',
+    fontWeight: 600,
+    letterSpacing: '0.2px',
   },
 
   // Status
@@ -806,7 +1215,7 @@ const s = {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
+    alignItems: 'stretch',
     padding: '48px 24px',
     zIndex: 1,
   },
@@ -831,6 +1240,7 @@ const s = {
     fontSize: 13,
     color: '#2a3a50',
     marginTop: 60,
+    textAlign: 'center',
   },
   emptyBtn: {
     marginTop: 8,
@@ -848,7 +1258,7 @@ const s = {
   // List
   listWrap: {
     width: '100%',
-    maxWidth: 780,
+    minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
     gap: 16,
@@ -858,6 +1268,50 @@ const s = {
     alignItems: 'center',
     gap: 10,
     paddingBottom: 4,
+  },
+  listFilterBtn: {
+    marginLeft: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    background: 'none',
+    border: '1px solid #1a2e44',
+    borderRadius: 7,
+    padding: '5px 11px',
+    color: '#3a5a70',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+    position: 'relative',
+  },
+  listFilterBtnActive: {
+    border: '1px solid #2a5a8a',
+    color: '#60a0d0',
+    background: 'rgba(40,100,180,0.08)',
+  },
+  listMenuBtn: {
+    background: 'none',
+    border: 'none',
+    fontSize: 18,
+    cursor: 'pointer',
+    opacity: 0.45,
+    padding: '2px 6px',
+    lineHeight: 1,
+    color: '#dde0e8',
+    letterSpacing: 2,
+  },
+  listMenuDropdown: {
+    position: 'absolute',
+    right: 0,
+    top: '100%',
+    marginTop: 4,
+    background: 'linear-gradient(160deg, #131c2c 0%, #0c1420 100%)',
+    border: '1px solid #2a3a52',
+    borderRadius: 10,
+    overflow: 'hidden',
+    zIndex: 50,
+    minWidth: 175,
+    boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
   },
   listTitle: {
     fontSize: 11,
@@ -1258,6 +1712,18 @@ const s = {
     background: 'linear-gradient(135deg, #1a3a20, #0c2014)', border: '1px solid #2a6a3a',
     borderRadius: 9, padding: '10px', color: '#50d080', fontSize: 13, fontWeight: 800,
     cursor: 'pointer', boxShadow: '0 4px 20px rgba(20,100,50,0.3)',
+  },
+  importBtn: {
+    background: 'linear-gradient(135deg, #0e2a4a, #071830)',
+    border: '1px solid #1a4a7a',
+    borderRadius: 8,
+    padding: '7px 14px',
+    color: '#60b0ff',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 2px 12px rgba(20,80,180,0.25)',
+    whiteSpace: 'nowrap',
   },
   studyBtn: {
     background: 'linear-gradient(135deg, #1a3a20, #0c2014)',

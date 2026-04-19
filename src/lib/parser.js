@@ -1200,6 +1200,12 @@ export function groupByTournament(allHands) {
     const tid = hand.tournamentId || 'unknown'
     if (!map.has(tid)) {
       map.set(tid, { id: tid, name: hand.tournamentName || tid, datetime: hand.datetime, platform: hand.platform, hands: [] })
+    } else if (hand.datetime && hand.datetime < map.get(tid).datetime) {
+      // Always keep the earliest hand datetime as the tournament start time,
+      // regardless of hand order in the file (re-exported files arrive in
+      // chronological order and get reversed on re-import, which would
+      // otherwise assign the last hand's date as the tournament date).
+      map.get(tid).datetime = hand.datetime
     }
     map.get(tid).hands.push(hand)
   }

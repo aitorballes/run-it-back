@@ -391,14 +391,16 @@ export default function Visualizer() {
         if (e.key === 'ArrowRight') { setPlaying(false); setCurStep(s => {
           const h = hands[curIdx]; return h ? Math.min(h.sequence.length - 1, s + 1) : s
         })}
+        if (e.key === 'ArrowUp')   { e.preventDefault(); goHand(displayHandsWithIdx[dispIdx - 1]?.i) }
+        if (e.key === 'ArrowDown') { e.preventDefault(); goHand(displayHandsWithIdx[dispIdx + 1]?.i) }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [curIdx, hands])
+  }, [curIdx, hands, filterPlayed, filterCards, filterPositions])
 
   function goHand(idx) {
-    if (idx < 0 || idx >= hands.length) return
+    if (idx == null || idx < 0 || idx >= hands.length) return
     setPlaying(false); setCurIdx(idx); setCurStep(0); setShowMobileHands(false)
   }
 
@@ -548,14 +550,28 @@ export default function Visualizer() {
           )}
           {!handToken && (
             <button style={{ ...hdr.filterBtn, ...(hasFilters ? hdr.filterBtnActive : {}) }} onClick={openFilter}>
-              <span style={{ fontSize:15, lineHeight:1 }}>⌕</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <circle cx="11" cy="11" r="7"/>
+                <line x1="16.5" y1="16.5" x2="22" y2="22"/>
+              </svg>
               Filtrar
               {hasFilters && <span style={hdr.filterDot} />}
             </button>
           )}
           {!token && !handToken && (
-            <button style={hdr.filterBtn} onClick={shareCurrentHand}>
-              {handCopied ? '✓ Copiado' : '⤴ Compartir'}
+            <button style={{ ...hdr.filterBtn, display: 'flex', alignItems: 'center', gap: 5 }} onClick={shareCurrentHand}>
+              {handCopied ? (
+                <>✓ Copiado</>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="8 6 12 2 16 6"/>
+                    <line x1="12" y1="2" x2="12" y2="15"/>
+                    <path d="M4 15v6h16v-6"/>
+                  </svg>
+                  Compartir
+                </>
+              )}
             </button>
           )}
           {!handToken && (
