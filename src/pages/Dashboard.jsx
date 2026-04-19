@@ -43,6 +43,8 @@ export default function Dashboard() {
   const [isMobile,         setIsMobile]         = useState(() => window.innerWidth < 768)
   const [openMenu,         setOpenMenu]         = useState(null) // tournament id with open menu
   const [toast,            setToast]            = useState(null)
+  const [showImport,       setShowImport]       = useState(false)
+  const [dragOver,         setDragOver]         = useState(false)
   const [showStudy,        setShowStudy]        = useState(false)
   const [studyDraft,       setStudyDraft]       = useState(EMPTY_STUDY)
   const [studyLoading,     setStudyLoading]     = useState(false)
@@ -329,9 +331,10 @@ export default function Dashboard() {
     }
   }
 
-  async function handleFiles(e) {
-    const files = Array.from(e.target.files)
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList)
     if (!files.length) return
+    setShowImport(false)
     setUploading(true)
     setUploadStatus(null)
     setProgress(null)
@@ -395,8 +398,15 @@ export default function Dashboard() {
     } finally {
       setUploading(false)
       setProgress(null)
-      e.target.value = ''
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  function handleDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    const files = e.dataTransfer.files
+    if (files.length) handleFiles(files)
   }
 
   function formatTime(dateStr) {
@@ -463,7 +473,7 @@ export default function Dashboard() {
       {/* HEADER */}
       <div style={s.header}>
         <div style={s.headerInner}>
-          <input ref={fileInputRef} type="file" accept=".txt" multiple style={{ display: 'none' }} onChange={handleFiles} />
+          <input ref={fileInputRef} type="file" accept=".txt" multiple style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
           <div style={s.headerLeft}>
             <div style={s.logo}>
               <span style={s.logoSpade}>♠</span>
@@ -475,8 +485,8 @@ export default function Dashboard() {
                 <span style={s.toolbarProgressText}>{progress.current}/{progress.total} torneos</span>
               </div>
             ) : (
-              <button style={s.importBtn} onClick={() => fileInputRef.current.click()} disabled={uploading}>
-                + Importar torneos
+              <button style={s.importBtn} onClick={() => setShowImport(true)} disabled={uploading}>
+                📂 Importar torneos
               </button>
             )}
           </div>
@@ -923,6 +933,52 @@ export default function Dashboard() {
             <div style={s.modalFooter}>
               <button style={s.clearBtn} onClick={clearFilter}>Limpiar</button>
               <button style={s.applyBtn} onClick={applyFilter}>Aplicar filtros</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* IMPORT MODAL */}
+      {showImport && (
+        <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setShowImport(false)}>
+          <div style={{ ...s.modal, width: 'min(460px, calc(100vw - 32px))' }}>
+            <div style={s.modalHeader}>
+              <span style={s.modalTitle}>📂 Importar torneos</span>
+              <button style={s.modalClose} onClick={() => setShowImport(false)}>✕</button>
+            </div>
+            <div style={{ padding: '24px 22px', display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center' }}>
+
+              {/* Drop zone */}
+              <div
+                style={{ ...s.dropZone, ...(dragOver ? s.dropZoneActive : {}) }}
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragEnter={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+              >
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ opacity: 0.5, marginBottom: 4 }}>
+                  <polyline points="8 6 12 2 16 6"/>
+                  <line x1="12" y1="2" x2="12" y2="15"/>
+                  <path d="M4 15v6h16v-6"/>
+                </svg>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>Arrastra aquí tus archivos</span>
+                <span style={{ fontSize: 12, color: '#2a5070' }}>.txt de GGPoker, Winamax, PokerStars, 888poker…</span>
+              </div>
+
+              {/* Separador */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                <div style={{ flex: 1, height: 1, background: '#1a2a3a' }} />
+                <span style={{ fontSize: 11, color: '#2a4060' }}>o</span>
+                <div style={{ flex: 1, height: 1, background: '#1a2a3a' }} />
+              </div>
+
+              {/* Botón buscar */}
+              <button style={{ ...s.applyBtn, alignSelf: 'stretch' }}
+                onClick={() => fileInputRef.current.click()}>
+                Buscar en mi ordenador
+              </button>
             </div>
           </div>
         </div>
@@ -1724,6 +1780,16 @@ const s = {
     cursor: 'pointer',
     boxShadow: '0 2px 12px rgba(20,80,180,0.25)',
     whiteSpace: 'nowrap',
+  },
+  dropZone: {
+    width: '100%', border: '2px dashed #1e3a52', borderRadius: 14,
+    padding: '40px 20px', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', gap: 8, cursor: 'default',
+    background: 'rgba(10,20,35,0.5)', transition: 'border-color 0.15s, background 0.15s',
+    color: '#3a6080', fontSize: 13, fontWeight: 600, textAlign: 'center',
+  },
+  dropZoneActive: {
+    borderColor: '#60b0ff', background: 'rgba(20,60,140,0.12)', color: '#7ab0d8',
   },
   studyBtn: {
     background: 'linear-gradient(135deg, #1a3a20, #0c2014)',
