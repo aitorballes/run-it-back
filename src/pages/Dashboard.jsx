@@ -11,7 +11,7 @@ import psIcon from '../assets/pokerstars.png'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
-import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchAllUserHands } from '../lib/db'
+import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchAllUserHands, fetchUserReviewMarks, fetchHandsByIds } from '../lib/db'
 import { getPositionLabel, heroFoldedPreflop, preflopRaiseCount, playersWhoSawFlop } from '../lib/handUtils'
 
 function extractBuyin(name) {
@@ -21,7 +21,7 @@ function extractBuyin(name) {
 }
 
 const EMPTY_FILTERS = { name: '', dateFrom: '', dateTo: '', buyinMin: '', buyinMax: '' }
-const EMPTY_STUDY   = { positions: [], notFoldedPreflop: false, potType: null, players: null }
+const EMPTY_STUDY   = { positions: [], notFoldedPreflop: false, potType: null, players: null, reviewOnly: false }
 const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
 
 export default function Dashboard() {
@@ -192,7 +192,14 @@ export default function Dashboard() {
     setStudyNoResults(false)
     setStudyError(null)
     try {
-      const rows = await fetchAllUserHands(user.id)
+      let rows
+      if (studyDraft.reviewOnly) {
+        const reviewedIds = await fetchUserReviewMarks(user.id)
+        if (reviewedIds.size === 0) { setStudyNoResults(true); return }
+        rows = await fetchHandsByIds([...reviewedIds])
+      } else {
+        rows = await fetchAllUserHands(user.id)
+      }
       const matched = rows.filter(({ raw: h }) => {
         if (studyDraft.positions.length > 0) {
           const heroSeat = h.seats?.find(s => s.player === 'Hero')
@@ -840,6 +847,18 @@ export default function Dashboard() {
                     )
                   })}
                 </div>
+              </div>
+
+              {/* Manos marcadas para revisión */}
+              <div style={s.field}>
+                <label style={s.fieldLabel}>Revisión</label>
+                <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+                  <input type="checkbox"
+                    checked={studyDraft.reviewOnly}
+                    onChange={e => setStudyDraft(d => ({ ...d, reviewOnly: e.target.checked }))}
+                    style={{ accentColor:'#c89a10', width:14, height:14, cursor:'pointer' }} />
+                  <span style={{ fontSize:13, color:'#c8d4e8' }}>Solo manos marcadas para revisión</span>
+                </label>
               </div>
 
               {studyError && <div style={s.studyError}>{studyError}</div>}

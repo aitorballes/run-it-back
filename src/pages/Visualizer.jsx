@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote } from '../lib/db'
+import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, fetchReviewMarks, setReviewMark, createSharedList, fetchSharedList, fetchHandsByIds } from '../lib/db'
 import ggIcon from '../assets/ggpoker.png'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
@@ -273,7 +273,7 @@ function badgeInfo(action, fmt = fmtChips) {
 
 // ── Main Component ────────────────────────────────────────────────────
 export default function Visualizer() {
-  const { id, token, handToken } = useParams()
+  const { id, token, handToken, listToken } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
@@ -294,6 +294,7 @@ export default function Visualizer() {
   const [draftCards,      setDraftCards]      = useState([])
   const [draftPositions,  setDraftPositions]  = useState([])
   const [handCopied,      setHandCopied]      = useState(false)
+  const [listCopied,      setListCopied]      = useState(false)
   const [showMobileHands, setShowMobileHands] = useState(false)
   const [isMobile,        setIsMobile]        = useState(() => window.innerWidth < 768)
 
@@ -301,9 +302,10 @@ export default function Visualizer() {
   const timerRef        = useRef()
   const noteDebounceRef = useRef()
 
-  const [handNotes, setHandNotes] = useState({})
-  const [noteText,  setNoteText]  = useState('')
-  const [noteSaved, setNoteSaved] = useState(true)
+  const [handNotes,   setHandNotes]   = useState({})
+  const [noteText,    setNoteText]    = useState('')
+  const [noteSaved,   setNoteSaved]   = useState(true)
+  const [reviewMarks, setReviewMarks] = useState(new Set())
 
   // ── Load ──
   useEffect(() => {
@@ -315,10 +317,31 @@ export default function Visualizer() {
           setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
           if (user) {
             const ids = rows.map(row => row.id)
-            const nts = await fetchHandNotes(ids, user.id)
+            const [nts, rev] = await Promise.all([
+              fetchHandNotes(ids, user.id),
+              fetchReviewMarks(ids, user.id),
+            ])
             setHandNotes(nts)
+            setReviewMarks(rev)
           }
           setLoading(false)
+          return
+        }
+        if (listToken) {
+          const handIds = await fetchSharedList(listToken)
+          const rows = await fetchHandsByIds(handIds)
+          setTournament({ name: 'Lista compartida', isSharedList: true })
+          const mapped = rows.map(r => ({ ...r.raw, _dbId: r.id, _tournamentName: r.tournamentName }))
+          setHands(mapped)
+          if (user) {
+            const ids = mapped.map(h => h._dbId)
+            const [nts, rev] = await Promise.all([
+              fetchHandNotes(ids, user.id),
+              fetchReviewMarks(ids, user.id),
+            ])
+            setHandNotes(nts)
+            setReviewMarks(rev)
+          }
           return
         }
         if (handToken) {
@@ -327,8 +350,12 @@ export default function Visualizer() {
           setTournament(t)
           setHands([{ ...row.raw, _dbId: row.id }])
           if (user) {
-            const nts = await fetchHandNotes([row.id], user.id)
+            const [nts, rev] = await Promise.all([
+              fetchHandNotes([row.id], user.id),
+              fetchReviewMarks([row.id], user.id),
+            ])
             setHandNotes(nts)
+            setReviewMarks(rev)
           }
           return
         }
@@ -352,8 +379,12 @@ export default function Visualizer() {
         setHands(sorted)
         if (user && sorted.length > 0) {
           const ids = sorted.map(h => h._dbId)
-          const nts = await fetchHandNotes(ids, user.id)
+          const [nts, rev] = await Promise.all([
+            fetchHandNotes(ids, user.id),
+            fetchReviewMarks(ids, user.id),
+          ])
           setHandNotes(nts)
+          setReviewMarks(rev)
         }
       } catch(e) { console.error(e) }
       finally { setLoading(false) }
@@ -486,6 +517,17 @@ export default function Visualizer() {
     } catch(e) { console.error(e) }
   }
 
+  async function shareHandList() {
+    const ids = displayHandsWithIdx.map(({ h }) => h._dbId).filter(Boolean)
+    if (!ids.length || !user) return
+    try {
+      const t = await createSharedList(ids, user.id)
+      await navigator.clipboard.writeText(`${window.location.origin}/list-share/${t}`)
+      setListCopied(true)
+      setTimeout(() => setListCopied(false), 2500)
+    } catch(e) { console.error(e) }
+  }
+
   function handleNoteChange(e) {
     const text = e.target.value
     const dbId = hands[curIdx]?._dbId
@@ -502,6 +544,22 @@ export default function Visualizer() {
         console.error('Error saving note:', err)
       }
     }, 800)
+  }
+
+  async function toggleReview() {
+    const dbId = hands[curIdx]?._dbId
+    if (!user || !dbId) return
+    const nowMarked = !reviewMarks.has(dbId)
+    try {
+      await setReviewMark(dbId, user.id, nowMarked)
+      setReviewMarks(prev => {
+        const next = new Set(prev)
+        nowMarked ? next.add(dbId) : next.delete(dbId)
+        return next
+      })
+    } catch (err) {
+      console.error('Error toggling review mark:', err)
+    }
   }
 
   function jumpToStreet(street) {
@@ -570,8 +628,8 @@ export default function Visualizer() {
 
       {/* ── HEADER ── */}
       <div style={hdr.root}>
-        {!token && !handToken && <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>}
-        {(token || handToken) && (
+        {!token && !handToken && !listToken && <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>}
+        {(token || handToken || listToken) && (
           <a href="#" style={hdr.logo} onClick={e => { e.preventDefault(); navigate(user ? '/' : '/login') }}>
             <span style={hdr.logoSpade}>♠</span>
             <span style={hdr.logoText}>RunItBack</span>
@@ -621,6 +679,23 @@ export default function Visualizer() {
               )}
             </button>
           )}
+          {user && !handToken && (() => {
+            const marked = reviewMarks.has(hands[curIdx]?._dbId)
+            return (
+              <button
+                style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5,
+                  ...(marked ? { border:'1px solid #8a6200', color:'#c89a10' } : {}) }}
+                onClick={toggleReview}
+                title={marked ? 'Mano marcada para revisión — visible en "Estudia tu juego"' : 'Marcar esta mano para revisarla más tarde desde "Estudia tu juego"'}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                  {marked ? 'Marcada' : 'Marcar'}
+              </button>
+            )
+          })()}
           {!handToken && (
             <div style={{ textAlign:'right' }}>
               <div style={{ fontSize:11, color:'#70aaff', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.3px' }}>#{hand.id}</div>
@@ -870,8 +945,19 @@ export default function Visualizer() {
         <div style={{ ...rp.root, display: isMobile || handToken ? 'none' : 'flex' }}>
 
           {/* Header */}
-          <div style={rp.handsHeader}>
-            MANOS ({displayHandsWithIdx.length}{hasFilters ? ` / ${hands.length}` : ''})
+          <div style={{ ...rp.handsHeader, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span>MANOS ({displayHandsWithIdx.length}{hasFilters ? ` / ${hands.length}` : ''})</span>
+            {user && !handToken && (
+              <button style={rp.shareBtn} onClick={shareHandList}
+                title="Compartir esta lista de manos">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="8 6 12 2 16 6"/>
+                  <line x1="12" y1="2" x2="12" y2="15"/>
+                  <path d="M4 15v6h16v-6"/>
+                </svg>
+              </button>
+            )}
           </div>
 
           {/* Hand list */}
@@ -1107,6 +1193,16 @@ export default function Visualizer() {
           </div>
         </div>
       )}
+
+      {/* ── TOAST ── */}
+      {listCopied && (
+        <div style={{ position:'fixed', bottom:28, left:'50%', transform:'translateX(-50%)',
+          background:'#0e2a1a', border:'1px solid #2a6a3a', color:'#50d080',
+          padding:'10px 26px', borderRadius:10, fontSize:13, fontWeight:700,
+          zIndex:200, boxShadow:'0 4px 20px rgba(0,0,0,0.7)' }}>
+          ¡Enlace copiado!
+        </div>
+      )}
     </div>
   )
 }
@@ -1197,6 +1293,9 @@ const rp = {
                     display:'flex', alignItems:'center', gap:10 },
   handItemActive: { background:'#111e2e', borderLeftColor:'#3a7abf' },
   handItemNoted:  { background:'rgba(160,120,0,0.07)', borderLeftColor:'#7a5e00' },
+  shareBtn:       { background:'none', border:'1px solid #2a4a62', borderRadius:6,
+                    padding:'3px 7px', color:'#4a7090', cursor:'pointer',
+                    display:'flex', alignItems:'center', lineHeight:1, fontSize:11, fontWeight:700 },
 }
 
 const modal = {

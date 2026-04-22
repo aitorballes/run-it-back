@@ -312,3 +312,80 @@ export async function saveHandNote(handDbId, userId, note) {
     )
   if (error) throw error
 }
+
+export async function fetchHandsByIds(handIds) {
+  if (!handIds.length) return []
+  const CHUNK = 100
+  const results = []
+  for (let i = 0; i < handIds.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('hands')
+      .select('id, raw, tournament_id, tournaments(name)')
+      .in('id', handIds.slice(i, i + CHUNK))
+    if (error) throw error
+    if (data) results.push(...data.map(h => ({ ...h, tournamentName: h.tournaments?.name })))
+  }
+  return results
+}
+
+export async function fetchReviewMarks(handDbIds, userId) {
+  if (!handDbIds.length || !userId) return new Set()
+  const CHUNK = 100
+  const set = new Set()
+  for (let i = 0; i < handDbIds.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('hand_reviews')
+      .select('hand_id')
+      .eq('user_id', userId)
+      .in('hand_id', handDbIds.slice(i, i + CHUNK))
+    if (error) throw error
+    for (const row of (data ?? [])) set.add(row.hand_id)
+  }
+  return set
+}
+
+export async function fetchUserReviewMarks(userId) {
+  if (!userId) return new Set()
+  const { data, error } = await supabase
+    .from('hand_reviews')
+    .select('hand_id')
+    .eq('user_id', userId)
+  if (error) throw error
+  return new Set((data ?? []).map(r => r.hand_id))
+}
+
+export async function createSharedList(handIds, userId) {
+  const { data, error } = await supabase
+    .from('shared_lists')
+    .insert({ hand_ids: handIds, user_id: userId })
+    .select('token')
+    .single()
+  if (error) throw error
+  return data.token
+}
+
+export async function fetchSharedList(token) {
+  const { data, error } = await supabase
+    .from('shared_lists')
+    .select('hand_ids')
+    .eq('token', token)
+    .single()
+  if (error) throw error
+  return data.hand_ids
+}
+
+export async function setReviewMark(handDbId, userId, marked) {
+  if (marked) {
+    const { error } = await supabase
+      .from('hand_reviews')
+      .insert({ hand_id: handDbId, user_id: userId })
+    if (error && error.code !== '23505') throw error  // 23505 = ya existe, correcto
+  } else {
+    const { error } = await supabase
+      .from('hand_reviews')
+      .delete()
+      .eq('hand_id', handDbId)
+      .eq('user_id', userId)
+    if (error) throw error
+  }
+}
