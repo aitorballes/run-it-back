@@ -3,7 +3,12 @@
     "allow": [
       "Bash(find:*)",
       "Bash(tail:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebSearch",
+      "Bash(gh repo:*)",
+      "Bash(claude plugin:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npm run *)"
     ]
   }
 }

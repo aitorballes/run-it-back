@@ -286,3 +286,29 @@ export async function fetchHands(tournamentDbId) {
   if (error) throw error
   return data
 }
+
+export async function fetchHandNotes(handDbIds, userId) {
+  if (!handDbIds.length || !userId) return {}
+  const CHUNK = 100
+  const map = {}
+  for (let i = 0; i < handDbIds.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('hand_notes')
+      .select('hand_id, note')
+      .eq('user_id', userId)
+      .in('hand_id', handDbIds.slice(i, i + CHUNK))
+    if (error) throw error
+    for (const row of (data ?? [])) map[row.hand_id] = row.note
+  }
+  return map
+}
+
+export async function saveHandNote(handDbId, userId, note) {
+  const { error } = await supabase
+    .from('hand_notes')
+    .upsert(
+      { hand_id: handDbId, user_id: userId, note, updated_at: new Date().toISOString() },
+      { onConflict: 'hand_id,user_id' }
+    )
+  if (error) throw error
+}

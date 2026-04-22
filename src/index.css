@@ -28,3 +28,5 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #1e3a52 #080e18;
 }
+
+.hand-note-textarea::placeholder { color: #3a5060; }

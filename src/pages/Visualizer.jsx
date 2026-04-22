@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import { generateHandShareToken, fetchHandByShareToken } from '../lib/db'
+import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote } from '../lib/db'
 import ggIcon from '../assets/ggpoker.png'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
@@ -297,8 +297,13 @@ export default function Visualizer() {
   const [showMobileHands, setShowMobileHands] = useState(false)
   const [isMobile,        setIsMobile]        = useState(() => window.innerWidth < 768)
 
-  const areaRef    = useRef()
-  const timerRef   = useRef()
+  const areaRef         = useRef()
+  const timerRef        = useRef()
+  const noteDebounceRef = useRef()
+
+  const [handNotes, setHandNotes] = useState({})
+  const [noteText,  setNoteText]  = useState('')
+  const [noteSaved, setNoteSaved] = useState(true)
 
   // ── Load ──
   useEffect(() => {
@@ -308,6 +313,11 @@ export default function Visualizer() {
           const rows = location.state.studyHands
           setTournament({ name: 'Búsqueda', isStudy: true })
           setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
+          if (user) {
+            const ids = rows.map(row => row.id)
+            const nts = await fetchHandNotes(ids, user.id)
+            setHandNotes(nts)
+          }
           setLoading(false)
           return
         }
@@ -316,6 +326,10 @@ export default function Visualizer() {
           const { data: t } = await supabase.from('tournaments').select('*').eq('id', row.tournament_id).single()
           setTournament(t)
           setHands([{ ...row.raw, _dbId: row.id }])
+          if (user) {
+            const nts = await fetchHandNotes([row.id], user.id)
+            setHandNotes(nts)
+          }
           return
         }
         let t, tournamentId
@@ -336,6 +350,11 @@ export default function Visualizer() {
           .map(r => ({ ...r.raw, _dbId: r.id }))
           .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''))
         setHands(sorted)
+        if (user && sorted.length > 0) {
+          const ids = sorted.map(h => h._dbId)
+          const nts = await fetchHandNotes(ids, user.id)
+          setHandNotes(nts)
+        }
       } catch(e) { console.error(e) }
       finally { setLoading(false) }
     }
@@ -378,10 +397,20 @@ export default function Visualizer() {
     return () => clearInterval(timerRef.current)
   }, [playing, curIdx, hands])
 
+  // ── Sync note on hand change ──
+  useEffect(() => {
+    const dbId = hands[curIdx]?._dbId
+    clearTimeout(noteDebounceRef.current)
+    setNoteText(dbId ? (handNotes[dbId] ?? '') : '')
+    setNoteSaved(true)
+  }, [curIdx, hands])
+
+  useEffect(() => () => clearTimeout(noteDebounceRef.current), [])
+
   // ── Keyboard ──
   useEffect(() => {
     function onKey(e) {
-      if (['SELECT','INPUT'].includes(e.target.tagName)) return
+      if (['SELECT','INPUT','TEXTAREA'].includes(e.target.tagName)) return
       if (e.key === ' ') { e.preventDefault(); setPlaying(p => !p) }
       if (e.shiftKey) {
         if (e.key === 'ArrowLeft')  goHand(displayHandsWithIdx[dispIdx - 1]?.i)
@@ -455,6 +484,24 @@ export default function Visualizer() {
       setHandCopied(true)
       setTimeout(() => setHandCopied(false), 2500)
     } catch(e) { console.error(e) }
+  }
+
+  function handleNoteChange(e) {
+    const text = e.target.value
+    const dbId = hands[curIdx]?._dbId
+    setNoteText(text)
+    setNoteSaved(false)
+    clearTimeout(noteDebounceRef.current)
+    if (!user || !dbId) return
+    noteDebounceRef.current = setTimeout(async () => {
+      try {
+        await saveHandNote(dbId, user.id, text)
+        setHandNotes(prev => ({ ...prev, [dbId]: text }))
+        setNoteSaved(true)
+      } catch (err) {
+        console.error('Error saving note:', err)
+      }
+    }, 800)
   }
 
   function jumpToStreet(street) {
@@ -797,6 +844,26 @@ export default function Visualizer() {
               </button>
             </div>
           </div>
+
+          {/* ── Notes ── */}
+          {user && !loading && hand && (
+            <div style={noteStyle.root}>
+              <div style={noteStyle.header}>
+                <span style={noteStyle.label}>NOTAS</span>
+                <span style={noteStyle.indicator}>
+                  {noteText || !noteSaved ? (noteSaved ? '✓ Guardado' : 'Guardando...') : ''}
+                </span>
+              </div>
+              <textarea
+                className="hand-note-textarea"
+                style={noteStyle.textarea}
+                rows={4}
+                placeholder="Añade notas sobre esta mano..."
+                value={noteText}
+                onChange={handleNoteChange}
+              />
+            </div>
+          )}
         </div>
 
         {/* ── RIGHT PANEL ── */}
@@ -817,7 +884,7 @@ export default function Visualizer() {
               const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
               return (
                 <div key={i} data-idx={i}
-                  style={{ ...rp.handItem, ...(i === curIdx ? rp.handItemActive : {}) }}
+                  style={{ ...rp.handItem, ...(handNotes[h._dbId] ? rp.handItemNoted : {}), ...(i === curIdx ? rp.handItemActive : {}) }}
                   onClick={() => goHand(i)}>
                   <div style={{ display:'flex', gap:3, flexShrink:0 }}>
                     {cards.length > 0
@@ -849,6 +916,12 @@ export default function Visualizer() {
                   {net !== null && (
                     <div style={{ fontSize:11, fontWeight:800, color:netCol, flexShrink:0 }}>
                       {(net >= 0 ? '+' : '') + fmtChips(net)}
+                    </div>
+                  )}
+                  {handNotes[h._dbId] && (
+                    <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
+                      border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
+                      📝
                     </div>
                   )}
                 </div>
@@ -883,7 +956,7 @@ export default function Visualizer() {
                 const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
                 return (
                   <div key={i} data-idx={i}
-                    style={{ ...rp.handItem, ...(i === curIdx ? rp.handItemActive : {}) }}
+                    style={{ ...rp.handItem, ...(handNotes[h._dbId] ? rp.handItemNoted : {}), ...(i === curIdx ? rp.handItemActive : {}) }}
                     onClick={() => goHand(i)}>
                     <div style={{ display:'flex', gap:3, flexShrink:0 }}>
                       {cards.length > 0
@@ -915,6 +988,12 @@ export default function Visualizer() {
                     {net !== null && (
                       <div style={{ fontSize:11, fontWeight:800, color:netCol, flexShrink:0 }}>
                         {(net >= 0 ? '+' : '') + fmtChips(net)}
+                      </div>
+                    )}
+                    {handNotes[h._dbId] && (
+                      <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
+                        border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
+                        ✏
                       </div>
                     )}
                   </div>
@@ -1117,6 +1196,7 @@ const rp = {
                     borderLeft:'3px solid transparent', transition:'background 0.12s',
                     display:'flex', alignItems:'center', gap:10 },
   handItemActive: { background:'#111e2e', borderLeftColor:'#3a7abf' },
+  handItemNoted:  { background:'rgba(160,120,0,0.07)', borderLeftColor:'#7a5e00' },
 }
 
 const modal = {
@@ -1138,4 +1218,16 @@ const modal = {
   applyBtn: { flex:2, background:'linear-gradient(135deg,#1e5cad,#0c3080)', border:'1px solid #2a4a80',
               borderRadius:9, padding:'10px', color:'#d0e8ff', fontSize:13, fontWeight:800,
               cursor:'pointer', boxShadow:'0 4px 20px rgba(20,60,160,0.35)' },
+}
+
+const noteStyle = {
+  root:      { width:'100%', maxWidth:800, padding:'0 12px 20px',
+               display:'flex', flexDirection:'column', gap:6, flexShrink:0, boxSizing:'border-box' },
+  header:    { display:'flex', alignItems:'center', justifyContent:'space-between' },
+  label:     { fontSize:10, fontWeight:800, letterSpacing:'1px', color:'#3a5060' },
+  indicator: { fontSize:10, color:'#3a6080', fontWeight:600 },
+  textarea:  { width:'100%', background:'#0a1018', border:'1px solid #1e2a3a',
+               borderRadius:8, color:'#c8d4e8', fontSize:13, lineHeight:1.5,
+               padding:'8px 12px', resize:'vertical', outline:'none',
+               fontFamily:'inherit', boxSizing:'border-box' },
 }
