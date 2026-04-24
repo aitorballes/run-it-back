@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
 import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchAllUserHands, fetchUserReviewMarks, fetchHandsByIds } from '../lib/db'
-import { getPositionLabel, heroFoldedPreflop, preflopRaiseCount, playersWhoSawFlop } from '../lib/handUtils'
+import { getPositionLabel, heroFoldedPreflop, preflopRaiseCount, playersWhoSawFlop, preflopIsClean, preflopIsLimped } from '../lib/handUtils'
 
 function extractBuyin(name) {
   if (!name) return null
@@ -210,6 +210,8 @@ export default function Dashboard() {
         if (studyDraft.notFoldedPreflop && heroFoldedPreflop(h)) return false
         if (studyDraft.potType === 'srp'      && preflopRaiseCount(h) !== 1) return false
         if (studyDraft.potType === 'threebet' && preflopRaiseCount(h) < 2)   return false
+        if (studyDraft.potType === 'clean'    && !preflopIsClean(h))          return false
+        if (studyDraft.potType === 'limped'   && !preflopIsLimped(h))         return false
         if (studyDraft.players !== null) {
           if (!h.board?.flop?.length) return false
           const cnt = playersWhoSawFlop(h)
@@ -813,23 +815,29 @@ export default function Dashboard() {
                   <input type="checkbox" checked={studyDraft.notFoldedPreflop}
                     onChange={e => setStudyDraft(d => ({ ...d, notFoldedPreflop: e.target.checked }))}
                     style={{ accentColor: '#50d080', width: 15, height: 15 }} />
-                  Solo manos jugadas (Hero no foldea preflop)
+                  VPIP
                 </label>
               </div>
 
               {/* Tipo de bote */}
               <div style={s.field}>
                 <label style={s.fieldLabel}>Tipo de bote</label>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {[{ value: null, label: 'Cualquiera' }, { value: 'srp', label: 'SRP' }, { value: 'threebet', label: '3-bet pot' }].map(opt => {
-                    const active = studyDraft.potType === opt.value
-                    return (
-                      <button key={String(opt.value)}
-                        style={{ ...s.chipBtn, flex: 1, ...(active ? s.chipBtnActive : {}) }}
-                        onClick={() => setStudyDraft(d => ({ ...d, potType: opt.value }))}
-                      >{opt.label}</button>
-                    )
-                  })}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {[[{ value: null, label: 'Cualquiera' }, { value: 'limped', label: 'Limped pot' }],
+                    [{ value: 'srp', label: 'SRP' }, { value: 'threebet', label: '3-bet pot' }, { value: 'clean', label: 'Sin acción previa' }]
+                  ].map((row, ri) => (
+                    <div key={ri} style={{ display: 'flex', gap: 6 }}>
+                      {row.map(opt => {
+                        const active = studyDraft.potType === opt.value
+                        return (
+                          <button key={String(opt.value)}
+                            style={{ ...s.chipBtn, flex: 1, ...(active ? s.chipBtnActive : {}) }}
+                            onClick={() => setStudyDraft(d => ({ ...d, potType: opt.value }))}
+                          >{opt.label}</button>
+                        )
+                      })}
+                    </div>
+                  ))}
                 </div>
               </div>
 

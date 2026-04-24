@@ -36,6 +36,26 @@ export function heroNet(hand) {
   return won - inv
 }
 
+export function preflopIsClean(hand) {
+  const actions = hand.actions?.preflop ?? []
+  for (const a of actions) {
+    if (a.player === 'Hero') break
+    if (a.type === 'call' || a.type === 'raise') return false
+  }
+  return true
+}
+
+export function preflopIsLimped(hand) {
+  const actions = hand.actions?.preflop ?? []
+  let hasLimp = false
+  for (const a of actions) {
+    if (a.player === 'Hero') break
+    if (a.type === 'raise') return false
+    if (a.type === 'call') hasLimp = true
+  }
+  return hasLimp
+}
+
 export function preflopRaiseCount(hand) {
   return (hand.actions?.preflop ?? []).filter(a => a.type === 'raise').length
 }
