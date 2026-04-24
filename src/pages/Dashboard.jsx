@@ -293,7 +293,6 @@ export default function Dashboard() {
     try {
       await deleteReviewList(confirmDeleteList.id)
       setConfirmDeleteList(null)
-      if (activeListId === confirmDeleteList.id) { setActiveListId(null); setActiveListHands([]) }
       await loadReviewLists()
     } catch (e) { console.error(e) }
     finally { setDeletingList(false) }
