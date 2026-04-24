@@ -303,8 +303,8 @@ export default function Visualizer() {
   const noteDebounceRef = useRef()
 
   const [handNotes,   setHandNotes]   = useState({})
-  const [noteText,    setNoteText]    = useState('')
   const [noteSaved,   setNoteSaved]   = useState(true)
+  const textareaRef = useRef()
 
   const [userLists,        setUserLists]        = useState([])
   const [markedHandIds,    setMarkedHandIds]     = useState(new Set())
@@ -447,7 +447,7 @@ export default function Visualizer() {
   useEffect(() => {
     const dbId = hands[curIdx]?._dbId
     clearTimeout(noteDebounceRef.current)
-    setNoteText(dbId ? (handNotes[dbId] ?? '') : '')
+    if (textareaRef.current) textareaRef.current.value = dbId ? (handNotes[dbId] ?? '') : ''
     setNoteSaved(true)
   }, [curIdx, hands])
 
@@ -555,7 +555,6 @@ export default function Visualizer() {
   function handleNoteChange(e) {
     const text = e.target.value
     const dbId = hands[curIdx]?._dbId
-    setNoteText(text)
     setNoteSaved(false)
     clearTimeout(noteDebounceRef.current)
     if (!user || !dbId) return
@@ -1047,15 +1046,16 @@ export default function Visualizer() {
               <div style={noteStyle.header}>
                 <span style={noteStyle.label}>NOTAS</span>
                 <span style={noteStyle.indicator}>
-                  {noteText || !noteSaved ? (noteSaved ? '✓ Guardado' : 'Guardando...') : ''}
+                  {noteSaved ? '' : 'Guardando...'}
                 </span>
               </div>
               <textarea
                 className="hand-note-textarea"
                 style={noteStyle.textarea}
+                ref={textareaRef}
                 rows={4}
                 placeholder="Añade notas sobre esta mano..."
-                value={noteText}
+                defaultValue=""
                 onChange={handleNoteChange}
               />
             </div>
