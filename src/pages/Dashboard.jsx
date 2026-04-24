@@ -21,7 +21,7 @@ function extractBuyin(name) {
 }
 
 const EMPTY_FILTERS = { name: '', dateFrom: '', dateTo: '', buyinMin: '', buyinMax: '' }
-const EMPTY_STUDY   = { positions: [], notFoldedPreflop: false, potType: null, players: null, reviewOnly: false }
+const EMPTY_STUDY   = { positions: [], notFoldedPreflop: false, potType: null, players: null, dateRange: null, dateFrom: '', dateTo: '' }
 const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
 
 export default function Dashboard() {
@@ -204,13 +204,7 @@ export default function Dashboard() {
     setStudyError(null)
     try {
       let rows
-      if (studyDraft.reviewOnly) {
-        const reviewedIds = await fetchAllUserListHandIds(user.id)
-        if (reviewedIds.size === 0) { setStudyNoResults(true); return }
-        rows = await fetchHandsByIds([...reviewedIds])
-      } else {
-        rows = await fetchAllUserHands(user.id)
-      }
+      rows = await fetchAllUserHands(user.id)
       const matched = rows.filter(({ raw: h }) => {
         if (studyDraft.positions.length > 0) {
           const heroSeat = h.seats?.find(s => s.player === 'Hero')
@@ -228,6 +222,23 @@ export default function Dashboard() {
           const cnt = playersWhoSawFlop(h)
           if (studyDraft.players === 'hu'       && cnt !== 2) return false
           if (studyDraft.players === 'multiway' && cnt < 3)   return false
+        }
+        if (studyDraft.dateRange && h.datetime) {
+          const handDate = new Date(h.datetime.replace(/\//g, '-'))
+          const now = new Date()
+          if (studyDraft.dateRange === 'month') {
+            if (handDate < new Date(now - 30 * 24 * 60 * 60 * 1000)) return false
+          }
+          if (studyDraft.dateRange === '3months') {
+            if (handDate < new Date(now - 90 * 24 * 60 * 60 * 1000)) return false
+          }
+          if (studyDraft.dateRange === 'custom') {
+            if (studyDraft.dateFrom && handDate < new Date(studyDraft.dateFrom)) return false
+            if (studyDraft.dateTo) {
+              const to = new Date(studyDraft.dateTo); to.setHours(23, 59, 59)
+              if (handDate > to) return false
+            }
+          }
         }
         return true
       })
@@ -935,16 +946,44 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Manos marcadas para revisión */}
+                {/* Fecha */}
                 <div style={s.field}>
-                  <label style={s.fieldLabel}>Revisión</label>
-                  <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
-                    <input type="checkbox"
-                      checked={studyDraft.reviewOnly}
-                      onChange={e => setStudyDraft(d => ({ ...d, reviewOnly: e.target.checked }))}
-                      style={{ accentColor:'#c89a10', width:14, height:14, cursor:'pointer' }} />
-                    <span style={{ fontSize:13, color:'#c8d4e8' }}>Solo manos en listas de revisión</span>
-                  </label>
+                  <label style={s.fieldLabel}>Fecha</label>
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                    {[
+                      { value: null,      label: 'Cualquiera' },
+                      { value: 'month',   label: 'Último mes' },
+                      { value: '3months', label: 'Últimos 3 meses' },
+                      { value: 'custom',  label: 'Custom' },
+                    ].map(opt => {
+                      const active = studyDraft.dateRange === opt.value
+                      return (
+                        <button key={String(opt.value)}
+                          style={{ ...s.chipBtn, ...(active ? s.chipBtnActive : {}) }}
+                          onClick={() => setStudyDraft(d => ({ ...d, dateRange: opt.value, dateFrom: '', dateTo: '' }))}>
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {studyDraft.dateRange === 'custom' && (
+                    <div style={{ display:'flex', gap:10, marginTop:8, alignItems:'center', flexWrap:'wrap' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <span style={{ fontSize:11, color:'#3a6080', fontWeight:700 }}>Desde</span>
+                        <input type="date"
+                          style={{ ...s.fieldInput, padding:'6px 10px', fontSize:12, colorScheme:'dark' }}
+                          value={studyDraft.dateFrom}
+                          onChange={e => setStudyDraft(d => ({ ...d, dateFrom: e.target.value }))} />
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <span style={{ fontSize:11, color:'#3a6080', fontWeight:700 }}>Hasta</span>
+                        <input type="date"
+                          style={{ ...s.fieldInput, padding:'6px 10px', fontSize:12, colorScheme:'dark' }}
+                          value={studyDraft.dateTo}
+                          onChange={e => setStudyDraft(d => ({ ...d, dateTo: e.target.value }))} />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {studyError && <div style={s.studyError}>{studyError}</div>}
