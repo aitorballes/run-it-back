@@ -291,21 +291,21 @@ export default function Dashboard() {
   async function handleRenameList() {
     if (!renamingListId || !renameValue.trim()) return
     try {
-      await renameReviewList(renamingListId, renameValue.trim())
+      await renameReviewList(renamingListId, renameValue.trim(), user.id)
       setRenamingListId(null)
       setRenameValue('')
       await loadReviewLists()
-    } catch (e) { console.error(e) }
+    } catch (e) { console.error(e.message ?? e) }
   }
 
   async function handleDeleteList() {
     if (!confirmDeleteList) return
     setDeletingList(true)
     try {
-      await deleteReviewList(confirmDeleteList.id)
+      await deleteReviewList(confirmDeleteList.id, user.id)
       setConfirmDeleteList(null)
       await loadReviewLists()
-    } catch (e) { console.error(e) }
+    } catch (e) { console.error(e.message ?? e) }
     finally { setDeletingList(false) }
   }
 
@@ -314,12 +314,12 @@ export default function Dashboard() {
     setDeletingSession(true)
     try {
       for (const t of confirmDeleteSession.items) {
-        await deleteTournament(t.id)
+        await deleteTournament(t.id, user.id)
       }
       setConfirmDeleteSession(null)
       await loadTournaments()
     } catch (e) {
-      console.error(e)
+      console.error(e.message ?? e)
     } finally {
       setDeletingSession(false)
     }
@@ -329,11 +329,11 @@ export default function Dashboard() {
     if (!confirmDelete) return
     setDeleting(true)
     try {
-      await deleteTournament(confirmDelete.id)
+      await deleteTournament(confirmDelete.id, user.id)
       setConfirmDelete(null)
       await loadTournaments()
     } catch (e) {
-      console.error(e)
+      console.error(e.message ?? e)
     } finally {
       setDeleting(false)
     }
@@ -416,7 +416,15 @@ export default function Dashboard() {
   }
 
   async function handleFiles(fileList) {
-    const files = Array.from(fileList)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+    const files = Array.from(fileList).filter(f => {
+      if (f.size > MAX_FILE_SIZE) {
+        setUploadStatus({ ok: false, message: `El archivo "${f.name}" supera el límite de 10 MB.` })
+        setTimeout(() => setUploadStatus(null), 4000)
+        return false
+      }
+      return true
+    })
     if (!files.length) return
     setShowImport(false)
     setUploading(true)
@@ -1020,6 +1028,7 @@ export default function Dashboard() {
                         <input autoFocus
                           style={{ flex:1, background:'#080e18', border:'1px solid #2a5a8a',
                             borderRadius:6, padding:'5px 9px', color:'#c8d4e8', fontSize:13, outline:'none' }}
+                          maxLength={100}
                           value={renameValue}
                           onChange={e => setRenameValue(e.target.value)}
                           onKeyDown={e => {
@@ -1113,6 +1122,7 @@ export default function Dashboard() {
                 autoFocus
                 style={{ ...s.fieldInput, width:'100%', padding:'10px 14px', fontSize:14, boxSizing:'border-box' }}
                 type="text"
+                maxLength={100}
                 placeholder="Nombre de la lista"
                 value={newListNameDash}
                 onChange={e => setNewListNameDash(e.target.value)}

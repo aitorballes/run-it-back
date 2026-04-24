@@ -783,6 +783,7 @@ export default function Visualizer() {
                         <div style={{ borderTop:'1px solid #1a2a3a' }}>
                           <div style={listPopover.newForm}>
                             <input autoFocus style={listPopover.newInput} type="text"
+                              maxLength={100}
                               placeholder="Nombre de la lista" value={newListName}
                               onChange={e => setNewListName(e.target.value)}
                               onKeyDown={e => {
@@ -1054,6 +1055,7 @@ export default function Visualizer() {
                 style={noteStyle.textarea}
                 ref={textareaRef}
                 rows={4}
+                maxLength={10000}
                 placeholder="Añade notas sobre esta mano..."
                 defaultValue=""
                 onChange={handleNoteChange}

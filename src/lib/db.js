@@ -141,7 +141,7 @@ export async function deleteAllTournaments(userId) {
   if (error) throw error
 }
 
-export async function deleteTournament(tournamentDbId) {
+export async function deleteTournament(tournamentDbId, userId) {
   const HAND_BATCH = 200
 
   // Delete hands in batches (CASCADE handles actions automatically)
@@ -156,7 +156,9 @@ export async function deleteTournament(tournamentDbId) {
     if (error) throw error
   }
 
-  const { error } = await supabase.from('tournaments').delete().eq('id', tournamentDbId)
+  let q = supabase.from('tournaments').delete().eq('id', tournamentDbId)
+  if (userId) q = q.eq('user_id', userId)
+  const { error } = await q
   if (error) throw error
 }
 
@@ -415,14 +417,18 @@ export async function createReviewList(userId, name, handId = null) {
   return list
 }
 
-export async function renameReviewList(listId, name) {
-  const { error } = await supabase.from('review_lists')
+export async function renameReviewList(listId, name, userId) {
+  let q = supabase.from('review_lists')
     .update({ name, updated_at: new Date().toISOString() }).eq('id', listId)
+  if (userId) q = q.eq('user_id', userId)
+  const { error } = await q
   if (error) throw error
 }
 
-export async function deleteReviewList(listId) {
-  const { error } = await supabase.from('review_lists').delete().eq('id', listId)
+export async function deleteReviewList(listId, userId) {
+  let q = supabase.from('review_lists').delete().eq('id', listId)
+  if (userId) q = q.eq('user_id', userId)
+  const { error } = await q
   if (error) throw error
 }
 
