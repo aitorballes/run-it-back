@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, fetchReviewMarks, setReviewMark, createSharedList, fetchSharedList, fetchHandsByIds } from '../lib/db'
+import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList } from '../lib/db'
 import ggIcon from '../assets/ggpoker.png'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
@@ -305,7 +305,18 @@ export default function Visualizer() {
   const [handNotes,   setHandNotes]   = useState({})
   const [noteText,    setNoteText]    = useState('')
   const [noteSaved,   setNoteSaved]   = useState(true)
-  const [reviewMarks, setReviewMarks] = useState(new Set())
+
+  const [userLists,        setUserLists]        = useState([])
+  const [markedHandIds,    setMarkedHandIds]     = useState(new Set())
+  const [showListPopover,  setShowListPopover]   = useState(false)
+  const [handCurrentLists, setHandCurrentLists]  = useState(new Set()) // committed state (DB)
+  const [popoverDraft,     setPopoverDraft]      = useState(new Set()) // draft (checkboxes)
+  const [popoverLoading,   setPopoverLoading]    = useState(false)
+  const [listSaving,       setListSaving]        = useState(false)
+  const [newListName,      setNewListName]       = useState('')
+  const [showNewListForm,  setShowNewListForm]   = useState(false)
+  const [newListSaving,    setNewListSaving]     = useState(false)
+  const popoverRef = useRef()
 
   // ── Load ──
   useEffect(() => {
@@ -316,13 +327,14 @@ export default function Visualizer() {
           setTournament({ name: 'Búsqueda', isStudy: true })
           setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
           if (user) {
+            fetchUserReviewLists(user.id).then(setUserLists)
             const ids = rows.map(row => row.id)
-            const [nts, rev] = await Promise.all([
+            const [nts, marked] = await Promise.all([
               fetchHandNotes(ids, user.id),
-              fetchReviewMarks(ids, user.id),
+              fetchMarkedHandIds(ids, user.id),
             ])
             setHandNotes(nts)
-            setReviewMarks(rev)
+            setMarkedHandIds(marked)
           }
           setLoading(false)
           return
@@ -334,13 +346,14 @@ export default function Visualizer() {
           const mapped = rows.map(r => ({ ...r.raw, _dbId: r.id, _tournamentName: r.tournamentName }))
           setHands(mapped)
           if (user) {
+            fetchUserReviewLists(user.id).then(setUserLists)
             const ids = mapped.map(h => h._dbId)
-            const [nts, rev] = await Promise.all([
+            const [nts, marked] = await Promise.all([
               fetchHandNotes(ids, user.id),
-              fetchReviewMarks(ids, user.id),
+              fetchMarkedHandIds(ids, user.id),
             ])
             setHandNotes(nts)
-            setReviewMarks(rev)
+            setMarkedHandIds(marked)
           }
           return
         }
@@ -350,12 +363,13 @@ export default function Visualizer() {
           setTournament(t)
           setHands([{ ...row.raw, _dbId: row.id }])
           if (user) {
-            const [nts, rev] = await Promise.all([
+            fetchUserReviewLists(user.id).then(setUserLists)
+            const [nts, marked] = await Promise.all([
               fetchHandNotes([row.id], user.id),
-              fetchReviewMarks([row.id], user.id),
+              fetchMarkedHandIds([row.id], user.id),
             ])
             setHandNotes(nts)
-            setReviewMarks(rev)
+            setMarkedHandIds(marked)
           }
           return
         }
@@ -378,13 +392,14 @@ export default function Visualizer() {
           .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''))
         setHands(sorted)
         if (user && sorted.length > 0) {
+          fetchUserReviewLists(user.id).then(setUserLists)
           const ids = sorted.map(h => h._dbId)
-          const [nts, rev] = await Promise.all([
+          const [nts, marked] = await Promise.all([
             fetchHandNotes(ids, user.id),
-            fetchReviewMarks(ids, user.id),
+            fetchMarkedHandIds(ids, user.id),
           ])
           setHandNotes(nts)
-          setReviewMarks(rev)
+          setMarkedHandIds(marked)
         }
       } catch(e) { console.error(e) }
       finally { setLoading(false) }
@@ -458,6 +473,15 @@ export default function Visualizer() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [curIdx, hands, filterPlayed, filterCards, filterPositions])
+
+  useEffect(() => {
+    if (!showListPopover) return
+    const onKey = e => { if (e.key === 'Escape') setShowListPopover(false) }
+    const onClick = e => { if (popoverRef.current && !popoverRef.current.contains(e.target)) setShowListPopover(false) }
+    window.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onClick)
+    return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick) }
+  }, [showListPopover])
 
   function goHand(idx) {
     if (idx == null || idx < 0 || idx >= hands.length) return
@@ -546,20 +570,66 @@ export default function Visualizer() {
     }, 800)
   }
 
-  async function toggleReview() {
+  async function openListPopover() {
+    const dbId = hands[curIdx]?._dbId
+    if (!user || !dbId || popoverLoading) return
+    setPopoverLoading(true)
+    setShowListPopover(true)
+    setShowNewListForm(false)
+    setNewListName('')
+    try {
+      const [lists, currentLists] = await Promise.all([
+        fetchUserReviewLists(user.id),
+        fetchListsForHand(dbId, user.id),
+      ])
+      setUserLists(lists)
+      setHandCurrentLists(currentLists)
+      setPopoverDraft(new Set(currentLists))
+    } catch (err) { console.error(err) }
+    finally { setPopoverLoading(false) }
+  }
+
+  function toggleDraftList(listId) {
+    setPopoverDraft(prev => {
+      const n = new Set(prev)
+      n.has(listId) ? n.delete(listId) : n.add(listId)
+      return n
+    })
+  }
+
+  async function saveListChanges() {
     const dbId = hands[curIdx]?._dbId
     if (!user || !dbId) return
-    const nowMarked = !reviewMarks.has(dbId)
+    setListSaving(true)
     try {
-      await setReviewMark(dbId, user.id, nowMarked)
-      setReviewMarks(prev => {
-        const next = new Set(prev)
-        nowMarked ? next.add(dbId) : next.delete(dbId)
-        return next
-      })
-    } catch (err) {
-      console.error('Error toggling review mark:', err)
-    }
+      const toAdd    = [...popoverDraft].filter(id => !handCurrentLists.has(id))
+      const toRemove = [...handCurrentLists].filter(id => !popoverDraft.has(id))
+      await Promise.all([
+        ...toAdd.map(id => addHandToList(id, dbId)),
+        ...toRemove.map(id => removeHandFromList(id, dbId)),
+      ])
+      setHandCurrentLists(new Set(popoverDraft))
+      const isMarked = popoverDraft.size > 0
+      setMarkedHandIds(prev => { const n = new Set(prev); isMarked ? n.add(dbId) : n.delete(dbId); return n })
+      setShowListPopover(false)
+    } catch (err) { console.error(err) }
+    finally { setListSaving(false) }
+  }
+
+  async function handleCreateList() {
+    const dbId = hands[curIdx]?._dbId
+    if (!user || !newListName.trim()) return
+    setNewListSaving(true)
+    try {
+      const newList = await createReviewList(user.id, newListName.trim())
+      const refreshed = await fetchUserReviewLists(user.id)
+      setUserLists(refreshed)
+      // Add to draft so it shows as checked — user still needs to hit Guardar
+      setPopoverDraft(prev => new Set([...prev, newList.id]))
+      setNewListName('')
+      setShowNewListForm(false)
+    } catch (err) { console.error(err) }
+    finally { setNewListSaving(false) }
   }
 
   function jumpToStreet(street) {
@@ -680,20 +750,71 @@ export default function Visualizer() {
             </button>
           )}
           {user && !handToken && (() => {
-            const marked = reviewMarks.has(hands[curIdx]?._dbId)
+            const marked = markedHandIds.has(hands[curIdx]?._dbId)
             return (
-              <button
-                style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5,
-                  ...(marked ? { border:'1px solid #8a6200', color:'#c89a10' } : {}) }}
-                onClick={toggleReview}
-                title={marked ? 'Mano marcada para revisión — visible en "Estudia tu juego"' : 'Marcar esta mano para revisarla más tarde desde "Estudia tu juego"'}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <div ref={popoverRef} style={{ position:'relative' }}>
+                <button
+                  style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5,
+                    ...(marked ? { border:'1px solid #8a6200', color:'#c89a10' } : {}) }}
+                  onClick={openListPopover}
+                  title={marked ? 'Mano en una lista de revisión — gestionar listas' : 'Añadir esta mano a una lista de revisión'}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                     <circle cx="12" cy="12" r="3"/>
                   </svg>
-                  {marked ? 'Marcada' : 'Marcar'}
-              </button>
+                  {marked ? 'En lista' : 'Añadir a lista'}
+                </button>
+                {showListPopover && (
+                  <div style={listPopover.root}>
+                    <div style={listPopover.header}>LISTAS DE REVISIÓN</div>
+                    {popoverLoading ? <div style={listPopover.loading}>Cargando...</div> : <>
+                      {userLists.length === 0 && !showNewListForm &&
+                        <div style={listPopover.empty}>Todavía no tienes listas.<br/>Crea tu primera lista abajo.</div>}
+                      {userLists.map(list => (
+                        <label key={list.id} style={listPopover.item}>
+                          <input type="checkbox" checked={popoverDraft.has(list.id)}
+                            onChange={() => toggleDraftList(list.id)}
+                            style={{ accentColor:'#c89a10', width:14, height:14, flexShrink:0, cursor:'pointer' }} />
+                          <span style={{ flex:1, fontSize:12, color:'#c8d4e8', fontWeight:600 }}>{list.name}</span>
+                          <span style={{ fontSize:10, color:'#3a6080' }}>{list.hand_count}</span>
+                        </label>
+                      ))}
+                      {showNewListForm ? (
+                        <div style={{ borderTop:'1px solid #1a2a3a' }}>
+                          <div style={listPopover.newForm}>
+                            <input autoFocus style={listPopover.newInput} type="text"
+                              placeholder="Nombre de la lista" value={newListName}
+                              onChange={e => setNewListName(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleCreateList()
+                                if (e.key === 'Escape') { setShowNewListForm(false); setNewListName('') }
+                              }} />
+                            <button style={{ ...listPopover.createBtn, opacity: !newListName.trim() || newListSaving ? 0.5 : 1 }}
+                              onClick={handleCreateList} disabled={!newListName.trim() || newListSaving}>
+                              {newListSaving ? '...' : 'Crear'}
+                            </button>
+                          </div>
+                          <button
+                            style={{ display:'block', width:'100%', background:'none', border:'none',
+                              padding:'6px 14px 10px', color:'#3a5060', fontSize:11, cursor:'pointer', textAlign:'center' }}
+                            onClick={() => { setShowNewListForm(false); setNewListName('') }}>
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={listPopover.footer}>
+                          <button style={listPopover.addBtn} onClick={() => setShowNewListForm(true)}>+ Crear lista</button>
+                          <button style={{ ...listPopover.saveBtn, opacity: listSaving ? 0.6 : 1 }}
+                            onClick={saveListChanges} disabled={listSaving}>
+                            {listSaving ? '...' : 'Guardar'}
+                          </button>
+                        </div>
+                      )}
+                    </>}
+                  </div>
+                )}
+              </div>
             )
           })()}
           {!handToken && (
@@ -1010,6 +1131,12 @@ export default function Visualizer() {
                       📝
                     </div>
                   )}
+                  {markedHandIds.has(h._dbId) && (
+                    <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
+                      border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
+                      ★
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1080,6 +1207,12 @@ export default function Visualizer() {
                       <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
                         border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
                         ✏
+                      </div>
+                    )}
+                    {markedHandIds.has(h._dbId) && (
+                      <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
+                        border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
+                        ★
                       </div>
                     )}
                   </div>
@@ -1329,4 +1462,30 @@ const noteStyle = {
                borderRadius:8, color:'#c8d4e8', fontSize:13, lineHeight:1.5,
                padding:'8px 12px', resize:'vertical', outline:'none',
                fontFamily:'inherit', boxSizing:'border-box' },
+}
+
+const listPopover = {
+  root:     { position:'absolute', top:'calc(100% + 8px)', right:0,
+              background:'linear-gradient(160deg,#131c2c 0%,#0c1420 100%)',
+              border:'1px solid #2a3a52', borderRadius:12, width:240, zIndex:300,
+              boxShadow:'0 12px 40px rgba(0,0,0,0.8)', overflow:'hidden' },
+  header:   { padding:'10px 14px 6px', fontSize:9, fontWeight:800, letterSpacing:'1px',
+              color:'#3a6080', borderBottom:'1px solid #1a2a3a' },
+  loading:  { padding:'14px', fontSize:12, color:'#3a6080', textAlign:'center' },
+  empty:    { padding:'14px', fontSize:12, color:'#3a6080', textAlign:'center', lineHeight:1.6 },
+  item:     { display:'flex', alignItems:'center', gap:10, padding:'9px 14px',
+              borderBottom:'1px solid #0e1828', cursor:'pointer' },
+  newForm:  { display:'flex', gap:6, padding:'8px 10px', borderTop:'1px solid #1a2a3a' },
+  newInput: { flex:1, background:'#080e18', border:'1px solid #1e2e42', borderRadius:7,
+              padding:'6px 10px', color:'#c8d4e8', fontSize:12, outline:'none' },
+  createBtn:{ background:'linear-gradient(135deg,#1a3a20,#0c2014)', border:'1px solid #2a6a3a',
+              borderRadius:7, padding:'6px 12px', color:'#50d080', fontSize:12,
+              fontWeight:700, cursor:'pointer', flexShrink:0, whiteSpace:'nowrap' },
+  footer:   { display:'flex', alignItems:'center', justifyContent:'space-between',
+              borderTop:'1px solid #1a2a3a' },
+  addBtn:   { background:'none', border:'none', padding:'10px 14px', color:'#3a7a5a',
+              fontSize:12, fontWeight:700, cursor:'pointer', textAlign:'left' },
+  saveBtn:  { background:'linear-gradient(135deg,#1a4a28,#0c2814)', border:'1px solid #2a7a3a',
+              borderRadius:7, margin:'6px 10px 6px 0', padding:'6px 14px',
+              color:'#50d080', fontSize:12, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' },
 }

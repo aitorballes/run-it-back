@@ -389,3 +389,106 @@ export async function setReviewMark(handDbId, userId, marked) {
     if (error) throw error
   }
 }
+
+// ── Review Lists ──────────────────────────────────────────────────────
+
+export async function fetchUserReviewLists(userId) {
+  if (!userId) return []
+  const { data, error } = await supabase
+    .from('review_lists_with_counts')
+    .select('id, name, hand_count, last_hand_added_at, created_at, updated_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createReviewList(userId, name, handId = null) {
+  const { data: list, error } = await supabase
+    .from('review_lists').insert({ user_id: userId, name })
+    .select('id, name, created_at, updated_at').single()
+  if (error) throw error
+  if (handId) {
+    await supabase.from('review_list_hands').insert({ list_id: list.id, hand_id: handId })
+    await supabase.from('review_lists').update({ updated_at: new Date().toISOString() }).eq('id', list.id)
+  }
+  return list
+}
+
+export async function renameReviewList(listId, name) {
+  const { error } = await supabase.from('review_lists')
+    .update({ name, updated_at: new Date().toISOString() }).eq('id', listId)
+  if (error) throw error
+}
+
+export async function deleteReviewList(listId) {
+  const { error } = await supabase.from('review_lists').delete().eq('id', listId)
+  if (error) throw error
+}
+
+export async function fetchListsForHand(handId, userId) {
+  if (!handId || !userId) return new Set()
+  const { data, error } = await supabase
+    .from('review_list_hands')
+    .select('list_id, review_lists!inner(user_id)')
+    .eq('hand_id', handId).eq('review_lists.user_id', userId)
+  if (error) throw error
+  return new Set((data ?? []).map(r => r.list_id))
+}
+
+export async function addHandToList(listId, handId) {
+  const { error } = await supabase.from('review_list_hands').insert({ list_id: listId, hand_id: handId })
+  if (error && error.code !== '23505') throw error
+  await supabase.from('review_lists').update({ updated_at: new Date().toISOString() }).eq('id', listId)
+}
+
+export async function removeHandFromList(listId, handId) {
+  const { error } = await supabase.from('review_list_hands').delete()
+    .eq('list_id', listId).eq('hand_id', handId)
+  if (error) throw error
+  await supabase.from('review_lists').update({ updated_at: new Date().toISOString() }).eq('id', listId)
+}
+
+export async function fetchMarkedHandIds(handDbIds, userId) {
+  if (!handDbIds.length || !userId) return new Set()
+  const CHUNK = 100
+  const set = new Set()
+  for (let i = 0; i < handDbIds.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('review_list_hands')
+      .select('hand_id, review_lists!inner(user_id)')
+      .eq('review_lists.user_id', userId)
+      .in('hand_id', handDbIds.slice(i, i + CHUNK))
+    if (error) throw error
+    for (const row of (data ?? [])) set.add(row.hand_id)
+  }
+  return set
+}
+
+export async function fetchAllUserListHandIds(userId) {
+  if (!userId) return new Set()
+  const { data, error } = await supabase
+    .from('review_list_hands')
+    .select('hand_id, review_lists!inner(user_id)')
+    .eq('review_lists.user_id', userId)
+  if (error) throw error
+  return new Set((data ?? []).map(r => r.hand_id))
+}
+
+export async function fetchHandsInList(listId) {
+  const { data: links, error: linksErr } = await supabase
+    .from('review_list_hands').select('hand_id, added_at')
+    .eq('list_id', listId).order('added_at', { ascending: true })
+  if (linksErr) throw linksErr
+  if (!links?.length) return []
+  const handIds = links.map(l => l.hand_id)
+  const CHUNK = 100
+  const results = []
+  for (let i = 0; i < handIds.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('hands').select('id, raw, tournament_id, tournaments(name)').in('id', handIds.slice(i, i + CHUNK))
+    if (error) throw error
+    if (data) results.push(...data.map(h => ({ ...h, tournamentName: h.tournaments?.name })))
+  }
+  return results
+}
