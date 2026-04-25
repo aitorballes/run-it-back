@@ -994,7 +994,7 @@ export default function Visualizer() {
           </div>
 
           {/* ── Controls ── */}
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop: isMobile ? 12 : 80 }}>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop: isMobile ? 12 : Math.round(scale * 80) }}>
 
             {/* Street nav */}
             <div style={{ display:'flex', gap:8 }}>
@@ -1374,7 +1374,7 @@ const hdr = {
 
 const ta = {
   root:      { flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-               position:'relative', overflow:'hidden', gap:10, paddingTop:20 },
+               position:'relative', overflow:'hidden', gap:10, paddingTop:20, paddingBottom:20 },
   info:      { display:'flex', flexDirection:'column', alignItems:'center', gap:3, flexShrink:0 },
   infoName:  { fontSize:15, fontWeight:800, color:'#90b8e0' },
   infoLevel: { fontSize:12, fontWeight:600, color:'#4a6a88' },
