@@ -1059,13 +1059,13 @@ export default function Visualizer() {
               </div>
               <textarea
                 className="hand-note-textarea"
-                style={{ ...noteStyle.textarea, cursor:'default', opacity:0.75 }}
+                style={{ ...noteStyle.textarea, resize:'none' }}
                 ref={textareaRef}
                 rows={4}
                 maxLength={10000}
-                placeholder="Sin notas para esta mano"
+                placeholder="Añade notas sobre esta mano..."
                 defaultValue=""
-                readOnly
+                onChange={handleNoteChange}
               />
             </div>
           )}
