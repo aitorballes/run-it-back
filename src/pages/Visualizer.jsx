@@ -717,12 +717,12 @@ export default function Visualizer() {
           <span style={hdr.level}>Nivel {hand.level} · {fmtChips(hand.sb)}/{fmtChips(hand.bb)}</span>
           <span style={hdr.meta}>Mesa {hand.tableNum} · {hand.datetime}</span>
         </div>
+        {!handToken && isMobile && (
+          <button style={hdr.handsBtn} onClick={() => setShowMobileHands(true)}>
+            ☰ {dispIdx+1}/{displayHandsWithIdx.length}
+          </button>
+        )}
         <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0, marginLeft:'auto' }}>
-          {!handToken && isMobile && (
-            <button style={hdr.handsBtn} onClick={() => setShowMobileHands(true)}>
-              ☰ {dispIdx+1}/{displayHandsWithIdx.length}
-            </button>
-          )}
           {!handToken && (
             <button style={{ ...hdr.filterBtn, ...(hasFilters ? hdr.filterBtnActive : {}) }} onClick={openFilter}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
