@@ -717,7 +717,7 @@ export default function Visualizer() {
           <span style={hdr.level}>Nivel {hand.level} · {fmtChips(hand.sb)}/{fmtChips(hand.bb)}</span>
           <span style={hdr.meta}>Mesa {hand.tableNum} · {hand.datetime}</span>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0, marginLeft:'auto' }}>
           {!handToken && isMobile && (
             <button style={hdr.handsBtn} onClick={() => setShowMobileHands(true)}>
               ☰ {dispIdx+1}/{displayHandsWithIdx.length}
