@@ -698,7 +698,7 @@ export default function Visualizer() {
 
       {/* ── HEADER ── */}
       <div style={hdr.root}>
-        {!token && !handToken && !listToken && <button style={hdr.back} onClick={() => navigate('/')}>← Torneos</button>}
+        {!token && !handToken && !listToken && <button style={hdr.back} onClick={() => navigate('/')}>{isMobile ? '←' : '← Torneos'}</button>}
         {(token || handToken || listToken) && (
           <a href="#" style={hdr.logo} onClick={e => { e.preventDefault(); navigate(user ? '/' : '/login') }}>
             <span style={hdr.logoSpade}>♠</span>
