@@ -412,8 +412,9 @@ export default function Visualizer() {
     function rescale() {
       const area = areaRef.current
       if (!area) return
-      const availW = area.clientWidth - 24
-      const availH = area.clientHeight - 150
+      const mobile  = window.innerWidth < 768
+      const availW = area.clientWidth - (mobile ? 48 : 24)
+      const availH = area.clientHeight - (mobile ? 200 : 150)
       setScale(Math.min(availW / 800, availH / 540, 1.0))
     }
     rescale()
@@ -993,7 +994,7 @@ export default function Visualizer() {
           </div>
 
           {/* ── Controls ── */}
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop:80 }}>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop: isMobile ? 12 : 80 }}>
 
             {/* Street nav */}
             <div style={{ display:'flex', gap:8 }}>
