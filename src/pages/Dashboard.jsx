@@ -571,7 +571,7 @@ export default function Dashboard() {
               <span style={s.logoSpade}>♠</span>
               <span style={s.logoText}>RunItBack</span>
             </div>
-            {uploading && progress ? (
+            {!isMobile && (uploading && progress ? (
               <div style={s.headerProgress}>
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,70,140,0.25)', width: `${(progress.current / progress.total) * 100}%`, transition: 'width 0.2s', borderRadius: 8 }} />
                 <span style={s.toolbarProgressText}>{progress.current}/{progress.total} torneos</span>
@@ -580,7 +580,7 @@ export default function Dashboard() {
               <button style={s.importBtn} onClick={() => setShowImport(true)} disabled={uploading}>
                 📂 Importar torneos
               </button>
-            )}
+            ))}
           </div>
           <div style={s.headerRight}>
             <button style={s.studyBtn} onClick={() => { setStudyDraft(EMPTY_STUDY); setStudyNoResults(false); setStudyError(null); setStudyTab('filters'); setShowStudy(true); loadReviewLists() }}>
@@ -634,7 +634,7 @@ export default function Dashboard() {
                 Filtrar
                 {hasFilters && <span style={s.filterDot} />}
               </button>
-              <div style={{ position: 'relative' }}>
+              {!isMobile && <div style={{ position: 'relative' }}>
                 <button
                   style={s.listMenuBtn}
                   onClick={e => { e.stopPropagation(); setShowListMenu(v => !v) }}
@@ -653,7 +653,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
 
             <div style={s.list}>

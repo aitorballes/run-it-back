@@ -728,14 +728,14 @@ export default function Visualizer() {
                 <circle cx="11" cy="11" r="7"/>
                 <line x1="16.5" y1="16.5" x2="22" y2="22"/>
               </svg>
-              Filtrar
+              {!isMobile && 'Filtrar'}
               {hasFilters && <span style={hdr.filterDot} />}
             </button>
           )}
           {!token && !handToken && (
             <button style={{ ...hdr.filterBtn, display: 'flex', alignItems: 'center', gap: 5 }} onClick={shareCurrentHand}>
               {handCopied ? (
-                <>✓ Copiado</>
+                <>{!isMobile ? '✓ Copiado' : '✓'}</>
               ) : (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -743,7 +743,7 @@ export default function Visualizer() {
                     <line x1="12" y1="2" x2="12" y2="15"/>
                     <path d="M4 15v6h16v-6"/>
                   </svg>
-                  Compartir
+                  {!isMobile && 'Compartir'}
                 </>
               )}
             </button>
@@ -762,7 +762,7 @@ export default function Visualizer() {
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                     <circle cx="12" cy="12" r="3"/>
                   </svg>
-                  {marked ? 'En lista' : 'Añadir a lista'}
+                  {!isMobile && (marked ? 'En lista' : 'Añadir a lista')}
                 </button>
                 {showListPopover && (
                   <div style={listPopover.root}>
@@ -1043,7 +1043,7 @@ export default function Visualizer() {
 
           {/* ── Notes ── */}
           {user && !loading && hand && (
-            <div style={noteStyle.root}>
+            <div style={{ ...noteStyle.root, ...(isMobile ? { paddingBottom: 36 } : {}) }}>
               <div style={noteStyle.header}>
                 <span style={noteStyle.label}>NOTAS</span>
                 <span style={noteStyle.indicator}>
