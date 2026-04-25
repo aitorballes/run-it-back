@@ -412,10 +412,16 @@ export default function Visualizer() {
     function rescale() {
       const area = areaRef.current
       if (!area) return
-      const mobile  = window.innerWidth < 768
+      const mobile = window.innerWidth < 768
       const availW = area.clientWidth - (mobile ? 48 : 24)
-      const availH = area.clientHeight - (mobile ? 200 : 150)
-      setScale(Math.min(availW / 800, availH / 540, 1.0))
+      // Height formula derived analytically so table + controls + notes + seat overflow all fit:
+      //   content_height(s) = s*540 (table) + s*80 (controls paddingTop) + 88 (nav) + 10 (gap) + 142 (notes) + 20 (gaps) = s*620 + 260
+      //   seat_overflow(s)  = 23 * s  (top seats extend ~23px above canvas top)
+      //   require: s*620 + 260 + 2*(23*s) ≤ h - 40  → s ≤ (h - 300) / 666
+      const scaleFromH = mobile
+        ? (area.clientHeight - 200) / 540
+        : (area.clientHeight - 300) / 666
+      setScale(Math.max(0.2, Math.min(availW / 800, scaleFromH, 1.0)))
     }
     rescale()
     window.addEventListener('resize', rescale)
