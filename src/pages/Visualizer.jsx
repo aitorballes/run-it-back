@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -20,6 +20,27 @@ const STREET_LABEL = { preflop: 'Preflop', flop: 'Flop', turn: 'Turn', river: 'R
 const DECK_RANKS   = ['A','K','Q','J','T','9','8','7','6','5','4','3','2']
 const DECK_SUITS   = ['s','h','d','c']
 const CX = 400, CY = 270, RX = 368, RY = 228
+
+// ── Range grid ────────────────────────────────────────────────────────
+const GRID_RANKS = ['A','K','Q','J','T','9','8','7','6','5','4','3','2']
+const RANK_VAL   = Object.fromEntries(GRID_RANKS.map((r, i) => [r, 12 - i]))
+
+function holeCardsToCombo(cards) {
+  if (!cards || cards.length !== 2) return null
+  const r1 = cards[0].slice(0, -1), s1 = cards[0].slice(-1)
+  const r2 = cards[1].slice(0, -1), s2 = cards[1].slice(-1)
+  if (RANK_VAL[r1] == null || RANK_VAL[r2] == null) return null
+  const [hi, lo] = RANK_VAL[r1] >= RANK_VAL[r2] ? [[r1,s1],[r2,s2]] : [[r2,s2],[r1,s1]]
+  if (hi[0] === lo[0]) return hi[0] + lo[0]
+  return hi[0] + lo[0] + (hi[1] === lo[1] ? 's' : 'o')
+}
+
+function gridCellLabel(row, col) {
+  const r = GRID_RANKS[row], c = GRID_RANKS[col]
+  if (row === col) return r + c
+  if (row < col)  return r + c + 's'
+  return c + r + 'o'
+}
 
 // Position labels by offset from BTN (clockwise), indexed by table size
 const POS_LABELS = {
@@ -306,6 +327,8 @@ export default function Visualizer() {
   const [noteSaved,   setNoteSaved]   = useState(true)
   const textareaRef = useRef()
 
+  const [showRangeModal,   setShowRangeModal]   = useState(false)
+
   const [userLists,        setUserLists]        = useState([])
   const [markedHandIds,    setMarkedHandIds]     = useState(new Set())
   const [showListPopover,  setShowListPopover]   = useState(false)
@@ -317,6 +340,27 @@ export default function Visualizer() {
   const [showNewListForm,  setShowNewListForm]   = useState(false)
   const [newListSaving,    setNewListSaving]     = useState(false)
   const popoverRef = useRef()
+
+  // ── Range map (aggregated across all loaded hands) ──
+  const rangeMap = useMemo(() => {
+    const map = new Map()
+    for (let i = 0; i < hands.length; i++) {
+      const hand = hands[i]
+      const cards = hand.holeCards?.Hero
+      if (!cards || cards.length !== 2) continue
+      const combo = holeCardsToCombo(cards)
+      if (!combo) continue
+      const heroActs = (hand.actions?.preflop ?? []).filter(a => a.player === 'Hero')
+      const first    = heroActs.find(a => !['post-sb', 'post-bb'].includes(a.type))
+      if (!map.has(combo)) map.set(combo, { raise: 0, fold: 0, call: 0, firstIdx: i })
+      const e = map.get(combo)
+      if (!first || first.type === 'check')                        e.call++
+      else if (first.type === 'fold')                              e.fold++
+      else if (first.type === 'raise' || first.type === 'bet')     e.raise++
+      else                                                         e.call++
+    }
+    return map
+  }, [hands])
 
   // ── Load ──
   useEffect(() => {
@@ -737,6 +781,19 @@ export default function Visualizer() {
               </svg>
               {!isMobile && 'Filtrar'}
               {hasFilters && <span style={hdr.filterDot} />}
+            </button>
+          )}
+          {!handToken && (
+            <button style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5 }}
+              onClick={() => setShowRangeModal(true)}
+              title="Ver rango de manos">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3"  y="3"  width="7" height="7" rx="1"/>
+                <rect x="14" y="3"  width="7" height="7" rx="1"/>
+                <rect x="3"  y="14" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+              </svg>
+              {!isMobile && 'Rango'}
             </button>
           )}
           {!token && !handToken && (
@@ -1343,6 +1400,73 @@ export default function Visualizer() {
           padding:'10px 26px', borderRadius:10, fontSize:13, fontWeight:700,
           zIndex:200, boxShadow:'0 4px 20px rgba(0,0,0,0.7)' }}>
           ¡Enlace copiado!
+        </div>
+      )}
+
+      {/* ── RANGE GRID MODAL ── */}
+      {showRangeModal && (
+        <div style={modal.backdrop} onClick={e => e.target === e.currentTarget && setShowRangeModal(false)}>
+          <div style={{ ...modal.root, width:'min(620px, calc(100vw - 24px))', maxHeight:'90vh', display:'flex', flexDirection:'column' }}>
+            <div style={modal.header}>
+              <span style={modal.title}>Rango de manos</span>
+              <button style={modal.close} onClick={() => setShowRangeModal(false)}>✕</button>
+            </div>
+
+            {/* Legend */}
+            <div style={{ display:'flex', gap:16, padding:'8px 22px 0', flexShrink:0 }}>
+              {[['#b02828','Subió'],['#2a4898','Foldeó'],['#141e2e','No jugada']].map(([bg, label]) => (
+                <div key={label} style={{ display:'flex', alignItems:'center', gap:5 }}>
+                  <div style={{ width:12, height:12, borderRadius:2, background:bg, border:'1px solid rgba(255,255,255,0.12)', flexShrink:0 }}/>
+                  <span style={{ fontSize:11, color:'#4a7090', fontWeight:600 }}>{label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Grid */}
+            <div style={{ padding:'12px 22px 20px', overflowY:'auto' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(13, 1fr)', gap:3 }}>
+                {GRID_RANKS.map((_, row) =>
+                  GRID_RANKS.map((_, col) => {
+                    const label = gridCellLabel(row, col)
+                    const data  = rangeMap.get(label)
+                    const hasRaise = (data?.raise ?? 0) > 0
+                    const hasFold  = (data?.fold  ?? 0) > 0
+                    const bg = hasRaise && hasFold
+                      ? 'linear-gradient(135deg, #b02828 50%, #2a4898 50%)'
+                      : hasRaise ? '#b02828'
+                      : hasFold  ? '#2a4898'
+                      : '#141e2e'
+                    const clickable = data && (hasRaise || hasFold)
+                    return (
+                      <div key={label}
+                        onClick={() => {
+                          if (!clickable) return
+                          setShowRangeModal(false)
+                          goHand(data.firstIdx)
+                        }}
+                        title={data
+                          ? `${label}  ↑ ${data.raise}  ✗ ${data.fold}  → ${data.call}`
+                          : label}
+                        style={{
+                          aspectRatio:'1', background:bg, borderRadius:3,
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                          fontSize:'clamp(6px, 1.4vw, 10px)', fontWeight:800,
+                          color: data ? '#fff' : '#2a3a50',
+                          cursor: clickable ? 'pointer' : 'default',
+                          border: clickable ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
+                          transition:'filter 0.1s',
+                        }}
+                        onMouseEnter={e => { if (clickable) e.currentTarget.style.filter='brightness(1.25)' }}
+                        onMouseLeave={e => { e.currentTarget.style.filter='' }}
+                      >
+                        {label}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
