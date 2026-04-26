@@ -328,6 +328,7 @@ export default function Visualizer() {
   const textareaRef = useRef()
 
   const [showRangeModal,   setShowRangeModal]   = useState(false)
+  const [rangeFilter,      setRangeFilter]      = useState(null) // null | 'raise' | 'fold'
 
   const [userLists,        setUserLists]        = useState([])
   const [markedHandIds,    setMarkedHandIds]     = useState(new Set())
@@ -352,12 +353,12 @@ export default function Visualizer() {
       if (!combo) continue
       const heroActs = (hand.actions?.preflop ?? []).filter(a => a.player === 'Hero')
       const first    = heroActs.find(a => !['post-sb', 'post-bb'].includes(a.type))
-      if (!map.has(combo)) map.set(combo, { raise: 0, fold: 0, call: 0, firstIdx: i })
+      if (!map.has(combo)) map.set(combo, { raise: 0, fold: 0, call: 0, firstIdx: i, firstRaiseIdx: -1, firstFoldIdx: -1, firstCallIdx: -1 })
       const e = map.get(combo)
-      if (!first || first.type === 'check')                        e.call++
-      else if (first.type === 'fold')                              e.fold++
-      else if (first.type === 'raise' || first.type === 'bet')     e.raise++
-      else                                                         e.call++
+      if (!first || first.type === 'check')                        { e.call++;  if (e.firstCallIdx  === -1) e.firstCallIdx  = i }
+      else if (first.type === 'fold')                              { e.fold++;  if (e.firstFoldIdx  === -1) e.firstFoldIdx  = i }
+      else if (first.type === 'raise' || first.type === 'bet')     { e.raise++; if (e.firstRaiseIdx === -1) e.firstRaiseIdx = i }
+      else                                                         { e.call++;  if (e.firstCallIdx  === -1) e.firstCallIdx  = i }
     }
     return map
   }, [hands])
@@ -1405,21 +1406,37 @@ export default function Visualizer() {
 
       {/* ── RANGE GRID MODAL ── */}
       {showRangeModal && (
-        <div style={modal.backdrop} onClick={e => e.target === e.currentTarget && setShowRangeModal(false)}>
-          <div style={{ ...modal.root, width:'min(620px, calc(100vw - 24px))', maxHeight:'90vh', display:'flex', flexDirection:'column' }}>
+        <div style={modal.backdrop} onClick={e => { if (e.target === e.currentTarget) { setShowRangeModal(false); setRangeFilter(null) } }}>
+          <div style={{ ...modal.root, width:'min(820px, calc(100vw - 24px))', maxHeight:'92vh', display:'flex', flexDirection:'column' }}>
             <div style={modal.header}>
               <span style={modal.title}>Rango de manos</span>
-              <button style={modal.close} onClick={() => setShowRangeModal(false)}>✕</button>
+              <button style={modal.close} onClick={() => { setShowRangeModal(false); setRangeFilter(null) }}>✕</button>
             </div>
 
             {/* Legend */}
-            <div style={{ display:'flex', gap:16, padding:'8px 22px 0', flexShrink:0 }}>
-              {[['#b02828','Subió'],['#2a4898','Foldeó'],['#141e2e','No jugada']].map(([bg, label]) => (
-                <div key={label} style={{ display:'flex', alignItems:'center', gap:5 }}>
-                  <div style={{ width:12, height:12, borderRadius:2, background:bg, border:'1px solid rgba(255,255,255,0.12)', flexShrink:0 }}/>
-                  <span style={{ fontSize:11, color:'#4a7090', fontWeight:600 }}>{label}</span>
-                </div>
-              ))}
+            <div style={{ display:'flex', gap:8, padding:'8px 22px 0', flexShrink:0, flexWrap:'wrap' }}>
+              {[['raise','#b02828','Subió'],['fold','#2a4898','Foldeó'],['call','#1a7a3a','CC']].map(([key, bg, label]) => {
+                const active = rangeFilter === key
+                return (
+                  <button key={key}
+                    onClick={() => setRangeFilter(active ? null : key)}
+                    style={{
+                      display:'flex', alignItems:'center', gap:5,
+                      background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+                      border: active ? `1px solid ${bg}` : '1px solid transparent',
+                      borderRadius:4, padding:'3px 8px 3px 5px', cursor:'pointer',
+                      outline:'none',
+                    }}
+                  >
+                    <div style={{ width:12, height:12, borderRadius:2, background:bg, border:'1px solid rgba(255,255,255,0.12)', flexShrink:0 }}/>
+                    <span style={{ fontSize:11, color: active ? '#dde0e8' : '#4a7090', fontWeight:600 }}>{label}</span>
+                  </button>
+                )
+              })}
+              <div style={{ display:'flex', alignItems:'center', gap:5, padding:'3px 8px 3px 5px' }}>
+                <div style={{ width:12, height:12, borderRadius:2, background:'#141e2e', border:'1px solid rgba(255,255,255,0.12)', flexShrink:0 }}/>
+                <span style={{ fontSize:11, color:'#4a7090', fontWeight:600 }}>No jugada</span>
+              </div>
             </div>
 
             {/* Grid */}
@@ -1431,35 +1448,80 @@ export default function Visualizer() {
                     const data  = rangeMap.get(label)
                     const hasRaise = (data?.raise ?? 0) > 0
                     const hasFold  = (data?.fold  ?? 0) > 0
-                    const bg = hasRaise && hasFold
-                      ? 'linear-gradient(135deg, #b02828 50%, #2a4898 50%)'
-                      : hasRaise ? '#b02828'
-                      : hasFold  ? '#2a4898'
-                      : '#141e2e'
-                    const clickable = data && (hasRaise || hasFold)
+                    const hasCall  = (data?.call  ?? 0) > 0
+
+                    // Determine if this cell matches the active filter
+                    const matchesFilter = rangeFilter === 'raise' ? hasRaise
+                                        : rangeFilter === 'fold'  ? hasFold
+                                        : rangeFilter === 'call'  ? hasCall
+                                        : true
+                    const dimmed = rangeFilter !== null && !matchesFilter
+
+                    // Colors per action
+                    const C_RAISE = '#b02828', C_FOLD = '#2a4898', C_CALL = '#1a7a3a'
+                    const bg = rangeFilter === 'raise' && hasRaise ? C_RAISE
+                             : rangeFilter === 'fold'  && hasFold  ? C_FOLD
+                             : rangeFilter === 'call'  && hasCall  ? C_CALL
+                             : hasRaise && hasFold && hasCall
+                               ? `linear-gradient(135deg, ${C_RAISE} 33%, ${C_FOLD} 33% 66%, ${C_CALL} 66%)`
+                             : hasRaise && hasFold
+                               ? `linear-gradient(135deg, ${C_RAISE} 50%, ${C_FOLD} 50%)`
+                             : hasRaise && hasCall
+                               ? `linear-gradient(135deg, ${C_RAISE} 50%, ${C_CALL} 50%)`
+                             : hasFold && hasCall
+                               ? `linear-gradient(135deg, ${C_FOLD} 50%, ${C_CALL} 50%)`
+                             : hasRaise ? C_RAISE
+                             : hasFold  ? C_FOLD
+                             : hasCall  ? C_CALL
+                             : '#141e2e'
+
+                    // Clickable only if it matches the active filter (or no filter)
+                    const targetIdx = rangeFilter === 'raise' ? data?.firstRaiseIdx
+                                    : rangeFilter === 'fold'  ? data?.firstFoldIdx
+                                    : rangeFilter === 'call'  ? data?.firstCallIdx
+                                    : data?.firstIdx
+                    const clickable = !dimmed && data && (hasRaise || hasFold || hasCall) && targetIdx != null && targetIdx >= 0
+
+                    const count = data
+                      ? rangeFilter === 'raise' ? data.raise
+                      : rangeFilter === 'fold'  ? data.fold
+                      : rangeFilter === 'call'  ? data.call
+                      : data.raise + data.fold + data.call
+                      : 0
+
                     return (
                       <div key={label}
                         onClick={() => {
                           if (!clickable) return
                           setShowRangeModal(false)
-                          goHand(data.firstIdx)
+                          setRangeFilter(null)
+                          goHand(targetIdx)
                         }}
                         title={data
-                          ? `${label}  ↑ ${data.raise}  ✗ ${data.fold}  → ${data.call}`
+                          ? `${label} — Subió: ${data.raise}  Foldeó: ${data.fold}  CC: ${data.call}`
                           : label}
                         style={{
                           aspectRatio:'1', background:bg, borderRadius:3,
                           display:'flex', alignItems:'center', justifyContent:'center',
-                          fontSize:'clamp(6px, 1.4vw, 10px)', fontWeight:800,
+                          fontSize:'clamp(7px, 1.5vw, 13px)', fontWeight:800,
                           color: data ? '#fff' : '#2a3a50',
                           cursor: clickable ? 'pointer' : 'default',
                           border: clickable ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
-                          transition:'filter 0.1s',
+                          transition:'filter 0.1s, opacity 0.15s',
+                          opacity: dimmed ? 0.15 : 1,
+                          position:'relative',
                         }}
                         onMouseEnter={e => { if (clickable) e.currentTarget.style.filter='brightness(1.25)' }}
                         onMouseLeave={e => { e.currentTarget.style.filter='' }}
                       >
                         {label}
+                        {count > 0 && (
+                          <span style={{
+                            position:'absolute', bottom:1, right:2,
+                            fontSize:'clamp(7px, 1.2vw, 12px)', fontWeight:700,
+                            color:'rgba(255,255,255,0.65)', lineHeight:1,
+                          }}>{count}</span>
+                        )}
                       </div>
                     )
                   })
