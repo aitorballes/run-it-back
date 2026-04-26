@@ -906,16 +906,6 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Solo jugadas */}
-                <div style={s.field}>
-                  <label style={s.checkLabel}>
-                    <input type="checkbox" checked={studyDraft.notFoldedPreflop}
-                      onChange={e => setStudyDraft(d => ({ ...d, notFoldedPreflop: e.target.checked }))}
-                      style={{ accentColor: '#50d080', width: 15, height: 15 }} />
-                    VPIP
-                  </label>
-                </div>
-
                 {/* Tipo de bote */}
                 <div style={s.field}>
                   <label style={s.fieldLabel}>Tipo de bote</label>
@@ -992,6 +982,16 @@ export default function Dashboard() {
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Solo jugadas */}
+                <div style={s.field}>
+                  <label style={s.checkLabel}>
+                    <input type="checkbox" checked={studyDraft.notFoldedPreflop}
+                      onChange={e => setStudyDraft(d => ({ ...d, notFoldedPreflop: e.target.checked }))}
+                      style={{ accentColor: '#50d080', width: 15, height: 15 }} />
+                    VPIP
+                  </label>
                 </div>
 
                 {studyError && <div style={s.studyError}>{studyError}</div>}

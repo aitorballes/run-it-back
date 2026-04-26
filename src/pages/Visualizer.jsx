@@ -328,7 +328,9 @@ export default function Visualizer() {
   const textareaRef = useRef()
 
   const [showRangeModal,   setShowRangeModal]   = useState(false)
-  const [rangeFilter,      setRangeFilter]      = useState(null) // null | 'raise' | 'fold'
+  const [rangeFilter,      setRangeFilter]      = useState(null) // null | 'raise' | 'fold' | 'call'
+  const [isComboStudy,     setIsComboStudy]     = useState(false)
+  const originalHandsRef = useRef(null)
 
   const [userLists,        setUserLists]        = useState([])
   const [markedHandIds,    setMarkedHandIds]     = useState(new Set())
@@ -362,6 +364,7 @@ export default function Visualizer() {
     }
     return map
   }, [hands])
+
 
   // ── Load ──
   useEffect(() => {
@@ -749,7 +752,17 @@ export default function Visualizer() {
 
       {/* ── HEADER ── */}
       <div style={hdr.root}>
-        {!token && !handToken && !listToken && <button style={hdr.back} onClick={() => navigate('/')}>{isMobile ? '←' : '← Torneos'}</button>}
+        {!token && !handToken && !listToken && !isComboStudy && <button style={hdr.back} onClick={() => navigate('/')}>{isMobile ? '←' : '← Torneos'}</button>}
+        {isComboStudy && (
+          <button style={hdr.back} onClick={() => {
+            setHands(originalHandsRef.current)
+            originalHandsRef.current = null
+            setIsComboStudy(false)
+            setCurIdx(0)
+            setCurStep(0)
+            setShowRangeModal(true)
+          }}>{isMobile ? '←' : '← Rango'}</button>
+        )}
         {(token || handToken || listToken) && (
           <a href="#" style={hdr.logo} onClick={e => { e.preventDefault(); navigate(user ? '/' : '/login') }}>
             <span style={hdr.logoSpade}>♠</span>
@@ -1493,9 +1506,25 @@ export default function Visualizer() {
                       <div key={label}
                         onClick={() => {
                           if (!clickable) return
+                          const filtered = hands.filter(hand => {
+                            const cards = hand.holeCards?.Hero
+                            if (!cards || cards.length !== 2) return false
+                            if (holeCardsToCombo(cards) !== label) return false
+                            if (!rangeFilter) return true
+                            const heroActs = (hand.actions?.preflop ?? []).filter(a => a.player === 'Hero')
+                            const first    = heroActs.find(a => !['post-sb','post-bb'].includes(a.type))
+                            const action   = (!first || first.type === 'check') ? 'call'
+                                           : (first.type === 'fold') ? 'fold'
+                                           : (first.type === 'raise' || first.type === 'bet') ? 'raise'
+                                           : 'call'
+                            return action === rangeFilter
+                          })
+                          originalHandsRef.current = hands
+                          setHands(filtered)
+                          setCurIdx(0)
+                          setCurStep(0)
+                          setIsComboStudy(true)
                           setShowRangeModal(false)
-                          setRangeFilter(null)
-                          goHand(targetIdx)
                         }}
                         title={data
                           ? `${label} — Subió: ${data.raise}  Foldeó: ${data.fold}  CC: ${data.call}`
@@ -1515,7 +1544,7 @@ export default function Visualizer() {
                         onMouseLeave={e => { e.currentTarget.style.filter='' }}
                       >
                         {label}
-                        {count > 0 && (
+                        {rangeFilter && count > 0 && (
                           <span style={{
                             position:'absolute', bottom:1, right:2,
                             fontSize:'clamp(7px, 1.2vw, 12px)', fontWeight:700,
