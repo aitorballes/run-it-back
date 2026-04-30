@@ -257,21 +257,27 @@ export async function fetchTournamentsInRange(userId, fromDate, toDate) {
 export async function fetchHandsBatch(tournamentDbIds) {
   if (!tournamentDbIds.length) return new Map()
   const CHUNK = 20
+  const PAGE_SIZE = 1000
   const result = new Map()
 
   for (let i = 0; i < tournamentDbIds.length; i += CHUNK) {
     const chunk = tournamentDbIds.slice(i, i + CHUNK)
-    const { data, error } = await supabase
-      .from('hands')
-      .select('id, hand_id, raw, tournament_id')
-      .in('tournament_id', chunk)
-      .order('id', { ascending: true })
-    if (error) throw error
-    if (data) {
+    let page = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('hands')
+        .select('id, hand_id, raw, tournament_id')
+        .in('tournament_id', chunk)
+        .order('id', { ascending: true })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+      if (error) throw error
+      if (!data || data.length === 0) break
       for (const hand of data) {
         if (!result.has(hand.tournament_id)) result.set(hand.tournament_id, [])
         result.get(hand.tournament_id).push(hand)
       }
+      if (data.length < PAGE_SIZE) break
+      page++
     }
   }
 
