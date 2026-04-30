@@ -337,7 +337,7 @@ export default function Dashboard() {
       }
 
       setShowExport(false)
-      const msg = `${selected.length} torneo${selected.length !== 1 ? 's' : ''} exportado${selected.length !== 1 ? 's' : ''} · ${totalHands} manos`
+      const msg = `${selected.length} torneo${selected.length !== 1 ? 's' : ''} exportado${selected.length !== 1 ? 's' : ''} · ${totalHands.toLocaleString('es-ES')} manos`
       setToast(msg)
       setTimeout(() => setToast(null), 3500)
     } catch (e) {
