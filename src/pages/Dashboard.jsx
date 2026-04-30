@@ -796,7 +796,6 @@ export default function Dashboard() {
             <div style={s.listHeader}>
               <span style={s.listTitle}>Mis torneos</span>
               <span style={s.listCount}>{tournaments.length}</span>
-              <span style={{ ...s.listCount, marginLeft: -4 }}>🂠 {tournaments.reduce((sum, t) => sum + (t.hands_count || 0), 0).toLocaleString()} manos</span>
               {hasFilters && (
                 <span style={s.filterInfo}>
                   {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
