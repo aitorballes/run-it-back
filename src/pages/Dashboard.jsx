@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { strToU8, zipSync } from 'fflate'
 import { serializeTournament, serializeSummary } from '../lib/serializer'
 import { fetchTournamentsInRange, fetchHandsBatch } from '../lib/db'
@@ -24,6 +24,155 @@ const EMPTY_FILTERS = { name: '', dateFrom: '', dateTo: '', buyinMin: '', buyinM
 const EMPTY_STUDY   = { positions: [], notFoldedPreflop: false, potType: null, players: null, dateRange: null, dateFrom: '', dateTo: '' }
 const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
 
+const calStyle = {
+  outer: {
+    position: 'fixed',
+    top: 82,
+    right: 24,
+    width: 282,
+    zIndex: 2,
+  },
+  title: {
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: '#5a8aaa',
+    marginBottom: 10,
+    textAlign: 'right',
+  },
+  widget: {
+    background: '#0d1622',
+    border: '1px solid #1a2a3a',
+    borderRadius: 14,
+    padding: '16px 16px 12px',
+  },
+  month: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: '#dde0e8',
+    marginBottom: 0,
+    textTransform: 'capitalize',
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: 2,
+  },
+  dayLabel: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#4a7090',
+    fontWeight: 600,
+    padding: '2px 0 6px',
+    letterSpacing: '0.04em',
+  },
+  day: {
+    textAlign: 'center',
+    fontSize: 13,
+    borderRadius: 6,
+    minHeight: 34,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayActive: {
+    color: '#60b0ff',
+    fontWeight: 700,
+    cursor: 'pointer',
+    background: 'rgba(96, 176, 255, 0.12)',
+  },
+  dayInactive: {
+    color: '#4a7090',
+    cursor: 'default',
+  },
+  dayToday: {
+    color: '#50d080',
+    fontWeight: 700,
+    cursor: 'pointer',
+    background: 'rgba(80, 208, 128, 0.12)',
+    outline: '1px solid rgba(80, 208, 128, 0.4)',
+    outlineOffset: '-1px',
+  },
+  daySelected: {
+    outline: '2px solid rgba(96, 176, 255, 0.6)',
+    outlineOffset: '-1px',
+  },
+  navBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#7ab0d8',
+    fontSize: 18,
+    lineHeight: 1,
+    cursor: 'pointer',
+    padding: '0 4px',
+    borderRadius: 5,
+  },
+  navBtnDisabled: {
+    color: '#2a4a62',
+    cursor: 'default',
+  },
+}
+
+const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+
+function CalendarWidget({ sessionDays, onDayClick, selectedDay }) {
+  const [monthOffset, setMonthOffset] = useState(0)
+  const today = new Date()
+  const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1)
+  const year = base.getFullYear()
+  const month = base.getMonth()
+  const monthLabel = base.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).replace(' de ', ' ')
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const firstDay = new Date(year, month, 1).getDay()
+  const offset = (firstDay + 6) % 7 // Monday-first
+  const todayKey = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`
+
+  const cells = []
+  for (let i = 0; i < offset; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  return (
+    <div style={calStyle.outer}>
+      <div style={calStyle.title}>Tus sesiones</div>
+      <div style={calStyle.widget}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <button style={calStyle.navBtn} onClick={() => setMonthOffset(o => o - 1)}>‹</button>
+          <div style={calStyle.month}>{monthLabel}</div>
+          <button style={{ ...calStyle.navBtn, ...(monthOffset === 0 ? calStyle.navBtnDisabled : {}) }} onClick={() => setMonthOffset(o => Math.min(0, o + 1))} disabled={monthOffset === 0}>›</button>
+        </div>
+        <div style={calStyle.grid}>
+          {DAY_LABELS.map(l => (
+            <div key={l} style={calStyle.dayLabel}>{l}</div>
+          ))}
+          {cells.map((d, i) => {
+            if (!d) return <div key={`e-${i}`} />
+            const mm = String(month + 1).padStart(2, '0')
+            const dd = String(d).padStart(2, '0')
+            const dayKey = `${year}/${mm}/${dd}`
+            const hasSession = sessionDays.has(dayKey)
+            const isToday = dayKey === todayKey
+            const isSelected = dayKey === selectedDay
+            return (
+              <div
+                key={dayKey}
+                style={{
+                  ...calStyle.day,
+                  ...(isToday ? calStyle.dayToday : hasSession ? calStyle.dayActive : calStyle.dayInactive),
+                  ...(isSelected ? calStyle.daySelected : {}),
+                }}
+                onClick={hasSession ? () => onDayClick(dayKey) : undefined}
+              >
+                {d}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
@@ -41,6 +190,8 @@ export default function Dashboard() {
   const [confirmDelete,    setConfirmDelete]    = useState(null) // { id, name }
   const [deleting,         setDeleting]         = useState(false)
   const [isMobile,         setIsMobile]         = useState(() => window.innerWidth < 768)
+  const [isWide,           setIsWide]           = useState(() => window.innerWidth >= 1280)
+  const [calendarExpandedDay, setCalendarExpandedDay] = useState(null)
   const [openMenu,         setOpenMenu]         = useState(null) // tournament id with open menu
   const [toast,            setToast]            = useState(null)
   const [showImport,       setShowImport]       = useState(false)
@@ -381,6 +532,22 @@ export default function Dashboard() {
     })
   }
 
+  const handleCalendarDayClick = useCallback((day) => {
+    const isSameDay = calendarExpandedDay === day
+    setExpandedDays(prev => {
+      const next = new Set(prev)
+      if (calendarExpandedDay) next.delete(calendarExpandedDay)
+      if (!isSameDay) next.add(day)
+      return next
+    })
+    setCalendarExpandedDay(isSameDay ? null : day)
+    if (!isSameDay) {
+      setTimeout(() => {
+        document.getElementById(`day-${day}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 50)
+    }
+  }, [calendarExpandedDay])
+
   function openFilter() {
     setDraft({ ...filters })
     setShowFilter(true)
@@ -399,7 +566,10 @@ export default function Dashboard() {
 
   useEffect(() => { loadTournaments() }, [])
   useEffect(() => {
-    const fn = () => setIsMobile(window.innerWidth < 768)
+    const fn = () => {
+      setIsMobile(window.innerWidth < 768)
+      setIsWide(window.innerWidth >= 1280)
+    }
     window.addEventListener('resize', fn)
     return () => window.removeEventListener('resize', fn)
   }, [])
@@ -592,6 +762,15 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* CALENDAR WIDGET */}
+      {isWide && !loading && tournaments.length > 0 && (
+        <CalendarWidget
+          sessionDays={new Set(grouped.map(g => g.day))}
+          onDayClick={handleCalendarDayClick}
+          selectedDay={calendarExpandedDay}
+        />
+      )}
+
       {/* STATUS */}
       {uploadStatus && (
         <div style={{ ...s.status, ...(uploadStatus.ok ? s.statusOk : s.statusErr) }}>
@@ -600,7 +779,7 @@ export default function Dashboard() {
       )}
 
       {/* CONTENT */}
-      <div style={{ ...s.content, padding: isMobile ? '20px 12px' : '48px 24px' }}>
+      <div style={{ ...s.content, paddingTop: isMobile ? 16 : 24, paddingBottom: isMobile ? 20 : 48, paddingLeft: isMobile ? 12 : 24, paddingRight: isWide ? 322 : isMobile ? 12 : 24 }}>
         {loading ? (
           <div style={s.hint}>Cargando...</div>
         ) : tournaments.length === 0 ? (
@@ -669,7 +848,7 @@ export default function Dashboard() {
                   ? `${firstStart} – ${lastEnd}`
                   : firstStart ?? '—'
                 return (
-                  <div key={day} style={{ marginBottom: 6 }}>
+                  <div key={day} id={`day-${day}`} style={{ marginBottom: 6, scrollMarginTop: 78 }}>
                     {/* Session card */}
                     <div style={{ ...s.sessionCard, ...(isExpanded ? s.sessionCardOpen : {}) }}
                       onClick={() => toggleDay(day)}>
@@ -1434,7 +1613,7 @@ const s = {
     fontFamily: "'Segoe UI', system-ui, sans-serif",
     color: '#dde0e8',
     position: 'relative',
-    overflow: 'hidden',
+    overflow: 'clip',
   },
   suit: {
     position: 'absolute',
@@ -1447,6 +1626,8 @@ const s = {
 
   // Header
   header: {
+    position: 'sticky',
+    top: 0,
     background: 'rgba(10,15,25,0.92)',
     borderBottom: '1px solid #0e1828',
     backdropFilter: 'blur(12px)',
