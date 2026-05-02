@@ -66,3 +66,38 @@ export function playersWhoSawFlop(hand) {
   )
   return (hand.seats ?? []).filter(s => !folded.has(s.player)).length
 }
+
+export function computeHandStats(hand) {
+  const preflop = hand.actions?.preflop ?? []
+
+  const vpip = preflop.some(a => a.player === 'Hero' && ['call', 'raise', 'bet'].includes(a.type))
+  const pfr  = preflop.some(a => a.player === 'Hero' && a.type === 'raise')
+
+  // 3Bet: hero raises after another player already raised
+  let seenOtherRaise = false
+  let three_bet = false
+  for (const a of preflop) {
+    if (a.player !== 'Hero' && a.type === 'raise') seenOtherRaise = true
+    if (a.player === 'Hero' && a.type === 'raise' && seenOtherRaise) { three_bet = true; break }
+  }
+
+  // Fold vs 3Bet: hero open-raised, opponent re-raised (3bet), hero folded
+  let heroOpenRaised = false
+  let facedThreeBet  = false
+  let fold_vs_3bet   = false
+  for (const a of preflop) {
+    if (!heroOpenRaised && a.player === 'Hero'  && a.type === 'raise') heroOpenRaised = true
+    else if (heroOpenRaised && a.player !== 'Hero'  && a.type === 'raise') facedThreeBet = true
+    else if (facedThreeBet  && a.player === 'Hero'  && a.type === 'fold')  { fold_vs_3bet = true; break }
+  }
+
+  const heroFolded = preflop.some(a => a.player === 'Hero' && a.type === 'fold')
+  const saw_flop   = !heroFolded && (hand.board?.flop?.length ?? 0) > 0
+
+  const went_to_sd = hand.heroResult !== 'folded' && hand.board?.river != null
+  const won_sd     = hand.heroResult === 'won'    && hand.board?.river != null
+
+  const hero_pos = hand.seats?.find(s => s.player === 'Hero')?.pos ?? null
+
+  return { vpip, pfr, three_bet, fold_vs_3bet, saw_flop, went_to_sd, won_sd, hero_pos }
+}

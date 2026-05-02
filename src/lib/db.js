@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { calcHeroNet } from './parser'
+import { computeHandStats } from './handUtils'
 
 const HAND_BATCH   = 200
 const ACTION_BATCH = 1000
@@ -53,6 +54,7 @@ export async function saveTournament(tournament, userId) {
     hole_cards:    h.holeCards,
     sequence:      { sequence: h.sequence, streetStartStep: h.streetStartStep },
     raw:           h,
+    ...computeHandStats(h),
   }))
 
   const insertedHands = []
@@ -504,3 +506,91 @@ export async function fetchHandsInList(listId) {
   }
   return results
 }
+
+export async function migrateHandStats(userId, onProgress) {
+  const { data: tours, error: tourErr } = await supabase
+    .from('tournaments').select('id').eq('user_id', userId)
+  if (tourErr) throw tourErr
+
+  const tourIds = tours.map(t => t.id)
+  const CHUNK = 20
+  const PAGE  = 200
+  let processed = 0
+
+  let total = 0
+  for (let i = 0; i < tourIds.length; i += CHUNK) {
+    const { count } = await supabase
+      .from('hands').select('id', { count: 'exact', head: true })
+      .in('tournament_id', tourIds.slice(i, i + CHUNK))
+    total += count ?? 0
+  }
+
+  const agg = { total: 0, vpip: 0, pfr: 0, three_bet: 0, fold_vs_3bet_num: 0, fold_vs_3bet_den: 0,
+                saw_flop: 0, wwsf_num: 0, went_to_sd: 0, won_sd: 0 }
+
+  for (let i = 0; i < tourIds.length; i += CHUNK) {
+    const chunk = tourIds.slice(i, i + CHUNK)
+    let page = 0
+    while (true) {
+      const { data: hands, error } = await supabase
+        .from('hands').select('id, tournament_id, raw')
+        .in('tournament_id', chunk)
+        .range(page * PAGE, (page + 1) * PAGE - 1)
+      if (error) throw error
+      if (!hands?.length) break
+
+      const updates = hands.map(h => {
+        const st = computeHandStats(h.raw)
+        agg.total++
+        if (st.vpip)         agg.vpip++
+        if (st.pfr)          agg.pfr++
+        if (st.three_bet)    agg.three_bet++
+        if (st.pfr)          agg.fold_vs_3bet_den++
+        if (st.fold_vs_3bet) agg.fold_vs_3bet_num++
+        if (st.saw_flop)     agg.saw_flop++
+        if (st.saw_flop && h.raw?.heroResult === 'won') agg.wwsf_num++
+        if (st.went_to_sd)   agg.went_to_sd++
+        if (st.won_sd)       agg.won_sd++
+        return { id: h.id, tournament_id: h.tournament_id, ...st }
+      })
+      const { error: upsertErr } = await supabase.from('hands').upsert(updates, { onConflict: 'id' })
+      if (upsertErr) throw upsertErr
+
+      processed += hands.length
+      onProgress?.(processed, total)
+      if (hands.length < PAGE) break
+      page++
+    }
+  }
+
+  const pct = (n, d) => d > 0 ? Math.round(n / d * 1000) / 10 : null
+  const stats = {
+    total_hands:  agg.total,
+    vpip:         pct(agg.vpip, agg.total),
+    pfr:          pct(agg.pfr, agg.total),
+    three_bet:    pct(agg.three_bet, agg.total),
+    fold_vs_3bet: pct(agg.fold_vs_3bet_num, agg.fold_vs_3bet_den),
+    wwsf:         pct(agg.wwsf_num, agg.saw_flop),
+    wtsd:         pct(agg.went_to_sd, agg.saw_flop),
+    won_sd:       pct(agg.won_sd, agg.went_to_sd),
+  }
+
+  const { error: saveErr } = await supabase.from('user_stats').upsert(
+    { user_id: userId, ...stats, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id' }
+  )
+  if (saveErr) throw saveErr
+
+  return { processed, stats }
+}
+
+export async function fetchHeroStats(userId) {
+  const { data, error } = await supabase
+    .from('user_stats')
+    .select('total_hands,vpip,pfr,three_bet,fold_vs_3bet,wwsf,wtsd,won_sd')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+

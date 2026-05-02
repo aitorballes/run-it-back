@@ -11,7 +11,7 @@ import psIcon from '../assets/pokerstars.png'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
-import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchAllUserHands, fetchHandsByIds, fetchAllUserListHandIds, fetchUserReviewLists, fetchHandsInList, createReviewList, renameReviewList, deleteReviewList } from '../lib/db'
+import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchAllUserHands, fetchHandsByIds, fetchAllUserListHandIds, fetchUserReviewLists, fetchHandsInList, createReviewList, renameReviewList, deleteReviewList, fetchHeroStats, migrateHandStats } from '../lib/db'
 import { getPositionLabel, heroFoldedPreflop, preflopRaiseCount, playersWhoSawFlop, preflopIsClean, preflopIsLimped } from '../lib/handUtils'
 
 function extractBuyin(name) {
@@ -229,6 +229,11 @@ export default function Dashboard() {
   const [confirmDeleteSession, setConfirmDeleteSession] = useState(null) // { day, items }
   const [deletingSession,      setDeletingSession]      = useState(false)
   const [openSessionMenu,      setOpenSessionMenu]      = useState(null)  // day key
+  const [heroStats,            setHeroStats]            = useState(null)
+  const [statsLoading,         setStatsLoading]         = useState(false)
+  const [statsError,           setStatsError]           = useState(null)
+  const [migrating,            setMigrating]            = useState(false)
+  const [migrationProgress,    setMigrationProgress]    = useState(null)
 
   function sanitizeFilename(name) {
     return (name || 'torneo').replace(/[^a-zA-Z0-9_\-.]/g, '_').slice(0, 80)
@@ -404,6 +409,39 @@ export default function Dashboard() {
       setStudyError('Error al buscar manos. Inténtalo de nuevo.')
     } finally {
       setStudyLoading(false)
+    }
+  }
+
+  async function loadHeroStats() {
+    if (heroStats) return
+    setStatsLoading(true)
+    setStatsError(null)
+    try {
+      const data = await fetchHeroStats(user.id)
+      setHeroStats(data)
+    } catch (e) {
+      console.error(e)
+      setStatsError('No se pudieron cargar las stats.')
+    } finally {
+      setStatsLoading(false)
+    }
+  }
+
+  async function runMigration() {
+    setMigrating(true)
+    setMigrationProgress({ current: 0, total: null })
+    setStatsError(null)
+    try {
+      const { stats } = await migrateHandStats(user.id, (current, total) => {
+        setMigrationProgress({ current, total })
+      })
+      setHeroStats(stats)
+    } catch (e) {
+      console.error(e)
+      setStatsError(`Error: ${e?.message || e?.toString() || 'desconocido'}`)
+    } finally {
+      setMigrating(false)
+      setMigrationProgress(null)
     }
   }
 
@@ -1054,13 +1092,13 @@ export default function Dashboard() {
 
             {/* Tab bar */}
             <div style={{ display:'flex', borderBottom:'1px solid #1a2a3a', flexShrink:0 }}>
-              {[{ key:'filters', label:'Filtros' }, { key:'lists', label:'Listas de manos marcadas' }].map(tab => (
+              {[{ key:'filters', label:'Filtros' }, { key:'lists', label:'Listas de manos marcadas' }, { key:'stats', label:'Mis stats' }].map(tab => (
                 <button key={tab.key}
                   style={{ flex:1, background:'none', border:'none',
                     borderBottom: studyTab === tab.key ? '2px solid #50d080' : '2px solid transparent',
                     padding:'10px 0', color: studyTab === tab.key ? '#50d080' : '#3a6080',
                     fontSize:12, fontWeight:800, cursor:'pointer', letterSpacing:'0.3px', marginBottom:-1 }}
-                  onClick={() => setStudyTab(tab.key)}>{tab.label}</button>
+                  onClick={() => { setStudyTab(tab.key); if (tab.key === 'stats') loadHeroStats() }}>{tab.label}</button>
               ))}
             </div>
 
@@ -1252,6 +1290,66 @@ export default function Dashboard() {
                 <button style={s.studySearchBtn} onClick={() => { setNewListNameDash(''); setShowCreateList(true) }}>
                   + Nueva lista
                 </button>
+              </div>
+            </>)}
+
+            {studyTab === 'stats' && (<>
+              <div style={{ ...s.modalBody, padding:'20px 22px', minHeight:320 }}>
+                {(statsLoading || migrating) && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                    <div style={s.hint}>{migrating ? 'Calculando stats...' : 'Cargando...'}</div>
+                    {migrating && migrationProgress?.total && (
+                      <div style={{ position:'relative', height:6, background:'#0e1828', borderRadius:4, overflow:'hidden' }}>
+                        <div style={{ position:'absolute', inset:0, background:'linear-gradient(to right,#1e5cad,#60b0ff)', width:`${(migrationProgress.current/migrationProgress.total)*100}%`, transition:'width 0.3s', borderRadius:4 }} />
+                      </div>
+                    )}
+                    {migrating && migrationProgress && (
+                      <div style={{ fontSize:11, color:'#4a7090', textAlign:'center' }}>
+                        {migrationProgress.current?.toLocaleString('es-ES')}{migrationProgress.total ? ` / ${migrationProgress.total.toLocaleString('es-ES')}` : ''} manos
+                      </div>
+                    )}
+                  </div>
+                )}
+                {statsError && !statsLoading && !migrating && (
+                  <div style={{ fontSize:12, color:'#e07070' }}>{statsError}</div>
+                )}
+                {!heroStats?.total_hands && !statsLoading && !migrating && !statsError && (
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:14, marginTop:32 }}>
+                    <div style={{ fontSize:13, color:'#7ab0d8', textAlign:'center', lineHeight:1.6 }}>
+                      Las stats se calculan una vez a partir de tus manos importadas.<br/>
+                      <span style={{ color:'#4a7090', fontSize:12 }}>Tardará unos segundos según el volumen.</span>
+                    </div>
+                    <button style={s.studySearchBtn} onClick={runMigration}>Calcular mis stats</button>
+                  </div>
+                )}
+                {heroStats?.total_hands > 0 && !statsLoading && !migrating && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    <div style={{ fontSize:11, fontWeight:800, letterSpacing:'1.5px', textTransform:'uppercase', color:'#5a8aaa', marginBottom:8 }}>
+                      General Stats · {heroStats.total_hands?.toLocaleString('es-ES')} manos
+                    </div>
+                    {[
+                      { label:'VPIP',         value: heroStats.vpip,         desc:'Entra voluntariamente al bote preflop' },
+                      { label:'PFR',          value: heroStats.pfr,          desc:'Raise preflop' },
+                      { label:'3Bet %',       value: heroStats.three_bet,    desc:'Re-raise preflop tras un raise previo' },
+                      { label:'Fold vs 3Bet', value: heroStats.fold_vs_3bet, desc:'Foldea su RFI cuando le hacen 3bet' },
+                      { label:'WWSF %',       value: heroStats.wwsf,         desc:'Gana el bote habiendo visto el flop' },
+                      { label:'WTSD %',       value: heroStats.wtsd,         desc:'Va a showdown habiendo visto el flop' },
+                      { label:'WonSD %',      value: heroStats.won_sd,       desc:'Gana cuando llega a showdown' },
+                    ].map(({ label, value, desc }) => (
+                      <div key={label} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'#090e18', borderRadius:8, border:'1px solid #1a2a3a' }}>
+                        <span style={{ fontSize:12, fontWeight:800, color:'#dde0e8', minWidth:90 }}>{label}</span>
+                        <span style={{ fontSize:18, fontWeight:800, color:'#60b0ff', minWidth:52 }}>{value != null ? `${value}%` : '—'}</span>
+                        <span style={{ fontSize:11, color:'#3a6080' }}>{desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={s.modalFooter}>
+                <button style={s.clearBtn} onClick={() => setShowStudy(false)}>Cerrar</button>
+                {heroStats?.total_hands > 0 && !migrating && (
+                  <button style={{ ...s.studySearchBtn, opacity: migrating ? 0.5 : 1 }} onClick={() => { setHeroStats(null); runMigration() }} disabled={migrating}>↺ Recalcular</button>
+                )}
               </div>
             </>)}
           </div>
