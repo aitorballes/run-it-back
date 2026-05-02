@@ -112,11 +112,38 @@ const calStyle = {
     color: '#2a4a62',
     cursor: 'default',
   },
+  monthStats: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTop: '1px solid #1a2a3a',
+  },
+  monthStatItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 2,
+    flex: 1,
+  },
+  monthStatValue: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: '#dde0e8',
+    lineHeight: 1,
+  },
+  monthStatLabel: {
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: '#4a7090',
+  },
 }
 
 const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
-function CalendarWidget({ sessionDays, onDayClick, selectedDay }) {
+function CalendarWidget({ sessionGroups, onDayClick, selectedDay }) {
   const [monthOffset, setMonthOffset] = useState(0)
   const today = new Date()
   const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1)
@@ -127,6 +154,13 @@ function CalendarWidget({ sessionDays, onDayClick, selectedDay }) {
   const firstDay = new Date(year, month, 1).getDay()
   const offset = (firstDay + 6) % 7 // Monday-first
   const todayKey = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`
+
+  const sessionDays = new Set(sessionGroups.map(g => g.day))
+
+  const monthKey = `${year}/${String(month + 1).padStart(2, '0')}`
+  const monthGroups = sessionGroups.filter(g => g.day.startsWith(monthKey))
+  const monthTournaments = monthGroups.reduce((s, g) => s + g.items.length, 0)
+  const monthHands = monthGroups.reduce((s, g) => s + g.items.reduce((ss, t) => ss + (t.hands_count || 0), 0), 0)
 
   const cells = []
   for (let i = 0; i < offset; i++) cells.push(null)
@@ -168,6 +202,19 @@ function CalendarWidget({ sessionDays, onDayClick, selectedDay }) {
             )
           })}
         </div>
+        {monthTournaments > 0 && (
+          <div style={calStyle.monthStats}>
+            <div style={calStyle.monthStatItem}>
+              <span style={calStyle.monthStatValue}>{monthTournaments}</span>
+              <span style={calStyle.monthStatLabel}>Torneos</span>
+            </div>
+            <div style={{ width: 1, background: '#1a2a3a', margin: '0 8px' }} />
+            <div style={calStyle.monthStatItem}>
+              <span style={calStyle.monthStatValue}>{monthHands.toLocaleString('es-ES')}</span>
+              <span style={calStyle.monthStatLabel}>Manos</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -803,7 +850,7 @@ export default function Dashboard() {
       {/* CALENDAR WIDGET */}
       {isWide && !loading && tournaments.length > 0 && (
         <CalendarWidget
-          sessionDays={new Set(grouped.map(g => g.day))}
+          sessionGroups={grouped}
           onDayClick={handleCalendarDayClick}
           selectedDay={calendarExpandedDay}
         />
