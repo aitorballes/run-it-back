@@ -700,8 +700,15 @@ export default function Dashboard() {
       let saved = 0, skipped = 0, summariesUpdated = 0
 
       if (handTexts.length > 0) {
-        const allHands = handTexts.flatMap(t => parseFile(t))
+        const parsedPerFile = handTexts.map(t => parseFile(t))
+        const entriesMap = new Map()
+        for (const fileHands of parsedPerFile) {
+          const tids = new Set(fileHands.map(h => h.tournamentId).filter(Boolean))
+          for (const tid of tids) entriesMap.set(tid, (entriesMap.get(tid) || 0) + 1)
+        }
+        const allHands = parsedPerFile.flat()
         const grouped  = groupByTournament(allHands)
+        for (const t of grouped) t.entries = entriesMap.get(t.id) || 1
 
         // Dedup en batch: una sola query para todos los torneos
         const existingIds = await fetchExistingTournamentIds(user.id, grouped.map(t => t.id))
@@ -1001,7 +1008,12 @@ export default function Dashboard() {
                               style={s.rowIcon}
                             />
                             <div style={s.rowInfo}>
-                              <div style={s.rowName}>{t.name}</div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                                <div style={s.rowName}>{t.name}</div>
+                                {t.entries > 1 && (
+                                  <span style={s.rowReentry}>[{t.entries}]</span>
+                                )}
+                              </div>
                               <div style={s.rowMeta}>
                                 <span style={s.rowTime}>{formatTime(t.date)}</span>
                                 {t.finish_position != null && (
@@ -2068,6 +2080,16 @@ const s = {
     fontSize: 11,
     color: '#40c070',
     fontWeight: 800,
+  },
+  rowReentry: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: '#60b0ff',
+    background: 'rgba(96, 176, 255, 0.10)',
+    border: '1px solid rgba(96, 176, 255, 0.30)',
+    borderRadius: 5,
+    padding: '2px 6px',
+    flexShrink: 0,
   },
   rowBadge: {
     fontSize: 12,

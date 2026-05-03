@@ -35,6 +35,7 @@ export async function saveTournament(tournament, userId) {
       end_time:      lastHandDatetime,
       hands_count:   tournament.hands.length,
       platform:      tournament.platform || null,
+      entries:       tournament.entries || 1,
     })
     .select('id')
     .single()
@@ -103,7 +104,7 @@ export async function saveTournament(tournament, userId) {
 export async function fetchTournaments(userId) {
   const { data, error } = await supabase
     .from('tournaments')
-    .select('id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at')
+    .select('id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at, entries')
     .eq('user_id', userId)
     .order('date', { ascending: false })
 
@@ -246,7 +247,7 @@ export async function fetchTournamentsInRange(userId, fromDate, toDate) {
 
   const { data, error } = await supabase
     .from('tournaments')
-    .select('id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at')
+    .select('id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at, entries')
     .eq('user_id', userId)
     .gte('date', from)
     .lte('date', to)
