@@ -769,6 +769,33 @@ export default function Dashboard() {
     return m ? m[4] : dateStr
   }
 
+  function formatPlayDuration(items) {
+    const parseDate = s => {
+      const m = s && s.match(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/)
+      return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null
+    }
+    const intervals = []
+    for (const t of items) {
+      const start = parseDate(t.date)
+      const end   = parseDate(t.end_time)
+      if (start && end && end > start) intervals.push([start.getTime(), end.getTime()])
+    }
+    if (intervals.length === 0) return '—'
+    intervals.sort((a, b) => a[0] - b[0])
+    let totalMs = 0
+    let [curStart, curEnd] = intervals[0]
+    for (let i = 1; i < intervals.length; i++) {
+      const [s, e] = intervals[i]
+      if (s <= curEnd) { curEnd = Math.max(curEnd, e) }
+      else { totalMs += curEnd - curStart; curStart = s; curEnd = e }
+    }
+    totalMs += curEnd - curStart
+    if (totalMs === 0) return '—'
+    const h = Math.floor(totalMs / 3600000)
+    const m = Math.round((totalMs % 3600000) / 60000)
+    return h === 0 ? `${m}min` : `${h}h ${String(m).padStart(2, '0')}min`
+  }
+
   function formatDayHeader(dayKey) {
     const [y, mo, d] = dayKey.split('/')
     const date = new Date(+y, +mo - 1, +d)
@@ -933,12 +960,7 @@ export default function Dashboard() {
               ) : grouped.map(({ day, items }) => {
                 const isExpanded = hasFilters || expandedDays.has(day)
                 const totalHands = items.reduce((sum, t) => sum + (t.hands_count || 0), 0)
-                const sorted = [...items].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-                const firstStart = formatTime(sorted[0]?.date)
-                const lastEnd    = formatTime(sorted[sorted.length - 1]?.end_time || sorted[sorted.length - 1]?.date)
-                const timeRange  = firstStart && lastEnd && firstStart !== lastEnd
-                  ? `${firstStart} – ${lastEnd}`
-                  : firstStart ?? '—'
+                const playDuration = formatPlayDuration(items)
                 return (
                   <div key={day} id={`day-${day}`} style={{ marginBottom: 6, scrollMarginTop: 78 }}>
                     {/* Session card */}
@@ -991,8 +1013,8 @@ export default function Dashboard() {
                         </div>
                         <div style={s.statDivider} />
                         <div style={s.stat}>
-                          <span style={{ ...s.statValue, fontSize: isMobile ? 12 : 18, whiteSpace: 'nowrap' }}>{timeRange}</span>
-                          <span style={s.statLabel}>horario</span>
+                          <span style={{ ...s.statValue, fontSize: isMobile ? 12 : 18, whiteSpace: 'nowrap' }}>{playDuration}</span>
+                          <span style={s.statLabel}>duración</span>
                         </div>
                       </div>
                     </div>
