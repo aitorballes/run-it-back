@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList } from '../lib/db'
+import { calculateEquity } from '../lib/equityCalculator'
 import ggIcon from '../assets/ggpoker.png'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
@@ -692,6 +693,31 @@ export default function Visualizer() {
     if (start != null) setCurStep(start)
   }
 
+  // Showdown equity — must be before conditional returns (Rules of Hooks)
+  const showdownCards = useMemo(() => {
+    const h = hands[curIdx]
+    if (!h?.holeCards) return {}
+    return Object.fromEntries(
+      Object.entries(h.holeCards).filter(([name]) =>
+        h.seats.some(s => s.player === name && !s.folded)
+      )
+    )
+  }, [hands, curIdx])
+  const isShowdown = Object.keys(showdownCards).length >= 2
+
+  const equity = useMemo(() => {
+    if (!isShowdown) return null
+    const h = hands[curIdx]
+    if (!h) return null
+    const step   = h.sequence[curStep] ?? h.sequence[0]
+    const sv     = STREET_ORDER.indexOf(step?.street ?? 'preflop')
+    const board  = []
+    if (sv >= 1) board.push(...h.board.flop)
+    if (sv >= 2 && h.board.turn)  board.push(h.board.turn)
+    if (sv >= 3 && h.board.river) board.push(h.board.river)
+    return calculateEquity(showdownCards, board)
+  }, [isShowdown, showdownCards, hands, curIdx, curStep])
+
   if (loading) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Cargando...</div>
   if (!tournament && (token || handToken)) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Contenido no encontrado o enlace inválido.</div>
   if (!hands.length) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Sin manos.</div>
@@ -724,6 +750,15 @@ export default function Visualizer() {
   const allinPlayers  = getAllinByStep(hand, curStep)
   const winnerPlayers = curStep === seq.length - 1
     ? new Set(hand.winners.map(w => w.player)) : new Set()
+  // Show cards face-up when someone is all-in and no more real betting actions remain.
+  // 'uncalled', 'won', 'post-sb', 'post-bb' are not betting decisions — exclude them.
+  const PASSIVE_TYPES = new Set(['uncalled', 'won', 'post-sb', 'post-bb'])
+  const remainingActions = seq.slice(curStep + 1).some(s => {
+    if (s.type !== 'action') return false
+    const a = hand.actions[s.street]?.[s.idx]
+    return a != null && !PASSIVE_TYPES.has(a.type)
+  })
+  const allInRunout = allinPlayers.size >= 1 && !remainingActions && curStep < seq.length - 1
 
   let activePlayer = null, activeAction = null
   if (step?.type === 'action') {
@@ -931,6 +966,11 @@ export default function Visualizer() {
                   {boardCards.map((c,i) => <Card key={i} code={c} size="lg" />)}
                 </div>
               )}
+              {isShowdown && (curStep === seq.length - 1 || allInRunout) && equity?.tie > 0.5 && (
+                <div style={{ fontSize:10, color:'#8899aa', marginTop:4, letterSpacing:'0.3px' }}>
+                  Empate: {equity.tie.toFixed(1)}%
+                </div>
+              )}
               {runningPot > 0 && (
                 <div style={ta.pot}>
                   <span style={{ fontSize:10, color:'rgba(255,200,0,0.5)', fontWeight:600, letterSpacing:1, textTransform:'uppercase' }}>Bote total</span>
@@ -970,9 +1010,9 @@ export default function Visualizer() {
                   display:'flex', flexDirection:'column', alignItems:'center',
                   gap:2, width:114, opacity: isFolded ? 0.35 : 1, pointerEvents:'none', zIndex:2 }}>
 
-                  {/* Cards — opponents only at showdown (last step) */}
+                  {/* Cards — opponents revealed at showdown or when all active players are all-in */}
                   <div style={{ display:'flex', gap:3 }}>
-                    {cards && (isHero || curStep === seq.length - 1)
+                    {cards && (isHero || curStep === seq.length - 1 || allInRunout)
                       ? cards.map((c,ci) => <Card key={ci} code={c} size="lg" />)
                       : [0,1].map(ci => <CardBack key={ci} size="lg" />)}
                   </div>
@@ -1006,6 +1046,14 @@ export default function Visualizer() {
                     <div style={{ fontSize:10, fontWeight:800, padding:'3px 9px', borderRadius:4,
                       background:ab.bg, color:ab.color, border:`1px solid ${ab.border}`, whiteSpace:'nowrap' }}>
                       {ab.label}
+                    </div>
+                  )}
+
+                  {/* Equity badge — only when cards are face-up */}
+                  {isShowdown && (curStep === seq.length - 1 || allInRunout) && equity?.[seat.player] != null && (
+                    <div style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:4,
+                      background:'#0d1f12', color:'#50e080', border:'1px solid #1a4025', whiteSpace:'nowrap' }}>
+                      {equity[seat.player].toFixed(1)}%
                     </div>
                   )}
                 </div>
