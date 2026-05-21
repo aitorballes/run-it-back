@@ -266,12 +266,13 @@ export default function Dashboard() {
   const [exportDateTo,      setExportDateTo]      = useState('')
   const [exportTournaments, setExportTournaments] = useState([])
   const [exportSelected,    setExportSelected]    = useState(new Set())
-  const [exportLoading,     setExportLoading]     = useState(false)
-  const [exporting,         setExporting]         = useState(false)
-  const [exportProgress,    setExportProgress]    = useState(null)
-  const [exportDone,        setExportDone]        = useState(null)
-  const [exportError,       setExportError]       = useState(null)
-  const [exportLoaded,      setExportLoaded]      = useState(false)
+  const [exportLoading,        setExportLoading]        = useState(false)
+  const [exporting,            setExporting]            = useState(false)
+  const [exportProgress,       setExportProgress]       = useState(null)
+  const [exportDone,           setExportDone]           = useState(null)
+  const [exportError,          setExportError]          = useState(null)
+  const [exportLoaded,         setExportLoaded]         = useState(false)
+  const [exportIncludeSummary, setExportIncludeSummary] = useState(true)
 
   const [confirmDeleteSession, setConfirmDeleteSession] = useState(null) // { day, items }
   const [deletingSession,      setDeletingSession]      = useState(false)
@@ -309,6 +310,7 @@ export default function Dashboard() {
     setExportDone(null)
     setExportError(null)
     setExportLoaded(false)
+    setExportIncludeSummary(true)
   }
 
   async function loadExportTournaments() {
@@ -370,7 +372,7 @@ export default function Dashboard() {
         const hands = handsMap.get(t.id) || []
         totalHands += hands.length
         const text    = serializeTournament(t, hands)
-        const summary = serializeSummary(t)
+        const summary = exportIncludeSummary ? serializeSummary(t) : null
         const fname   = `${sanitizeFilename(t.name)}_${t.tournament_id}`
 
         if (selected.length === 1) {
@@ -1658,6 +1660,20 @@ export default function Dashboard() {
                     onChange={e => { setExportDateTo(e.target.value); setExportLoaded(false) }}
                   />
                 </div>
+              </div>
+
+              {/* Include summary toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  id="includeSummary"
+                  checked={exportIncludeSummary}
+                  onChange={e => setExportIncludeSummary(e.target.checked)}
+                  style={{ accentColor: '#50d080', width: 14, height: 14 }}
+                />
+                <label htmlFor="includeSummary" style={{ fontSize: 12, color: '#4a7090', cursor: 'pointer', userSelect: 'none' }}>
+                  Incluir summary de torneo
+                </label>
               </div>
 
               {/* Load button (visible before loading) */}
