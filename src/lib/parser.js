@@ -780,7 +780,45 @@ function parse888Hand(raw) {
   return h
 }
 
+// ── CoinPoker helpers ─────────────────────────────────────────────────
+function parseCoinPokerAmt(s) {
+  return Math.round(parseFloat((s || '0').replace(/,/g, ''))) || 0
+}
+
+function parseCoinPokerAction(line) {
+  let m
+  m = line.match(/^(.+): folds$/)
+  if (m) return { player: m[1], type: 'fold', amount: 0, allin: false }
+
+  m = line.match(/^(.+): checks$/)
+  if (m) return { player: m[1], type: 'check', amount: 0, allin: false }
+
+  m = line.match(/^(.+): calls ([\d,.]+)$/)
+  if (m) return { player: m[1], type: 'call', amount: parseCoinPokerAmt(m[2]), allin: false }
+
+  m = line.match(/^(.+): raises [\d,.]+ to ([\d,.]+)$/)
+  if (m) return { player: m[1], type: 'raise', amount: parseCoinPokerAmt(m[2]), allin: false }
+
+  m = line.match(/^(.+): bets ([\d,.]+)$/)
+  if (m) return { player: m[1], type: 'bet', amount: parseCoinPokerAmt(m[2]), allin: false }
+
+  // ALLIN: all remaining chips go in (raise or call all-in)
+  m = line.match(/^(.+): ALLIN ([\d,.]+)$/)
+  if (m) return { player: m[1], type: 'raise', amount: parseCoinPokerAmt(m[2]), allin: true }
+
+  // RETURN: uncalled portion returned, ignored for net calc
+  m = line.match(/^(.+): RETURN ([\d,.]+)$/)
+  if (m) return { player: m[1], type: 'uncalled', amount: parseCoinPokerAmt(m[2]), allin: false }
+
+  return null
+}
+
 // ── CoinPoker hand parser ─────────────────────────────────────────────
+// Format differs significantly from GGPoker/PokerStars:
+//   Line 1: CoinPoker Hand #ID: NLH (SB/BB/ANTE) DATETIME TZ
+//   Line 2: Tournament 'Name' 'ID' N-max Seat #N is the button
+//   Chip amounts are decimal (e.g. 7,009.47); ALLIN/RETURN instead of
+//   "raises X and is all-in" / "Uncalled bet returned"
 function parseCoinPokerHand(raw) {
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean)
 
@@ -800,7 +838,6 @@ function parseCoinPokerHand(raw) {
     streetStartStep: {},
   }
 
-  let heroName = null
   const preflopPosts = []
   let street = null
   let inSummary = false
@@ -809,42 +846,46 @@ function parseCoinPokerHand(raw) {
   for (const line of lines) {
     let m
 
-    // Header: CoinPoker Hand #ID: Tournament #TID, NAME (SB/BB ante ANTE play) DATETIME GMT
-    m = line.match(/^CoinPoker Hand #(\w+): Tournament #(\d+), (.+?) \((\d+)\/(\d+) ante (\d+) play\) (.+?) GMT/)
+    // Line 1: CoinPoker Hand #185560013: NLH (125/250/31) 2026/03/03 20:09:16 CET
+    // Blind amounts can have comma thousands separators at higher levels: (500/1,000/125)
+    m = line.match(/^CoinPoker Hand #(\w+): \w+ \(([\d,]+)\/([\d,]+)\/([\d,]+)\) (.+?) [A-Z]+$/)
     if (m) {
-      h.id = m[1]; h.tournamentId = m[2]
-      h.tournamentName = m[3].replace(/Hold'em No Limit$/, '').trim()
-      h.sb = parseAmt(m[4]); h.bb = parseAmt(m[5]); h.ante = parseAmt(m[6]); h.datetime = m[7]
+      h.id = m[1]
+      h.sb = parseCoinPokerAmt(m[2]); h.bb = parseCoinPokerAmt(m[3]); h.ante = parseCoinPokerAmt(m[4])
+      h.datetime = m[5]
       continue
     }
 
-    m = line.match(/^Table '(.+?)' (\d+)-max Seat #(\d+) is the button/)
-    if (m) { h.tableNum = m[1]; h.maxSeats = +m[2]; h.buttonSeat = +m[3]; continue }
+    // Line 2: Tournament 'Name' 'ID' 7-max Seat #1 is the button
+    m = line.match(/^Tournament '(.+?)' '(\d+)' (\d+)-max Seat #(\d+) is the button/)
+    if (m) {
+      h.tournamentName = m[1]; h.tournamentId = m[2]
+      h.maxSeats = +m[3]; h.buttonSeat = +m[4]
+      continue
+    }
 
     if (seating) {
-      m = line.match(/^Seat (\d+): (.+?) \(([\d,]+) in chips\)/)
+      m = line.match(/^Seat (\d+): (.+?) \(([\d,.]+) in chips\)/)
       if (m) {
-        h.seats.push({ num: +m[1], player: m[2], chips: parseAmt(m[3]), pos: '', folded: false, allin: false, foldedStreet: null, allinStreet: null })
+        h.seats.push({ num: +m[1], player: m[2], chips: parseCoinPokerAmt(m[3]), pos: '', folded: false, allin: false, foldedStreet: null, allinStreet: null })
         continue
       }
     }
 
-    m = line.match(/^(.+): posts the ante ([\d,]+)/)
-    if (m) { h.ante = h.ante || parseAmt(m[2]); continue }
+    m = line.match(/^(.+): posts ante ([\d,.]+)$/)
+    if (m) { h.ante = h.ante || parseCoinPokerAmt(m[2]); continue }
 
-    m = line.match(/^(.+): posts small blind ([\d,]+)/)
+    m = line.match(/^(.+): posts small blind ([\d,.]+)$/)
     if (m) {
       setSeatPos(h.seats, m[1], 'SB')
-      preflopPosts.push({ player: m[1], type: 'post-sb', amount: parseAmt(m[2]), allin: false })
-      if (!h.sb) h.sb = parseAmt(m[2])
+      preflopPosts.push({ player: m[1], type: 'post-sb', amount: parseCoinPokerAmt(m[2]), allin: false })
       continue
     }
 
-    m = line.match(/^(.+): posts big blind ([\d,]+)/)
+    m = line.match(/^(.+): posts big blind ([\d,.]+)$/)
     if (m) {
       setSeatPos(h.seats, m[1], 'BB')
-      preflopPosts.push({ player: m[1], type: 'post-bb', amount: parseAmt(m[2]), allin: false })
-      if (!h.bb) h.bb = parseAmt(m[2])
+      preflopPosts.push({ player: m[1], type: 'post-bb', amount: parseCoinPokerAmt(m[2]), allin: false })
       continue
     }
 
@@ -856,39 +897,40 @@ function parseCoinPokerHand(raw) {
     }
 
     m = line.match(/^\*\*\* FLOP \*\*\* \[([^\]]+)\]/)
-    if (m) { street = 'flop'; h.board.flop = m[1].split(' '); continue }
+    if (m) { street = 'flop'; h.board.flop = m[1].trim().split(/\s+/); continue }
 
     m = line.match(/^\*\*\* TURN \*\*\* \[.*?\] \[([^\]]+)\]/)
-    if (m) { street = 'turn'; h.board.turn = m[1]; continue }
+    if (m) { street = 'turn'; h.board.turn = m[1].trim(); continue }
 
     m = line.match(/^\*\*\* RIVER \*\*\* \[.*?\] \[([^\]]+)\]/)
-    if (m) { street = 'river'; h.board.river = m[1]; continue }
+    if (m) { street = 'river'; h.board.river = m[1].trim(); continue }
 
-    if (line === '*** SHOW DOWN ***') { street = 'sd'; continue }
+    if (line === '*** SHOWDOWN ***') { street = 'sd'; continue }
     if (line === '*** SUMMARY ***') { inSummary = true; street = null; continue }
 
     if (inSummary) {
-      m = line.match(/^Total pot ([\d,]+)/)
-      if (m) h.totalPot = parseAmt(m[1])
+      m = line.match(/^Total pot ([\d,.]+)/)
+      if (m) h.totalPot = parseCoinPokerAmt(m[1])
       continue
     }
 
+    // Hole cards — CoinPoker already labels hero as "Hero"
     m = line.match(/^Dealt to (.+?) \[([^\]]+)\]/)
-    if (m) { heroName = m[1]; h.holeCards[m[1]] = m[2].split(' '); continue }
+    if (m) { h.holeCards[m[1]] = m[2].trim().split(/\s+/); continue }
 
     m = line.match(/^(.+): shows \[([^\]]+)\]/)
-    if (m && !h.holeCards[m[1]]) { h.holeCards[m[1]] = m[2].split(' ') }
+    if (m && !h.holeCards[m[1]]) { h.holeCards[m[1]] = m[2].trim().split(/\s+/) }
 
-    m = line.match(/^(.+) collected ([\d,]+) from/)
+    m = line.match(/^(.+) collected ([\d,.]+) from/)
     if (m && !inSummary) {
-      h.winners.push({ player: m[1], amount: parseAmt(m[2]) })
+      h.winners.push({ player: m[1], amount: parseCoinPokerAmt(m[2]) })
       if (street === 'sd') {
-        h.actions.river.push({ player: m[1], type: 'won', amount: parseAmt(m[2]), allin: false })
+        h.actions.river.push({ player: m[1], type: 'won', amount: parseCoinPokerAmt(m[2]), allin: false })
       }
     }
 
     if (street && street !== 'sd' && !inSummary) {
-      const act = parseAction(line)
+      const act = parseCoinPokerAction(line)
       if (act) {
         h.actions[street].push(act)
         const seat = h.seats.find(s => s.player === act.player)
@@ -902,8 +944,6 @@ function parseCoinPokerHand(raw) {
 
   h.actions.preflop = [...preflopPosts, ...h.actions.preflop]
   h.sequence = buildSequence(h)
-
-  if (heroName && heroName !== 'Hero') normalizeHero(h, heroName)
 
   if (h.winners.some(w => w.player === 'Hero')) {
     h.heroResult = 'won'
