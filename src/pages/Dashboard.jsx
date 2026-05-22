@@ -143,8 +143,7 @@ const calStyle = {
 
 const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
-function CalendarWidget({ sessionGroups, onDayClick, selectedDay }) {
-  const [monthOffset, setMonthOffset] = useState(0)
+function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, onMonthChange }) {
   const today = new Date()
   const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1)
   const year = base.getFullYear()
@@ -158,9 +157,9 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay }) {
   const sessionDays = new Set(sessionGroups.map(g => g.day))
 
   const monthKey = `${year}/${String(month + 1).padStart(2, '0')}`
-  const monthGroups = sessionGroups.filter(g => g.day.startsWith(monthKey))
-  const monthTournaments = monthGroups.reduce((s, g) => s + g.items.length, 0)
-  const monthHands = monthGroups.reduce((s, g) => s + g.items.reduce((ss, t) => ss + (t.hands_count || 0), 0), 0)
+  const monthDayGroups = sessionGroups.filter(g => g.day.startsWith(monthKey))
+  const monthTournaments = monthDayGroups.reduce((s, g) => s + g.items.length, 0)
+  const monthHands = monthDayGroups.reduce((s, g) => s + g.items.reduce((ss, t) => ss + (t.hands_count || 0), 0), 0)
 
   const cells = []
   for (let i = 0; i < offset; i++) cells.push(null)
@@ -171,50 +170,52 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay }) {
       <div style={calStyle.title}>Tus sesiones</div>
       <div style={calStyle.widget}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <button style={calStyle.navBtn} onClick={() => setMonthOffset(o => o - 1)}>‹</button>
+          <button style={calStyle.navBtn} onClick={() => onMonthChange(-1)}>‹</button>
           <div style={calStyle.month}>{monthLabel}</div>
-          <button style={{ ...calStyle.navBtn, ...(monthOffset === 0 ? calStyle.navBtnDisabled : {}) }} onClick={() => setMonthOffset(o => Math.min(0, o + 1))} disabled={monthOffset === 0}>›</button>
+          <button style={{ ...calStyle.navBtn, ...(monthOffset === 0 ? calStyle.navBtnDisabled : {}) }} onClick={() => onMonthChange(+1)} disabled={monthOffset === 0}>›</button>
         </div>
-        <div style={calStyle.grid}>
-          {DAY_LABELS.map(l => (
-            <div key={l} style={calStyle.dayLabel}>{l}</div>
-          ))}
-          {cells.map((d, i) => {
-            if (!d) return <div key={`e-${i}`} />
-            const mm = String(month + 1).padStart(2, '0')
-            const dd = String(d).padStart(2, '0')
-            const dayKey = `${year}/${mm}/${dd}`
-            const hasSession = sessionDays.has(dayKey)
-            const isToday = dayKey === todayKey
-            const isSelected = dayKey === selectedDay
-            return (
-              <div
-                key={dayKey}
-                style={{
-                  ...calStyle.day,
-                  ...(isToday ? calStyle.dayToday : hasSession ? calStyle.dayActive : calStyle.dayInactive),
-                  ...(isSelected ? calStyle.daySelected : {}),
-                }}
-                onClick={hasSession ? () => onDayClick(dayKey) : undefined}
-              >
-                {d}
-              </div>
-            )
-          })}
-        </div>
-        {monthTournaments > 0 && (
-          <div style={calStyle.monthStats}>
-            <div style={calStyle.monthStatItem}>
-              <span style={calStyle.monthStatValue}>{monthTournaments}</span>
-              <span style={calStyle.monthStatLabel}>Torneos</span>
-            </div>
-            <div style={{ width: 1, background: '#1a2a3a', margin: '0 8px' }} />
-            <div style={calStyle.monthStatItem}>
-              <span style={calStyle.monthStatValue}>{monthHands.toLocaleString('es-ES')}</span>
-              <span style={calStyle.monthStatLabel}>Manos</span>
-            </div>
+        <div key={monthOffset} style={{ animation: 'calMonthIn 0.2s ease' }}>
+          <div style={calStyle.grid}>
+            {DAY_LABELS.map(l => (
+              <div key={l} style={calStyle.dayLabel}>{l}</div>
+            ))}
+            {cells.map((d, i) => {
+              if (!d) return <div key={`e-${i}`} />
+              const mm = String(month + 1).padStart(2, '0')
+              const dd = String(d).padStart(2, '0')
+              const dayKey = `${year}/${mm}/${dd}`
+              const hasSession = sessionDays.has(dayKey)
+              const isToday = dayKey === todayKey
+              const isSelected = dayKey === selectedDay
+              return (
+                <div
+                  key={dayKey}
+                  style={{
+                    ...calStyle.day,
+                    ...(isToday ? calStyle.dayToday : hasSession ? calStyle.dayActive : calStyle.dayInactive),
+                    ...(isSelected ? calStyle.daySelected : {}),
+                  }}
+                  onClick={hasSession ? () => onDayClick(dayKey) : undefined}
+                >
+                  {d}
+                </div>
+              )
+            })}
           </div>
-        )}
+          {monthTournaments > 0 && (
+            <div style={calStyle.monthStats}>
+              <div style={calStyle.monthStatItem}>
+                <span style={calStyle.monthStatValue}>{monthTournaments}</span>
+                <span style={calStyle.monthStatLabel}>Torneos</span>
+              </div>
+              <div style={{ width: 1, background: '#1a2a3a', margin: '0 8px' }} />
+              <div style={calStyle.monthStatItem}>
+                <span style={calStyle.monthStatValue}>{monthHands.toLocaleString('es-ES')}</span>
+                <span style={calStyle.monthStatLabel}>Manos</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -223,7 +224,9 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay }) {
 export default function Dashboard() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
-  const fileInputRef = useRef()
+  const fileInputRef    = useRef()
+  const monthHeaderRefs = useRef({})
+  const isAutoScrolling = useRef(false)
 
   const [tournaments,   setTournaments]   = useState([])
   const [loading,       setLoading]       = useState(true)
@@ -239,6 +242,8 @@ export default function Dashboard() {
   const [isMobile,         setIsMobile]         = useState(() => window.innerWidth < 768)
   const [isWide,           setIsWide]           = useState(() => window.innerWidth >= 1280)
   const [calendarExpandedDay, setCalendarExpandedDay] = useState(null)
+  const [calMonthOffset,      setCalMonthOffset]      = useState(0)
+  const [emptyMonthNotice,    setEmptyMonthNotice]    = useState(null)
   const [openMenu,         setOpenMenu]         = useState(null) // tournament id with open menu
   const [toast,            setToast]            = useState(null)
   const [showImport,       setShowImport]       = useState(false)
@@ -661,6 +666,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('resize', fn)
   }, [])
 
+
   async function loadTournaments() {
     try {
       const data = await fetchTournaments(user.id)
@@ -814,6 +820,22 @@ export default function Dashboard() {
     return Array.from(map.entries()).map(([day, items]) => ({ day, items }))
   }
 
+  function groupByMonth(dayGroups) {
+    const map = new Map()
+    for (const g of dayGroups) {
+      const monthKey = g.day.slice(0, 7) // 'YYYY/MM'
+      if (!map.has(monthKey)) map.set(monthKey, [])
+      map.get(monthKey).push(g)
+    }
+    return Array.from(map.entries()).map(([month, days]) => ({ month, days }))
+  }
+
+  function formatMonthHeader(monthKey) {
+    const [y, m] = monthKey.split('/')
+    const label = new Date(+y, +m - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
+    return label.replace(' de ', ' ').replace(/^\w/, c => c.toUpperCase())
+  }
+
   const hasFilters = Object.values(filters).some(v => v !== '')
 
   const filtered = (() => {
@@ -842,6 +864,54 @@ export default function Dashboard() {
   })()
 
   const grouped = groupByDay(filtered)
+  const monthGroups = groupByMonth(grouped)
+
+  useEffect(() => {
+    if (!isWide) return
+    function recalcActiveMonth() {
+      if (isAutoScrolling.current) return
+      const THRESHOLD = 90
+      let activeMonth = null
+      for (const [month, el] of Object.entries(monthHeaderRefs.current)) {
+        if (el.getBoundingClientRect().top <= THRESHOLD) activeMonth = month
+      }
+      if (!activeMonth) return
+      const today = new Date()
+      const [y, m] = activeMonth.split('/').map(Number)
+      const newOffset = Math.min(0, (y - today.getFullYear()) * 12 + (m - 1 - today.getMonth()))
+      setCalMonthOffset(prev => prev === newOffset ? prev : newOffset)
+      setEmptyMonthNotice(null)
+    }
+    const observer = new IntersectionObserver(
+      () => recalcActiveMonth(),
+      { rootMargin: '-90px 0px 0px 0px', threshold: 0 }
+    )
+    Object.values(monthHeaderRefs.current).forEach(el => observer.observe(el))
+    return () => observer.disconnect()
+  }, [isWide, monthGroups])
+
+  const handleCalendarMonthChange = useCallback((delta) => {
+    const newOffset = Math.min(0, calMonthOffset + delta)
+    if (newOffset === calMonthOffset) return
+    setCalMonthOffset(newOffset)
+    setEmptyMonthNotice(null)
+
+    const today = new Date()
+    const targetDate = new Date(today.getFullYear(), today.getMonth() + newOffset, 1)
+    const targetMonthKey = `${targetDate.getFullYear()}/${String(targetDate.getMonth() + 1).padStart(2, '0')}`
+
+    const el = document.getElementById(`month-${targetMonthKey}`)
+    if (!el) {
+      setEmptyMonthNotice(`No hay torneos en ${formatMonthHeader(targetMonthKey)}`)
+      return
+    }
+
+    isAutoScrolling.current = true
+    setTimeout(() => {
+      document.getElementById(`month-${targetMonthKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+    setTimeout(() => { isAutoScrolling.current = false }, 1000)
+  }, [calMonthOffset])
 
   return (
     <div style={s.page}>
@@ -885,11 +955,24 @@ export default function Dashboard() {
 
       {/* CALENDAR WIDGET */}
       {isWide && !loading && tournaments.length > 0 && (
-        <CalendarWidget
-          sessionGroups={grouped}
-          onDayClick={handleCalendarDayClick}
-          selectedDay={calendarExpandedDay}
-        />
+        <>
+          <CalendarWidget
+            sessionGroups={grouped}
+            onDayClick={handleCalendarDayClick}
+            selectedDay={calendarExpandedDay}
+            monthOffset={calMonthOffset}
+            onMonthChange={handleCalendarMonthChange}
+          />
+          {emptyMonthNotice && (
+            <div style={{
+              position: 'fixed', top: 82 + 310, right: 24, width: 282, zIndex: 2,
+              fontSize: 11, color: '#4a7090', fontWeight: 600,
+              textAlign: 'center', padding: '6px 0', letterSpacing: '0.3px',
+            }}>
+              {emptyMonthNotice}
+            </div>
+          )}
+        </>
       )}
 
       {/* STATUS */}
@@ -957,9 +1040,21 @@ export default function Dashboard() {
             </div>
 
             <div style={s.list}>
-              {grouped.length === 0 ? (
+              {monthGroups.length === 0 ? (
                 <div style={{ ...s.hint, marginTop: 40 }}>Sin resultados para los filtros aplicados.</div>
-              ) : grouped.map(({ day, items }) => {
+              ) : monthGroups.map(({ month, days }) => (
+                <div key={month}>
+                  <div
+                    id={`month-${month}`}
+                    ref={el => { if (el) monthHeaderRefs.current[month] = el; else delete monthHeaderRefs.current[month] }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 10px', scrollMarginTop: 78 }}
+                  >
+                    <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#5a8aaa', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {formatMonthHeader(month)}
+                    </span>
+                    <div style={{ flex: 1, height: 1, background: '#1a2a3a' }} />
+                  </div>
+                  {days.map(({ day, items }) => {
                 const isExpanded = hasFilters || expandedDays.has(day)
                 const totalHands = items.reduce((sum, t) => sum + (t.hands_count || 0), 0)
                 const playDuration = formatPlayDuration(items)
@@ -1089,6 +1184,8 @@ export default function Dashboard() {
                   </div>
                 )
               })}
+                </div>
+              ))}
             </div>
           </div>
         )}

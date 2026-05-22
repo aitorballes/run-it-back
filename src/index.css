@@ -1,8 +1,16 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+  background: #050b10;
+  overflow-x: hidden;
+}
+
 body {
   font-family: 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  background: #050b10;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 #root {
