@@ -846,7 +846,7 @@ function parseCoinPokerHand(raw) {
   for (const line of lines) {
     let m
 
-    // Line 1: CoinPoker Hand #185560013: NLH (125/250/31) 2026/03/03 20:09:16 CET
+    // Line 1a: CoinPoker Hand #185560013: NLH (125/250/31) 2026/03/03 20:09:16 CET
     // Blind amounts can have comma thousands separators at higher levels: (500/1,000/125)
     m = line.match(/^CoinPoker Hand #(\w+): \w+ \(([\d,]+)\/([\d,]+)\/([\d,]+)\) (.+?) [A-Z]+$/)
     if (m) {
@@ -856,11 +856,27 @@ function parseCoinPokerHand(raw) {
       continue
     }
 
-    // Line 2: Tournament 'Name' 'ID' 7-max Seat #1 is the button
+    // Line 1b: CoinPoker Hand #5656240044: Tournament #52494, WPM-L ₮22 6-Max PKO Hold'em No Limit (500/1000 ante 170 play) 2026/05/21 22:44:13 GMT
+    m = line.match(/^CoinPoker Hand #(\w+): Tournament #(\d+), (.+?) Hold'em No Limit \(([\d,]+)\/([\d,]+) ante ([\d,]+) play\) (.+?) [A-Z]+$/)
+    if (m) {
+      h.id = m[1]; h.tournamentId = m[2]; h.tournamentName = m[3].trim()
+      h.sb = parseCoinPokerAmt(m[4]); h.bb = parseCoinPokerAmt(m[5]); h.ante = parseCoinPokerAmt(m[6])
+      h.datetime = m[7]
+      continue
+    }
+
+    // Line 2a: Tournament 'Name' 'ID' 7-max Seat #1 is the button (old format)
     m = line.match(/^Tournament '(.+?)' '(\d+)' (\d+)-max Seat #(\d+) is the button/)
     if (m) {
       h.tournamentName = m[1]; h.tournamentId = m[2]
       h.maxSeats = +m[3]; h.buttonSeat = +m[4]
+      continue
+    }
+
+    // Line 2b: Table 'T52494-1' 6-max Seat #1 is the button (new tournament format)
+    m = line.match(/^Table '(.+?)' (\d+)-max Seat #(\d+) is the button/)
+    if (m) {
+      h.tableNum = m[1]; h.maxSeats = +m[2]; h.buttonSeat = +m[3]
       continue
     }
 
