@@ -25,6 +25,27 @@ function toEur(n) {
   return Number(n).toFixed(2)
 }
 
+// ── Showdown shows lines ──────────────────────────────────────────────
+
+/**
+ * Returns "shows [cards]" lines for non-folded rivals with known hole cards.
+ * Must be emitted BEFORE *** SUMMARY *** so the parser re-captures them.
+ * @param {object} h       - parsed hand object
+ * @param {string} colon   - separator between player name and "shows" (':' for GGPoker/CoinPoker/PokerStars, ' ' for Winamax)
+ * @param {function} fmtCards - formats the card array into a string
+ */
+function rivalShowsLines(h, colon = ':', fmtCards = cards => cards.join(' ')) {
+  const lines = []
+  for (const [player, cards] of Object.entries(h.holeCards ?? {})) {
+    if (player === 'Hero') continue
+    const seat = h.seats?.find(s => s.player === player)
+    if (seat && !seat.folded && cards?.length) {
+      lines.push(`${player}${colon} shows [${fmtCards(cards)}]`)
+    }
+  }
+  return lines
+}
+
 // ── GGPoker / PokerStars / CoinPoker action serializer ────────────────
 
 function serializeGGAction(a) {
@@ -187,6 +208,9 @@ function serializeGGHand(h) {
     lines.push(`${w.player} collected ${w.amount} from pot`)
   }
 
+  // Rival hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
+  lines.push(...rivalShowsLines(h))
+
   lines.push('*** SUMMARY ***')
   lines.push(`Total pot ${h.totalPot}`)
 
@@ -256,6 +280,9 @@ function serializePokerStarsHand(h) {
   for (const w of h.winners) {
     lines.push(`${w.player} collected ${w.amount} from pot`)
   }
+
+  // Rival hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
+  lines.push(...rivalShowsLines(h))
 
   lines.push('*** SUMMARY ***')
   lines.push(`Total pot ${h.totalPot}`)
@@ -335,6 +362,9 @@ function serializeWinamaxHand(h, tournament) {
     lines.push(...winamaxStreetLines(h.actions.river))
   }
 
+  // Rival hole cards (Winamax format: no colon before "shows")
+  lines.push(...rivalShowsLines(h, ''))
+
   lines.push('*** SUMMARY ***')
   lines.push(`Total pot ${h.totalPot}`)
 
@@ -396,6 +426,9 @@ function serialize888Hand(h) {
     lines.push(...ggStreetLines(h.actions.river, serialize888Action))
   }
 
+  // Rival hole cards (888 format: "Player shows [ Ah, Kd ]")
+  lines.push(...rivalShowsLines(h, '', cards => ` ${cards.join(', ')} `))
+
   lines.push('** Summary **')
   for (const w of h.winners) {
     lines.push(`${w.player} collected [ ${to888(w.amount)} ]`)
@@ -455,6 +488,9 @@ function serializeCoinPokerHand(h) {
   for (const w of h.winners) {
     lines.push(`${w.player} collected ${w.amount} from pot`)
   }
+
+  // Rival hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
+  lines.push(...rivalShowsLines(h))
 
   lines.push('*** SUMMARY ***')
   lines.push(`Total pot ${h.totalPot}`)
