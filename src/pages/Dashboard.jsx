@@ -563,6 +563,8 @@ export default function Dashboard() {
       await loadTournaments()
     } catch (e) {
       console.error(e.message ?? e)
+      setToast('Error al eliminar. Inténtalo de nuevo.')
+      setTimeout(() => setToast(null), 3500)
     } finally {
       setDeletingSession(false)
     }
@@ -577,6 +579,8 @@ export default function Dashboard() {
       await loadTournaments()
     } catch (e) {
       console.error(e.message ?? e)
+      setToast('Error al eliminar. Inténtalo de nuevo.')
+      setTimeout(() => setToast(null), 3500)
     } finally {
       setDeleting(false)
     }

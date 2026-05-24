@@ -115,6 +115,7 @@ export async function fetchTournaments(userId) {
 export async function deleteAllTournaments(userId) {
   const HAND_BATCH = 200
   const TOUR_BATCH = 20
+  const DEP_CHUNK  = 200
 
   const { data: tours, error: toursErr } = await supabase
     .from('tournaments')
@@ -124,18 +125,40 @@ export async function deleteAllTournaments(userId) {
   if (toursErr) throw toursErr
   if (!tours?.length) return
 
-  // Delete hands in batches per group of tournaments (CASCADE handles actions)
   const tourIds = tours.map(t => t.id)
   for (let i = 0; i < tourIds.length; i += TOUR_BATCH) {
     const batch = tourIds.slice(i, i + TOUR_BATCH)
+
+    // Collect all hand IDs for this batch of tournaments
+    const allHandIds = []
+    let offset = 0
     while (true) {
-      const { data: hands } = await supabase
-        .from('hands')
-        .select('id')
-        .in('tournament_id', batch)
-        .limit(HAND_BATCH)
+      const { data: hands, error } = await supabase
+        .from('hands').select('id').in('tournament_id', batch)
+        .range(offset, offset + HAND_BATCH - 1)
+      if (error) throw error
       if (!hands?.length) break
-      const { error } = await supabase.from('hands').delete().in('id', hands.map(h => h.id))
+      allHandIds.push(...hands.map(h => h.id))
+      if (hands.length < HAND_BATCH) break
+      offset += HAND_BATCH
+    }
+
+    // Delete FK-dependent records before deleting hands
+    for (let j = 0; j < allHandIds.length; j += DEP_CHUNK) {
+      const chunk = allHandIds.slice(j, j + DEP_CHUNK)
+      const [r1, r2, r3] = await Promise.all([
+        supabase.from('hand_reviews').delete().in('hand_id', chunk),
+        supabase.from('hand_notes').delete().in('hand_id', chunk),
+        supabase.from('review_list_hands').delete().in('hand_id', chunk),
+      ])
+      if (r1.error) throw r1.error
+      if (r2.error) throw r2.error
+      if (r3.error) throw r3.error
+    }
+
+    // Delete hands in batches (CASCADE handles actions automatically)
+    for (let j = 0; j < allHandIds.length; j += HAND_BATCH) {
+      const { error } = await supabase.from('hands').delete().in('id', allHandIds.slice(j, j + HAND_BATCH))
       if (error) throw error
     }
   }
@@ -146,16 +169,38 @@ export async function deleteAllTournaments(userId) {
 
 export async function deleteTournament(tournamentDbId, userId) {
   const HAND_BATCH = 200
+  const DEP_CHUNK  = 200
 
-  // Delete hands in batches (CASCADE handles actions automatically)
+  // Collect all hand IDs for this tournament first
+  const allHandIds = []
   while (true) {
-    const { data: hands } = await supabase
+    const { data: hands, error } = await supabase
       .from('hands')
       .select('id')
       .eq('tournament_id', tournamentDbId)
-      .limit(HAND_BATCH)
+      .range(allHandIds.length, allHandIds.length + HAND_BATCH - 1)
+    if (error) throw error
     if (!hands?.length) break
-    const { error } = await supabase.from('hands').delete().in('id', hands.map(h => h.id))
+    allHandIds.push(...hands.map(h => h.id))
+    if (hands.length < HAND_BATCH) break
+  }
+
+  // Delete FK-dependent records before deleting hands
+  for (let i = 0; i < allHandIds.length; i += DEP_CHUNK) {
+    const chunk = allHandIds.slice(i, i + DEP_CHUNK)
+    const [r1, r2, r3] = await Promise.all([
+      supabase.from('hand_reviews').delete().in('hand_id', chunk),
+      supabase.from('hand_notes').delete().in('hand_id', chunk),
+      supabase.from('review_list_hands').delete().in('hand_id', chunk),
+    ])
+    if (r1.error) throw r1.error
+    if (r2.error) throw r2.error
+    if (r3.error) throw r3.error
+  }
+
+  // Delete hands in batches (CASCADE handles actions automatically)
+  for (let i = 0; i < allHandIds.length; i += HAND_BATCH) {
+    const { error } = await supabase.from('hands').delete().in('id', allHandIds.slice(i, i + HAND_BATCH))
     if (error) throw error
   }
 
