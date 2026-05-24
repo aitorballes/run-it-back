@@ -102,14 +102,24 @@ export async function saveTournament(tournament, userId) {
 }
 
 export async function fetchTournaments(userId) {
-  const { data, error } = await supabase
-    .from('tournaments')
-    .select('id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at, entries')
-    .eq('user_id', userId)
-    .order('date', { ascending: false })
-
-  if (error) throw error
-  return data
+  const PAGE = 1000
+  const COLS = 'id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at, entries'
+  const results = []
+  let page = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('tournaments')
+      .select(COLS)
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .range(page * PAGE, (page + 1) * PAGE - 1)
+    if (error) throw error
+    if (!data?.length) break
+    results.push(...data)
+    if (data.length < PAGE) break
+    page++
+  }
+  return results
 }
 
 export async function deleteAllTournaments(userId) {
