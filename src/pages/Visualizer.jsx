@@ -11,6 +11,15 @@ import coinIcon from '../assets/coinpoker.png'
 import ipokerIcon from '../assets/ipoker.png'
 import psIcon from '../assets/pokerstars.png'
 
+// ── Card image assets ──────────────────────────────────────────────────
+const cardImages = import.meta.glob('../assets/card_deck/*.png', { eager: true })
+function getCardImage(code) {
+  if (!code) return null
+  const rank = code.slice(0, -1)
+  const suit = code.slice(-1).toLowerCase()
+  return cardImages[`../assets/card_deck/${rank}${suit}.png`]?.default ?? null
+}
+
 // ── Constants ─────────────────────────────────────────────────────────
 const SUITS       = { h: '♥', d: '♦', s: '♠', c: '♣' }
 const COLORS      = { h: 'hearts', d: 'diamonds', s: 'spades', c: 'clubs' }
@@ -243,19 +252,28 @@ function heroNet(hand) {
 // ── Sub-components ────────────────────────────────────────────────────
 function Card({ code, size = 'sm' }) {
   if (!code) return null
+  const img = getCardImage(code)
+  const d = { sm: [44,62], md: [58,82], lg: [70,98] }[size]
+  if (img) {
+    return (
+      <img src={img} alt={code} width={d[0]} height={d[1]}
+        style={{ borderRadius:7, boxShadow:'0 2px 6px rgba(0,0,0,0.6)', flexShrink:0, display:'block' }} />
+    )
+  }
+  // Fallback: render CSS card if image not found
   const rank = code.slice(0, -1)
   const suit = code.slice(-1).toLowerCase()
   const r  = RANKS[rank] || rank
   const s  = SUITS[suit] || suit
   const bg = SUIT_BG[COLORS[suit]] || '#222'
-  const d  = { sm: [44,62,26,13,4], md: [58,82,36,16,5], lg: [70,98,44,19,6] }[size]
+  const fd = { sm: [44,62,26,13,4], md: [58,82,36,16,5], lg: [70,98,44,19,6] }[size]
   return (
-    <div style={{ width:d[0], height:d[1], background:bg, borderRadius:7, border:'1px solid rgba(0,0,0,0.3)',
+    <div style={{ width:fd[0], height:fd[1], background:bg, borderRadius:7, border:'1px solid rgba(0,0,0,0.3)',
       display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
       fontWeight:900, lineHeight:1, boxShadow:'0 2px 6px rgba(0,0,0,0.6)', userSelect:'none',
       position:'relative', color:'#fff', flexShrink:0 }}>
-      <div style={{ position:'absolute', top:d[4], left:d[4]+1, fontSize:d[3], fontWeight:900, lineHeight:1 }}>{r}</div>
-      <span style={{ fontSize:d[2], lineHeight:1 }}>{s}</span>
+      <div style={{ position:'absolute', top:fd[4], left:fd[4]+1, fontSize:fd[3], fontWeight:900, lineHeight:1 }}>{r}</div>
+      <span style={{ fontSize:fd[2], lineHeight:1 }}>{s}</span>
     </div>
   )
 }
@@ -1224,19 +1242,11 @@ export default function Visualizer() {
                   <div style={{ display:'flex', gap:3, flexShrink:0 }}>
                     {cards.length > 0
                       ? cards.map((c, ci) => {
-                          const suit = c.slice(-1).toLowerCase()
-                          const bg   = SUIT_BG[COLORS[suit]] || '#222'
-                          const r    = RANKS[c.slice(0,-1)] || c.slice(0,-1)
-                          const s    = SUITS[suit] || suit
-                          return (
-                            <div key={ci} style={{ width:30, height:44, borderRadius:5, background:bg,
-                              border:'1px solid rgba(0,0,0,.3)', display:'flex', flexDirection:'column',
-                              alignItems:'center', justifyContent:'center', color:'#fff', gap:1,
-                              boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0 }}>
-                              <span style={{ fontSize:14, lineHeight:1 }}>{s}</span>
-                              <span style={{ fontSize:11, fontWeight:900, lineHeight:1 }}>{r}</span>
-                            </div>
-                          )
+                          const img = getCardImage(c)
+                          return img
+                            ? <img key={ci} src={img} alt={c} width={30} height={44}
+                                style={{ borderRadius:5, boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0, display:'block' }} />
+                            : null
                         })
                       : [0,1].map(ci => (
                           <div key={ci} style={{ width:30, height:44, borderRadius:5,
@@ -1302,19 +1312,11 @@ export default function Visualizer() {
                     <div style={{ display:'flex', gap:3, flexShrink:0 }}>
                       {cards.length > 0
                         ? cards.map((c, ci) => {
-                            const suit = c.slice(-1).toLowerCase()
-                            const bg   = SUIT_BG[COLORS[suit]] || '#222'
-                            const r    = RANKS[c.slice(0,-1)] || c.slice(0,-1)
-                            const sv   = SUITS[suit] || suit
-                            return (
-                              <div key={ci} style={{ width:30, height:44, borderRadius:5, background:bg,
-                                border:'1px solid rgba(0,0,0,.3)', display:'flex', flexDirection:'column',
-                                alignItems:'center', justifyContent:'center', color:'#fff', gap:1,
-                                boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0 }}>
-                                <span style={{ fontSize:14, lineHeight:1 }}>{sv}</span>
-                                <span style={{ fontSize:11, fontWeight:900, lineHeight:1 }}>{r}</span>
-                              </div>
-                            )
+                            const img = getCardImage(c)
+                            return img
+                              ? <img key={ci} src={img} alt={c} width={30} height={44}
+                                  style={{ borderRadius:5, boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0, display:'block' }} />
+                              : null
                           })
                         : [0,1].map(ci => (
                             <div key={ci} style={{ width:30, height:44, borderRadius:5,
