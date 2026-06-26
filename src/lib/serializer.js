@@ -25,10 +25,16 @@ function toEur(n) {
   return Number(n).toFixed(2)
 }
 
+// GGPoker uses comma thousands separators: 25305 → "25,305"
+function toGGNum(n) {
+  return Number(n).toLocaleString('en-US')
+}
+
 // ── Showdown shows lines ──────────────────────────────────────────────
 
 /**
- * Returns "shows [cards]" lines for non-folded rivals with known hole cards.
+ * Returns "shows [cards]" lines for all non-folded players with known hole cards
+ * (including Hero, who must also show at showdown for Hand2Note to detect it).
  * Must be emitted BEFORE *** SUMMARY *** so the parser re-captures them.
  * @param {object} h       - parsed hand object
  * @param {string} colon   - separator between player name and "shows" (':' for GGPoker/CoinPoker/PokerStars, ' ' for Winamax)
@@ -37,7 +43,6 @@ function toEur(n) {
 function rivalShowsLines(h, colon = ':', fmtCards = cards => cards.join(' ')) {
   const lines = []
   for (const [player, cards] of Object.entries(h.holeCards ?? {})) {
-    if (player === 'Hero') continue
     const seat = h.seats?.find(s => s.player === player)
     if (seat && !seat.folded && cards?.length) {
       lines.push(`${player}${colon} shows [${fmtCards(cards)}]`)
@@ -156,63 +161,74 @@ function winamaxStreetLines(actions) {
 
 // ── GGPoker hand serializer ───────────────────────────────────────────
 
+// GGPoker action serializer with comma-formatted amounts
+function serializeGGActionGG(a) {
+  return serializeGGAction(typeof a.amount === 'number' ? { ...a, amount: toGGNum(a.amount) } : a)
+}
+
 function serializeGGHand(h) {
   const level = h.level || 'I'
-  const ante = h.ante ? `(${h.ante})` : ''
+  const ante = h.ante ? `(${toGGNum(h.ante)})` : ''
   const lines = []
 
-  lines.push(`Poker Hand #${h.id}: Tournament #${h.tournamentId}, ${h.tournamentName} Hold'em No Limit - Level${level}(${h.sb}/${h.bb}${ante}) - ${h.datetime}`)
+  lines.push(`Poker Hand #${h.id}: Tournament #${h.tournamentId}, ${h.tournamentName} Hold'em No Limit - Level${level}(${toGGNum(h.sb)}/${toGGNum(h.bb)}${ante}) - ${h.datetime}`)
 
   const tableNum = h.tableNum || `T${h.tournamentId}-1`
   lines.push(`Table '${tableNum}' ${h.maxSeats}-max Seat #${h.buttonSeat} is the button`)
 
   for (const seat of h.seats) {
-    lines.push(`Seat ${seat.num}: ${seat.player} (${seat.chips} in chips)`)
+    lines.push(`Seat ${seat.num}: ${seat.player} (${toGGNum(seat.chips)} in chips)`)
   }
 
   if (h.ante > 0) {
     for (const seat of h.seats) {
-      lines.push(`${seat.player}: posts the ante ${h.ante}`)
+      lines.push(`${seat.player}: posts the ante ${toGGNum(h.ante)}`)
     }
   }
 
   const preflopActs = h.actions.preflop
   const sbPost = preflopActs.find(a => a.type === 'post-sb')
   const bbPost = preflopActs.find(a => a.type === 'post-bb')
-  if (sbPost) lines.push(`${sbPost.player}: posts small blind ${sbPost.amount}`)
-  if (bbPost) lines.push(`${bbPost.player}: posts big blind ${bbPost.amount}`)
+  if (sbPost) lines.push(`${sbPost.player}: posts small blind ${toGGNum(sbPost.amount)}`)
+  if (bbPost) lines.push(`${bbPost.player}: posts big blind ${toGGNum(bbPost.amount)}`)
 
   lines.push('*** HOLE CARDS ***')
-  if (h.holeCards['Hero']) {
-    lines.push(`Dealt to Hero [${h.holeCards['Hero'].join(' ')}]`)
+  for (const seat of h.seats) {
+    if (seat.player === 'Hero' && h.holeCards['Hero']) {
+      lines.push(`Dealt to Hero [${h.holeCards['Hero'].join(' ')}]`)
+    } else {
+      lines.push(`Dealt to ${seat.player} `)
+    }
   }
 
-  lines.push(...ggStreetLines(preflopActs, serializeGGAction))
+  lines.push(...ggStreetLines(preflopActs, serializeGGActionGG))
 
   if (h.board.flop.length > 0) {
     lines.push(`*** FLOP *** [${h.board.flop.join(' ')}]`)
-    lines.push(...ggStreetLines(h.actions.flop, serializeGGAction))
+    lines.push(...ggStreetLines(h.actions.flop, serializeGGActionGG))
   }
 
   if (h.board.turn) {
     lines.push(`*** TURN *** [${h.board.flop.join(' ')}] [${h.board.turn}]`)
-    lines.push(...ggStreetLines(h.actions.turn, serializeGGAction))
+    lines.push(...ggStreetLines(h.actions.turn, serializeGGActionGG))
   }
 
   if (h.board.river) {
     lines.push(`*** RIVER *** [${h.board.flop.join(' ')} ${h.board.turn}] [${h.board.river}]`)
-    lines.push(...ggStreetLines(h.actions.river, serializeGGAction))
+    lines.push(...ggStreetLines(h.actions.river, serializeGGActionGG))
   }
+
+  // Rival + Hero hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
+  const showsLines = rivalShowsLines(h)
+  lines.push(...showsLines)
+  if (showsLines.length > 0) lines.push('*** SHOWDOWN ***')
 
   for (const w of h.winners) {
-    lines.push(`${w.player} collected ${w.amount} from pot`)
+    lines.push(`${w.player} collected ${toGGNum(w.amount)} from pot`)
   }
 
-  // Rival hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
-  lines.push(...rivalShowsLines(h))
-
   lines.push('*** SUMMARY ***')
-  lines.push(`Total pot ${h.totalPot}`)
+  lines.push(`Total pot ${toGGNum(h.totalPot)} | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0`)
 
   if (h.board.flop.length > 0) {
     const board = [...h.board.flop, h.board.turn, h.board.river].filter(Boolean)
@@ -220,9 +236,17 @@ function serializeGGHand(h) {
   }
 
   for (const seat of h.seats) {
+    const posLabel = seat.num === h.buttonSeat ? ' (button)'
+      : sbPost?.player === seat.player ? ' (small blind)'
+      : bbPost?.player === seat.player ? ' (big blind)'
+      : ''
     const won = h.winners.filter(w => w.player === seat.player).reduce((s, w) => s + w.amount, 0)
-    const desc = won > 0 ? `collected ${won}` : (seat.folded ? 'folded before Flop' : 'showed hands')
-    lines.push(`Seat ${seat.num}: ${seat.player} (${desc})`)
+    const cards = h.holeCards[seat.player]
+    let desc
+    if (seat.folded) desc = 'folded before Flop'
+    else if (cards?.length) desc = won > 0 ? `showed [${cards.join(' ')}] and won (${toGGNum(won)})` : `showed [${cards.join(' ')}] and lost`
+    else desc = won > 0 ? `collected (${toGGNum(won)})` : 'showed hands'
+    lines.push(`Seat ${seat.num}: ${seat.player}${posLabel} ${desc}`)
   }
 
   return lines.join('\n')
@@ -277,12 +301,14 @@ function serializePokerStarsHand(h) {
     lines.push(...ggStreetLines(h.actions.river, serializeGGAction))
   }
 
+  // Rival + Hero hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
+  const showsLines = rivalShowsLines(h)
+  lines.push(...showsLines)
+  if (showsLines.length > 0) lines.push('*** SHOWDOWN ***')
+
   for (const w of h.winners) {
     lines.push(`${w.player} collected ${w.amount} from pot`)
   }
-
-  // Rival hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
-  lines.push(...rivalShowsLines(h))
 
   lines.push('*** SUMMARY ***')
   lines.push(`Total pot ${h.totalPot}`)
@@ -485,12 +511,14 @@ function serializeCoinPokerHand(h) {
     lines.push(...ggStreetLines(h.actions.river, serializeCoinPokerAction))
   }
 
+  // Rival + Hero hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
+  const showsLines = rivalShowsLines(h)
+  lines.push(...showsLines)
+  if (showsLines.length > 0) lines.push('*** SHOWDOWN ***')
+
   for (const w of h.winners) {
     lines.push(`${w.player} collected ${w.amount} from pot`)
   }
-
-  // Rival hole cards — re-parsed on re-import (must be before *** SUMMARY ***)
-  lines.push(...rivalShowsLines(h))
 
   lines.push('*** SUMMARY ***')
   lines.push(`Total pot ${h.totalPot}`)
