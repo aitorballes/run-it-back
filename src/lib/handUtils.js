@@ -67,6 +67,44 @@ export function playersWhoSawFlop(hand) {
   return (hand.seats ?? []).filter(s => !folded.has(s.player)).length
 }
 
+// Postflop acting order rank: 0 = acts first (most out of position), n-1 = acts last (button, most in position)
+function postflopRank(seatNum, seats, buttonSeatNum) {
+  const sorted = [...seats].sort((a, b) => a.num - b.num)
+  const n = sorted.length
+  const btnIdx = sorted.findIndex(s => s.num === buttonSeatNum)
+  const seatIdx = sorted.findIndex(s => s.num === seatNum)
+  if (btnIdx < 0 || seatIdx < 0) return null
+  const offset = (seatIdx - btnIdx + n) % n
+  return (offset - 1 + n) % n
+}
+
+export function heroIsPfr(hand) {
+  return (hand.actions?.preflop ?? []).some(a => a.player === 'Hero' && a.type === 'raise')
+}
+
+// 'ip' if Hero acts last postflop among the players who didn't fold preflop (has position on the whole field),
+// 'oop' if at least one of them acts after Hero. null if Hero folded preflop or has no opponents left.
+export function heroPositionVsField(hand) {
+  const seats = hand.seats ?? []
+  const heroSeat = seats.find(s => s.player === 'Hero')
+  if (!heroSeat) return null
+  const folded = new Set((hand.actions?.preflop ?? []).filter(a => a.type === 'fold').map(a => a.player))
+  if (folded.has('Hero')) return null
+  const active = seats.filter(s => !folded.has(s.player))
+  if (active.length < 2) return null
+  const heroRank = postflopRank(heroSeat.num, seats, hand.buttonSeat)
+  const maxRank = Math.max(...active.map(s => postflopRank(s.num, seats, hand.buttonSeat)))
+  return heroRank === maxRank ? 'ip' : 'oop'
+}
+
+// BB folds preflop without ever calling or raising — doesn't join the hand.
+export function bbFoldedPreflop(hand) {
+  const seats = hand.seats ?? []
+  const bbSeat = seats.find(s => getPositionLabel(s.num, seats, hand.buttonSeat) === 'BB')
+  if (!bbSeat || bbSeat.player === 'Hero') return false
+  return (hand.actions?.preflop ?? []).some(a => a.player === bbSeat.player && a.type === 'fold')
+}
+
 export function computeHandStats(hand) {
   const preflop = hand.actions?.preflop ?? []
 

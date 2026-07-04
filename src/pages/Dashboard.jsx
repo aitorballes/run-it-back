@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
 import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchAllUserHands, fetchHandsByIds, fetchAllUserListHandIds, fetchUserReviewLists, fetchHandsInList, createReviewList, renameReviewList, deleteReviewList, fetchHeroStats, migrateHandStats } from '../lib/db'
-import { getPositionLabel, heroFoldedPreflop, preflopRaiseCount, playersWhoSawFlop, preflopIsClean, preflopIsLimped } from '../lib/handUtils'
+import { getPositionLabel, heroFoldedPreflop, preflopRaiseCount, playersWhoSawFlop, preflopIsClean, preflopIsLimped, heroIsPfr, heroPositionVsField, bbFoldedPreflop } from '../lib/handUtils'
 
 function extractBuyin(name) {
   if (!name) return null
@@ -21,7 +21,7 @@ function extractBuyin(name) {
 }
 
 const EMPTY_FILTERS = { name: '', dateFrom: '', dateTo: '', buyinMin: '', buyinMax: '' }
-const EMPTY_STUDY   = { positions: [], notFoldedPreflop: false, potType: null, players: null, dateRange: null, dateFrom: '', dateTo: '' }
+const EMPTY_STUDY   = { positions: [], notFoldedPreflop: false, potType: null, players: null, dateRange: null, dateFrom: '', dateTo: '', heroPfr: false, posVsField: null, bbFold: false }
 const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
 
 const calStyle = {
@@ -427,6 +427,9 @@ export default function Dashboard() {
         if (studyDraft.potType === 'threebet' && preflopRaiseCount(h) < 2)   return false
         if (studyDraft.potType === 'clean'    && !preflopIsClean(h))          return false
         if (studyDraft.potType === 'limped'   && !preflopIsLimped(h))         return false
+        if (studyDraft.heroPfr && !heroIsPfr(h)) return false
+        if (studyDraft.posVsField && heroPositionVsField(h) !== studyDraft.posVsField) return false
+        if (studyDraft.bbFold && !bbFoldedPreflop(h)) return false
         if (studyDraft.players !== null) {
           if (!h.board?.flop?.length) return false
           const cnt = playersWhoSawFlop(h)
@@ -1392,6 +1395,42 @@ export default function Dashboard() {
                       onChange={e => setStudyDraft(d => ({ ...d, notFoldedPreflop: e.target.checked }))}
                       style={{ accentColor: '#50d080', width: 15, height: 15 }} />
                     VPIP
+                  </label>
+                </div>
+
+                {/* Hero PFR */}
+                <div style={s.field}>
+                  <label style={s.checkLabel}>
+                    <input type="checkbox" checked={studyDraft.heroPfr}
+                      onChange={e => setStudyDraft(d => ({ ...d, heroPfr: e.target.checked }))}
+                      style={{ accentColor: '#50d080', width: 15, height: 15 }} />
+                    Hero PFR
+                  </label>
+                </div>
+
+                {/* Posición vs el resto de la mano */}
+                <div style={s.field}>
+                  <label style={s.fieldLabel}>Posición vs el resto de la mano</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[{ value: null, label: 'Cualquiera' }, { value: 'oop', label: 'OOP' }, { value: 'ip', label: 'IP' }].map(opt => {
+                      const active = studyDraft.posVsField === opt.value
+                      return (
+                        <button key={String(opt.value)}
+                          style={{ ...s.chipBtn, flex: 1, ...(active ? s.chipBtnActive : {}) }}
+                          onClick={() => setStudyDraft(d => ({ ...d, posVsField: opt.value }))}
+                        >{opt.label}</button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* BB no se une a la mano */}
+                <div style={s.field}>
+                  <label style={s.checkLabel}>
+                    <input type="checkbox" checked={studyDraft.bbFold}
+                      onChange={e => setStudyDraft(d => ({ ...d, bbFold: e.target.checked }))}
+                      style={{ accentColor: '#50d080', width: 15, height: 15 }} />
+                    BB no se une a la mano
                   </label>
                 </div>
 
