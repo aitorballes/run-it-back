@@ -267,8 +267,11 @@ export default function Dashboard() {
 
   const [showListMenu,      setShowListMenu]      = useState(false)
   const [showExport,        setShowExport]        = useState(false)
+  const [exportMode,        setExportMode]        = useState('date') // 'date' | 'count'
   const [exportDateFrom,    setExportDateFrom]    = useState('')
   const [exportDateTo,      setExportDateTo]      = useState('')
+  const [exportHandCount,   setExportHandCount]   = useState('')
+  const [exportHandLimits,  setExportHandLimits]  = useState({}) // { [tournamentId]: handsToKeep }
   const [exportTournaments, setExportTournaments] = useState([])
   const [exportSelected,    setExportSelected]    = useState(new Set())
   const [exportLoading,        setExportLoading]        = useState(false)
@@ -307,8 +310,11 @@ export default function Dashboard() {
 
   function openExportModal() {
     setShowExport(true)
+    setExportMode('date')
     setExportTournaments([])
     setExportSelected(new Set())
+    setExportHandLimits({})
+    setExportHandCount('')
     setExportLoading(false)
     setExporting(false)
     setExportProgress(null)
@@ -326,6 +332,7 @@ export default function Dashboard() {
     setExportLoaded(false)
     try {
       const data = await fetchTournamentsInRange(user.id, exportDateFrom, exportDateTo)
+      setExportHandLimits({})
       setExportTournaments(data)
       setExportSelected(new Set(data.map(t => t.id)))
       setExportLoaded(true)
@@ -335,6 +342,35 @@ export default function Dashboard() {
     } finally {
       setExportLoading(false)
     }
+  }
+
+  function loadExportByHandCount() {
+    const n = parseInt(exportHandCount, 10)
+    if (!n || n <= 0) return
+    setExportError(null)
+    setExportDone(null)
+    setExportLoaded(false)
+
+    // `tournaments` is already loaded (dashboard list), sorted by date desc
+    const selected = []
+    let acc = 0
+    for (const t of tournaments) {
+      if (acc >= n) break
+      selected.push(t)
+      acc += t.hands_count || 0
+    }
+
+    const limits = {}
+    if (selected.length) {
+      const last = selected[selected.length - 1]
+      const before = acc - (last.hands_count || 0)
+      limits[last.id] = Math.max(0, Math.min(last.hands_count || 0, n - before))
+    }
+
+    setExportHandLimits(limits)
+    setExportTournaments(selected)
+    setExportSelected(new Set(selected.map(t => t.id)))
+    setExportLoaded(true)
   }
 
   function toggleExportTournament(id) {
@@ -374,7 +410,9 @@ export default function Dashboard() {
 
       for (let i = 0; i < selected.length; i++) {
         const t = selected[i]
-        const hands = handsMap.get(t.id) || []
+        let hands = handsMap.get(t.id) || []
+        const limit = exportHandLimits[t.id]
+        if (limit != null) hands = hands.slice(-limit)
         totalHands += hands.length
         const text    = serializeTournament(t, hands)
         const summary = exportIncludeSummary ? serializeSummary(t) : null
@@ -392,7 +430,10 @@ export default function Dashboard() {
 
       if (selected.length > 1) {
         const zip = zipSync(files)
-        downloadBlob(zip, `torneos_${exportDateFrom}_${exportDateTo}.zip`, 'application/zip')
+        const zipName = exportMode === 'count'
+          ? `torneos_ultimas_${exportHandCount}_manos.zip`
+          : `torneos_${exportDateFrom}_${exportDateTo}.zip`
+        downloadBlob(zip, zipName, 'application/zip')
       }
 
       setShowExport(false)
@@ -1782,25 +1823,60 @@ export default function Dashboard() {
             </div>
 
             <div style={s.modalBody}>
-              {/* Date range */}
+              {/* Mode toggle */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Rango de fechas</label>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <input
-                    style={{ ...s.fieldInput, flex: 1 }}
-                    type="date"
-                    value={exportDateFrom}
-                    onChange={e => { setExportDateFrom(e.target.value); setExportLoaded(false) }}
-                  />
-                  <span style={{ color: '#3a5a70', fontSize: 12, flexShrink: 0 }}>—</span>
-                  <input
-                    style={{ ...s.fieldInput, flex: 1 }}
-                    type="date"
-                    value={exportDateTo}
-                    onChange={e => { setExportDateTo(e.target.value); setExportLoaded(false) }}
-                  />
+                <label style={s.fieldLabel}>Seleccionar por</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    style={{ ...s.chipBtn, flex: 1, ...(exportMode === 'date' ? s.chipBtnActive : {}) }}
+                    onClick={() => { setExportMode('date'); setExportLoaded(false) }}
+                  >Rango de fechas</button>
+                  <button
+                    style={{ ...s.chipBtn, flex: 1, ...(exportMode === 'count' ? s.chipBtnActive : {}) }}
+                    onClick={() => { setExportMode('count'); setExportLoaded(false) }}
+                  >Número de manos</button>
                 </div>
               </div>
+
+              {/* Date range */}
+              {exportMode === 'date' && (
+                <div style={s.field}>
+                  <label style={s.fieldLabel}>Rango de fechas</label>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <input
+                      style={{ ...s.fieldInput, flex: 1 }}
+                      type="date"
+                      value={exportDateFrom}
+                      onChange={e => { setExportDateFrom(e.target.value); setExportLoaded(false) }}
+                    />
+                    <span style={{ color: '#3a5a70', fontSize: 12, flexShrink: 0 }}>—</span>
+                    <input
+                      style={{ ...s.fieldInput, flex: 1 }}
+                      type="date"
+                      value={exportDateTo}
+                      onChange={e => { setExportDateTo(e.target.value); setExportLoaded(false) }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Hand count */}
+              {exportMode === 'count' && (
+                <div style={s.field}>
+                  <label style={s.fieldLabel}>Número de manos</label>
+                  <input
+                    style={s.fieldInput}
+                    type="number"
+                    min="1"
+                    placeholder="p. ej. 1000"
+                    value={exportHandCount}
+                    onChange={e => { setExportHandCount(e.target.value); setExportLoaded(false) }}
+                  />
+                  <span style={{ fontSize: 11, color: '#4a7090' }}>
+                    Se exportarán las últimas {exportHandCount || 'N'} manos, empezando por los torneos más recientes.
+                  </span>
+                </div>
+              )}
 
               {/* Include summary toggle */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1817,7 +1893,7 @@ export default function Dashboard() {
               </div>
 
               {/* Load button (visible before loading) */}
-              {!exportLoaded && (
+              {!exportLoaded && exportMode === 'date' && (
                 <button
                   style={{ ...s.applyBtn, opacity: exportLoading || !exportDateFrom || !exportDateTo ? 0.5 : 1 }}
                   onClick={loadExportTournaments}
@@ -1826,13 +1902,22 @@ export default function Dashboard() {
                   {exportLoading ? 'Cargando...' : 'Cargar torneos'}
                 </button>
               )}
+              {!exportLoaded && exportMode === 'count' && (
+                <button
+                  style={{ ...s.applyBtn, opacity: !exportHandCount || Number(exportHandCount) <= 0 ? 0.5 : 1 }}
+                  onClick={loadExportByHandCount}
+                  disabled={!exportHandCount || Number(exportHandCount) <= 0}
+                >
+                  Cargar torneos
+                </button>
+              )}
 
               {/* Tournament list */}
               {exportLoaded && (
                 <>
                   {exportTournaments.length === 0 ? (
                     <div style={{ fontSize: 13, color: '#4a7090', textAlign: 'center', padding: '10px 0' }}>
-                      No hay torneos en ese rango de fechas.
+                      {exportMode === 'count' ? 'No hay manos disponibles para exportar.' : 'No hay torneos en ese rango de fechas.'}
                     </div>
                   ) : (
                     <>
@@ -1888,7 +1973,7 @@ export default function Dashboard() {
                                     {t.name}
                                   </span>
                                   <span style={{ fontSize: 11, color: '#2a5070', flexShrink: 0 }}>
-                                    {t.hands_count} manos
+                                    {exportHandLimits[t.id] != null ? `${exportHandLimits[t.id]}/${t.hands_count}` : t.hands_count} manos
                                   </span>
                                 </label>
                               ))}
