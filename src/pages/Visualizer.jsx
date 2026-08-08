@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList } from '../lib/db'
 import { calculateEquity } from '../lib/equityCalculator'
+import StudyModal from '../components/StudyModal'
 import ggIcon from '../assets/ggpoker.png'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
@@ -350,6 +351,7 @@ export default function Visualizer() {
   const [rangeFilter,      setRangeFilter]      = useState(null) // null | 'raise' | 'fold' | 'call'
   const [isComboStudy,     setIsComboStudy]     = useState(false)
   const originalHandsRef = useRef(null)
+  const [showStudyModal,   setShowStudyModal]   = useState(false)
 
   const [userLists,        setUserLists]        = useState([])
   const [markedHandIds,    setMarkedHandIds]     = useState(new Set())
@@ -556,6 +558,24 @@ export default function Visualizer() {
     document.addEventListener('mousedown', onClick)
     return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick) }
   }, [showListPopover])
+
+  async function applyStudyHands(rows, filters) {
+    setTournament({ name: 'Búsqueda', isStudy: true })
+    setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
+    setCurIdx(0); setCurStep(0)
+    if (user) {
+      fetchUserReviewLists(user.id).then(setUserLists)
+      const ids = rows.map(row => row.id)
+      const [nts, marked] = await Promise.all([
+        fetchHandNotes(ids, user.id),
+        fetchMarkedHandIds(ids, user.id),
+      ])
+      setHandNotes(nts)
+      setMarkedHandIds(marked)
+    }
+    setShowStudyModal(false)
+    navigate(location.pathname, { replace: true, state: { studyHands: rows, studyFilters: filters } })
+  }
 
   function goHand(idx) {
     if (idx == null || idx < 0 || idx >= hands.length) return
@@ -806,6 +826,11 @@ export default function Visualizer() {
       {/* ── HEADER ── */}
       <div style={hdr.root}>
         {!token && !handToken && !listToken && !isComboStudy && <button style={hdr.back} onClick={() => navigate('/')}>{isMobile ? '←' : '← Torneos'}</button>}
+        {!token && !handToken && !listToken && !isComboStudy && tournament?.isStudy && (
+          <button style={hdr.studyBtn} onClick={() => setShowStudyModal(true)}>
+            {isMobile ? '🎓' : '🎓 Estudia tu juego'}
+          </button>
+        )}
         {isComboStudy && (
           <button style={hdr.back} onClick={() => {
             setHands(originalHandsRef.current)
@@ -1610,6 +1635,16 @@ export default function Visualizer() {
           </div>
         </div>
       )}
+
+      {showStudyModal && (
+        <StudyModal
+          onClose={() => setShowStudyModal(false)}
+          user={user}
+          initialFilters={location.state?.studyFilters}
+          onSearchResults={applyStudyHands}
+          onOpenListHands={(rows) => applyStudyHands(rows, undefined)}
+        />
+      )}
     </div>
   )
 }
@@ -1627,6 +1662,9 @@ const hdr = {
   logoText:  { fontSize:14, fontWeight:800, color:'#e8f0ff', letterSpacing:'0.5px' },
   back:    { background:'#1a2838', color:'#5080a8', border:'1px solid #2a3a50', padding:'5px 12px',
              borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:700, whiteSpace:'nowrap' },
+  studyBtn: { background:'linear-gradient(135deg, #1a3a20, #0c2014)', border:'1px solid #2a6a3a',
+             borderRadius:6, padding:'5px 12px', color:'#50d080', fontSize:12, fontWeight:700,
+             cursor:'pointer', whiteSpace:'nowrap', boxShadow:'0 2px 12px rgba(20,100,50,0.25)' },
   center:  { flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2 },
   name:    { fontSize:14, fontWeight:800, color:'#90b8e0' },
   level:   { fontSize:11, fontWeight:600, color:'#4a6a88', letterSpacing:'0.3px' },
