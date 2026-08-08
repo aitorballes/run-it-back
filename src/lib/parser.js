@@ -187,11 +187,6 @@ function parseHand(raw) {
     if (inSummary) {
       m = line.match(/^Total pot ([\d,]+)/)
       if (m) h.totalPot = parseAmt(m[1])
-      if (line.includes('Hero') && !h.heroResult) {
-        if (line.includes(' won '))       h.heroResult = 'won'
-        else if (line.includes('lost'))   h.heroResult = 'lost'
-        else if (line.includes('folded')) h.heroResult = 'folded'
-      }
       continue
     }
 
@@ -224,6 +219,15 @@ function parseHand(raw) {
 
   h.actions.preflop = [...preflopPosts, ...h.actions.preflop]
   h.sequence = buildSequence(h)
+
+  {
+    const allActs = [...h.actions.preflop, ...h.actions.flop, ...h.actions.turn, ...h.actions.river]
+    // "Won" means net-positive for the hand, not just collecting a pot fragment —
+    // a hand can be a winners-list hit (side pot) while still losing chips overall.
+    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold')
+      ? 'folded'
+      : calcHeroNet(h) > 0 ? 'won' : 'lost'
+  }
 
   return h
 }
@@ -403,11 +407,13 @@ function parseWinamaxHand(raw) {
   }
 
   // Compute heroResult from parsed data
-  if (h.winners.some(w => w.player === 'Hero')) {
-    h.heroResult = 'won'
-  } else {
+  {
     const allActs = [...h.actions.preflop, ...h.actions.flop, ...h.actions.turn, ...h.actions.river]
-    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold') ? 'folded' : 'lost'
+    // "Won" means net-positive for the hand, not just collecting a pot fragment —
+    // a hand can be a winners-list hit (side pot) while still losing chips overall.
+    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold')
+      ? 'folded'
+      : calcHeroNet(h) > 0 ? 'won' : 'lost'
   }
 
   return h
@@ -586,11 +592,13 @@ function parseIPokerHand(raw) {
 
   if (heroName && heroName !== 'Hero') normalizeHero(h, heroName)
 
-  if (h.winners.some(w => w.player === 'Hero')) {
-    h.heroResult = 'won'
-  } else {
+  {
     const allActs = [...h.actions.preflop, ...h.actions.flop, ...h.actions.turn, ...h.actions.river]
-    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold') ? 'folded' : 'lost'
+    // "Won" means net-positive for the hand, not just collecting a pot fragment —
+    // a hand can be a winners-list hit (side pot) while still losing chips overall.
+    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold')
+      ? 'folded'
+      : calcHeroNet(h) > 0 ? 'won' : 'lost'
   }
 
   return h
@@ -770,11 +778,13 @@ function parse888Hand(raw) {
 
   if (heroName && heroName !== 'Hero') normalizeHero(h, heroName)
 
-  if (h.winners.some(w => w.player === 'Hero')) {
-    h.heroResult = 'won'
-  } else {
+  {
     const allActs = [...h.actions.preflop, ...h.actions.flop, ...h.actions.turn, ...h.actions.river]
-    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold') ? 'folded' : 'lost'
+    // "Won" means net-positive for the hand, not just collecting a pot fragment —
+    // a hand can be a winners-list hit (side pot) while still losing chips overall.
+    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold')
+      ? 'folded'
+      : calcHeroNet(h) > 0 ? 'won' : 'lost'
   }
 
   return h
@@ -961,11 +971,13 @@ function parseCoinPokerHand(raw) {
   h.actions.preflop = [...preflopPosts, ...h.actions.preflop]
   h.sequence = buildSequence(h)
 
-  if (h.winners.some(w => w.player === 'Hero')) {
-    h.heroResult = 'won'
-  } else {
+  {
     const allActs = [...h.actions.preflop, ...h.actions.flop, ...h.actions.turn, ...h.actions.river]
-    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold') ? 'folded' : 'lost'
+    // "Won" means net-positive for the hand, not just collecting a pot fragment —
+    // a hand can be a winners-list hit (side pot) while still losing chips overall.
+    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold')
+      ? 'folded'
+      : calcHeroNet(h) > 0 ? 'won' : 'lost'
   }
 
   return h
@@ -1098,11 +1110,13 @@ function parsePokerStarsHand(raw) {
 
   if (heroName && heroName !== 'Hero') normalizeHero(h, heroName)
 
-  if (h.winners.some(w => w.player === 'Hero')) {
-    h.heroResult = 'won'
-  } else {
+  {
     const allActs = [...h.actions.preflop, ...h.actions.flop, ...h.actions.turn, ...h.actions.river]
-    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold') ? 'folded' : 'lost'
+    // "Won" means net-positive for the hand, not just collecting a pot fragment —
+    // a hand can be a winners-list hit (side pot) while still losing chips overall.
+    h.heroResult = allActs.some(a => a.player === 'Hero' && a.type === 'fold')
+      ? 'folded'
+      : calcHeroNet(h) > 0 ? 'won' : 'lost'
   }
 
   return h
@@ -1278,6 +1292,7 @@ export function calcHeroNet(hand) {
   for (const a of allActs) {
     if (a.player !== 'Hero') continue
     if (['call', 'raise', 'bet'].includes(a.type)) invested += a.amount
+    if (a.type === 'uncalled') invested -= a.amount
   }
   const won = hand.winners.filter(w => w.player === 'Hero').reduce((s, w) => s + w.amount, 0)
   return won - invested
