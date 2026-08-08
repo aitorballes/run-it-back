@@ -105,6 +105,13 @@ export function bbFoldedPreflop(hand) {
   return (hand.actions?.preflop ?? []).some(a => a.player === bbSeat.player && a.type === 'fold')
 }
 
+// Hero's starting stack in big blinds, or null if it can't be determined.
+export function heroBBStack(hand) {
+  const heroSeat = hand.seats?.find(s => s.player === 'Hero')
+  if (!heroSeat || !hand.bb) return null
+  return heroSeat.chips / hand.bb
+}
+
 export function computeHandStats(hand) {
   const preflop = hand.actions?.preflop ?? []
 
