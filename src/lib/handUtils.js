@@ -30,8 +30,11 @@ export function heroNet(hand) {
   if (heroSeat.pos === 'BB') inv += hand.bb
   const all = [...(hand.actions?.preflop??[]), ...(hand.actions?.flop??[]),
                ...(hand.actions?.turn??[]), ...(hand.actions?.river??[])]
-  for (const a of all)
-    if (a.player === 'Hero' && ['call','raise','bet'].includes(a.type)) inv += a.amount
+  for (const a of all) {
+    if (a.player !== 'Hero') continue
+    if (['call','raise','bet'].includes(a.type)) inv += a.amount
+    if (a.type === 'uncalled') inv -= a.amount
+  }
   const won = (hand.winners??[]).filter(w => w.player === 'Hero').reduce((s, w) => s + w.amount, 0)
   return won - inv
 }
