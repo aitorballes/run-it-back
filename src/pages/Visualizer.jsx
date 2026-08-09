@@ -118,6 +118,7 @@ const makeFmt  = (displayBB, bb) => n => {
   return fmtChips(n)
 }
 const streetIdx = s => STREET_ORDER.indexOf(s)
+const fmtSearchDuration = ms => ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`
 
 function seatPositions(n) {
   return Array.from({ length: n }, (_, i) => {
@@ -363,6 +364,7 @@ export default function Visualizer() {
   const [isComboStudy,     setIsComboStudy]     = useState(false)
   const originalHandsRef = useRef(null)
   const [showStudyModal,   setShowStudyModal]   = useState(false)
+  const [toast,            setToast]            = useState(null)
 
   const [userLists,        setUserLists]        = useState([])
   const [markedHandIds,    setMarkedHandIds]     = useState(new Set())
@@ -423,6 +425,10 @@ export default function Visualizer() {
           const rows = location.state.studyHands
           setTournament({ name: 'Búsqueda', isStudy: true })
           setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
+          if (location.state.searchDurationMs != null) {
+            setToast(`${rows.length.toLocaleString('es-ES')} manos · búsqueda en ${fmtSearchDuration(location.state.searchDurationMs)}`)
+            setTimeout(() => setToast(null), 4000)
+          }
           if (user) {
             fetchUserReviewLists(user.id).then(setUserLists)
             const ids = rows.map(row => row.id)
@@ -587,10 +593,14 @@ export default function Visualizer() {
     return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick) }
   }, [showListPopover])
 
-  async function applyStudyHands(rows, filters) {
+  async function applyStudyHands(rows, filters, elapsedMs) {
     setTournament({ name: 'Búsqueda', isStudy: true })
     setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
     setCurIdx(0); setCurStep(0)
+    if (elapsedMs != null) {
+      setToast(`${rows.length.toLocaleString('es-ES')} manos · búsqueda en ${fmtSearchDuration(elapsedMs)}`)
+      setTimeout(() => setToast(null), 4000)
+    }
     if (user) {
       fetchUserReviewLists(user.id).then(setUserLists)
       const ids = rows.map(row => row.id)
@@ -602,7 +612,7 @@ export default function Visualizer() {
       setMarkedHandIds(marked)
     }
     setShowStudyModal(false)
-    navigate(location.pathname, { replace: true, state: { studyHands: rows, studyFilters: filters } })
+    navigate(location.pathname, { replace: true, state: { studyHands: rows, studyFilters: filters, searchDurationMs: elapsedMs } })
   }
 
   function goHand(idx) {
@@ -1678,6 +1688,8 @@ export default function Visualizer() {
           onOpenListHands={(rows) => applyStudyHands(rows, undefined)}
         />
       )}
+
+      {toast && <div style={vzToast}>{toast}</div>}
     </div>
   )
 }
@@ -1686,6 +1698,13 @@ export default function Visualizer() {
 // ── Styles ────────────────────────────────────────────────────────────
 const page = { height:'100vh', background:'radial-gradient(ellipse at 30% 20%,#1a2a3a 0%,#0d1520 40%,#050b10 100%)',
   display:'flex', flexDirection:'column', fontFamily:"'Segoe UI',system-ui,sans-serif", color:'#dde0e8', overflow:'hidden' }
+
+const vzToast = {
+  position:'fixed', bottom:28, left:'50%', transform:'translateX(-50%)',
+  background:'#0e2a1a', border:'1px solid #2a6a3a', color:'#50d080',
+  padding:'10px 26px', borderRadius:10, fontSize:13, fontWeight:700,
+  zIndex:200, boxShadow:'0 4px 20px rgba(0,0,0,0.7)', whiteSpace:'nowrap',
+}
 
 const hdr = {
   root:    { background:'#1a1e2a', borderBottom:'1px solid #2a3040', padding:'8px 16px',

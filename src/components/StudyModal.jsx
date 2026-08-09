@@ -17,7 +17,7 @@ const EMPTY_STUDY = {
 }
 const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
 
-// onSearchResults(hands, filters) and onOpenListHands(hands) let the caller decide
+// onSearchResults(hands, filters, elapsedMs) and onOpenListHands(hands) let the caller decide
 // whether to navigate to a new page or update hands in place (e.g. from study/results).
 export default function StudyModal({ onClose, user, initialFilters, onSearchResults, onOpenListHands }) {
   const [studyDraft,       setStudyDraft]       = useState(initialFilters ?? EMPTY_STUDY)
@@ -49,6 +49,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
     setStudyLoading(true)
     setStudyNoResults(false)
     setStudyError(null)
+    const searchStartedAt = performance.now()
     try {
       const rows = await fetchAllUserHands(user.id)
       const matched = rows.filter(({ raw: h }) => {
@@ -103,7 +104,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
       if (result.length === 0) {
         setStudyNoResults(true)
       } else {
-        onSearchResults(result, studyDraft)
+        onSearchResults(result, studyDraft, performance.now() - searchStartedAt)
       }
     } catch (e) {
       console.error(e)
