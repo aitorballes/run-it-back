@@ -53,6 +53,13 @@ function gridCellLabel(row, col) {
   return c + r + 'o'
 }
 
+// Combo count per hand type: 6 for pairs, 4 for suited, 12 for offsuit (1326 total combos in a deck).
+const TOTAL_COMBOS = 1326
+function comboWeight(label) {
+  if (label.length === 2) return 6
+  return label.endsWith('s') ? 4 : 12
+}
+
 // Position labels by offset from BTN (clockwise), indexed by table size
 const POS_LABELS = {
   2:  ['BTN','BB'],
@@ -378,18 +385,25 @@ export default function Visualizer() {
       if (!cards || cards.length !== 2) continue
       const combo = holeCardsToCombo(cards)
       if (!combo) continue
-      const heroActs = (hand.actions?.preflop ?? []).filter(a => a.player === 'Hero')
-      const first    = heroActs.find(a => !['post-sb', 'post-bb'].includes(a.type))
+      // Classify by the most aggressive preflop action Hero took, not just the first one —
+      // a hand where Hero cold-calls then later 4-bets a squeeze is still a raised hand (PFR).
+      const heroActs = (hand.actions?.preflop ?? []).filter(a => a.player === 'Hero' && !['post-sb', 'post-bb'].includes(a.type))
+      const raised   = heroActs.some(a => a.type === 'raise' || a.type === 'bet')
+      const folded   = heroActs.some(a => a.type === 'fold')
       if (!map.has(combo)) map.set(combo, { raise: 0, fold: 0, call: 0, firstIdx: i, firstRaiseIdx: -1, firstFoldIdx: -1, firstCallIdx: -1 })
       const e = map.get(combo)
-      if (!first || first.type === 'check')                        { e.call++;  if (e.firstCallIdx  === -1) e.firstCallIdx  = i }
-      else if (first.type === 'fold')                              { e.fold++;  if (e.firstFoldIdx  === -1) e.firstFoldIdx  = i }
-      else if (first.type === 'raise' || first.type === 'bet')     { e.raise++; if (e.firstRaiseIdx === -1) e.firstRaiseIdx = i }
-      else                                                         { e.call++;  if (e.firstCallIdx  === -1) e.firstCallIdx  = i }
+      if (raised)      { e.raise++; if (e.firstRaiseIdx === -1) e.firstRaiseIdx = i }
+      else if (folded) { e.fold++;  if (e.firstFoldIdx  === -1) e.firstFoldIdx  = i }
+      else              { e.call++;  if (e.firstCallIdx  === -1) e.firstCallIdx  = i }
     }
     return map
   }, [hands])
 
+  const rangePct = useMemo(() => {
+    let combos = 0
+    for (const label of rangeMap.keys()) combos += comboWeight(label)
+    return (combos / TOTAL_COMBOS) * 100
+  }, [rangeMap])
 
   // ── Load ──
   useEffect(() => {
@@ -1590,11 +1604,9 @@ export default function Visualizer() {
                             if (!cards || cards.length !== 2) return false
                             if (holeCardsToCombo(cards) !== label) return false
                             if (!rangeFilter) return true
-                            const heroActs = (hand.actions?.preflop ?? []).filter(a => a.player === 'Hero')
-                            const first    = heroActs.find(a => !['post-sb','post-bb'].includes(a.type))
-                            const action   = (!first || first.type === 'check') ? 'call'
-                                           : (first.type === 'fold') ? 'fold'
-                                           : (first.type === 'raise' || first.type === 'bet') ? 'raise'
+                            const heroActs = (hand.actions?.preflop ?? []).filter(a => a.player === 'Hero' && !['post-sb','post-bb'].includes(a.type))
+                            const action   = heroActs.some(a => a.type === 'raise' || a.type === 'bet') ? 'raise'
+                                           : heroActs.some(a => a.type === 'fold') ? 'fold'
                                            : 'call'
                             return action === rangeFilter
                           })
@@ -1635,6 +1647,13 @@ export default function Visualizer() {
                   })
                 )}
               </div>
+            </div>
+
+            <div style={{ ...modal.footer, borderTop:'1px solid #1a2a3a', justifyContent:'center' }}>
+              <span style={{ fontSize:13, fontWeight:800, color:'#c0d8f0' }}>
+                {(Number.isInteger(rangePct) ? rangePct.toString() : rangePct.toFixed(1))}%
+              </span>
+              <span style={{ fontSize:12, color:'#4a7090', fontWeight:600 }}>del rango jugado</span>
             </div>
           </div>
         </div>
