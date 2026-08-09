@@ -893,7 +893,7 @@ export default function Visualizer() {
               {hasFilters && <span style={hdr.filterDot} />}
             </button>
           )}
-          {!handToken && (
+          {!handToken && tournament?.isStudy && (
             <button style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5 }}
               onClick={() => setShowRangeModal(true)}
               title="Ver rango de manos">
