@@ -145,7 +145,25 @@ export function computeHandStats(hand) {
   const went_to_sd = hand.heroResult !== 'folded' && hand.board?.river != null
   const won_sd     = hand.heroResult === 'won'    && hand.board?.river != null
 
-  const hero_pos = hand.seats?.find(s => s.player === 'Hero')?.pos ?? null
+  // seat.pos is only ever set by the parser for BTN/SB/BB — every other position (UTG, MP, CO...)
+  // has to be derived the same way the rest of the app does, from seat offset relative to the button.
+  const heroSeat = hand.seats?.find(s => s.player === 'Hero')
+  const hero_pos = heroSeat ? (getPositionLabel(heroSeat.num, hand.seats, hand.buttonSeat) || null) : null
 
   return { vpip, pfr, three_bet, fold_vs_3bet, saw_flop, went_to_sd, won_sd, hero_pos }
+}
+
+// Denormalized columns backing the "Estudia tu juego" filters that computeHandStats doesn't
+// already cover, so the search can run as a single Supabase query instead of a client-side scan.
+export function computeStudyFilterColumns(hand) {
+  return {
+    preflop_raise_count: preflopRaiseCount(hand),
+    preflop_clean:       preflopIsClean(hand),
+    preflop_limped:      preflopIsLimped(hand),
+    pos_vs_field:        heroPositionVsField(hand),
+    bb_folded:           bbFoldedPreflop(hand),
+    hero_stack_bb:       heroBBStack(hand),
+    flop_players_count:  hand.board?.flop?.length ? playersWhoSawFlop(hand) : null,
+    hero_folded_preflop: heroFoldedPreflop(hand),
+  }
 }
