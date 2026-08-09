@@ -401,9 +401,19 @@ export default function Visualizer() {
 
   const rangePct = useMemo(() => {
     let combos = 0
-    for (const label of rangeMap.keys()) combos += comboWeight(label)
+    for (const [label, data] of rangeMap.entries()) {
+      const matches = rangeFilter === 'raise' ? data.raise > 0
+                    : rangeFilter === 'fold'  ? data.fold > 0
+                    : rangeFilter === 'call'  ? data.call > 0
+                    : true
+      if (matches) combos += comboWeight(label)
+    }
     return (combos / TOTAL_COMBOS) * 100
-  }, [rangeMap])
+  }, [rangeMap, rangeFilter])
+  const rangePctLabel = rangeFilter === 'raise' ? 'del rango subido'
+                       : rangeFilter === 'fold'  ? 'del rango foldeado'
+                       : rangeFilter === 'call'  ? 'del rango pagado'
+                       : 'del rango jugado'
 
   // ── Load ──
   useEffect(() => {
@@ -1653,7 +1663,7 @@ export default function Visualizer() {
               <span style={{ fontSize:13, fontWeight:800, color:'#c0d8f0' }}>
                 {(Number.isInteger(rangePct) ? rangePct.toString() : rangePct.toFixed(1))}%
               </span>
-              <span style={{ fontSize:12, color:'#4a7090', fontWeight:600 }}>del rango jugado</span>
+              <span style={{ fontSize:12, color:'#4a7090', fontWeight:600 }}>{rangePctLabel}</span>
             </div>
           </div>
         </div>
