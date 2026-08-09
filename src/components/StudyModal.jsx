@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
-  fetchAllUserHands, fetchHandsInList, fetchUserReviewLists,
+  fetchUserHandsIncremental, fetchHandsInList, fetchUserReviewLists,
   createReviewList, renameReviewList, deleteReviewList,
   fetchHeroStats, migrateHandStats,
 } from '../lib/db'
@@ -17,11 +17,68 @@ const EMPTY_STUDY = {
 }
 const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
 
-// onSearchResults(hands, filters) and onOpenListHands(hands) let the caller decide
+function matchesStudyFilters(h, draft) {
+  if (draft.positions.length > 0) {
+    const heroSeat = h.seats?.find(s => s.player === 'Hero')
+    if (!heroSeat) return false
+    const pos = getPositionLabel(heroSeat.num, h.seats, h.buttonSeat)
+    if (!draft.positions.includes(pos)) return false
+  }
+  if (draft.notFoldedPreflop && heroFoldedPreflop(h)) return false
+  if (draft.potType === 'srp'      && preflopRaiseCount(h) !== 1) return false
+  if (draft.potType === 'threebet' && preflopRaiseCount(h) < 2)   return false
+  if (draft.potType === 'clean'    && !preflopIsClean(h))          return false
+  if (draft.potType === 'limped'   && !preflopIsLimped(h))         return false
+  if (draft.heroPfr && !heroIsPfr(h)) return false
+  if (draft.posVsField && heroPositionVsField(h) !== draft.posVsField) return false
+  if (draft.bbFold && !bbFoldedPreflop(h)) return false
+  if (draft.stackBB !== null) {
+    const stack = heroBBStack(h)
+    if (stack == null) return false
+    if (draft.stackBB >= 100) { if (stack < 100) return false }
+    else if (stack > draft.stackBB) return false
+  }
+  if (draft.players !== null) {
+    if (!h.board?.flop?.length) return false
+    const cnt = playersWhoSawFlop(h)
+    if (draft.players === 'hu'       && cnt !== 2) return false
+    if (draft.players === 'multiway' && cnt < 3)   return false
+  }
+  if (draft.dateRange && h.datetime) {
+    const handDate = new Date(h.datetime.replace(/\//g, '-'))
+    const now = new Date()
+    if (draft.dateRange === 'month') {
+      if (handDate < new Date(now - 30 * 24 * 60 * 60 * 1000)) return false
+    }
+    if (draft.dateRange === '3months') {
+      if (handDate < new Date(now - 90 * 24 * 60 * 60 * 1000)) return false
+    }
+    if (draft.dateRange === 'custom') {
+      if (draft.dateFrom && handDate < new Date(draft.dateFrom)) return false
+      if (draft.dateTo) {
+        const to = new Date(draft.dateTo); to.setHours(23, 59, 59)
+        if (handDate > to) return false
+      }
+    }
+  }
+  return true
+}
+
+// Lower bound on tournament date below which no hand could still match the active date filter —
+// lets the incremental fetch stop pulling older tournaments once a chunk falls entirely before it.
+function studyDateFloor(draft) {
+  if (draft.dateRange === 'month')   return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  if (draft.dateRange === '3months') return new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+  if (draft.dateRange === 'custom' && draft.dateFrom) return new Date(draft.dateFrom)
+  return null
+}
+
+// onSearchResults(hands, filters, elapsedMs) and onOpenListHands(hands) let the caller decide
 // whether to navigate to a new page or update hands in place (e.g. from study/results).
 export default function StudyModal({ onClose, user, initialFilters, onSearchResults, onOpenListHands }) {
   const [studyDraft,       setStudyDraft]       = useState(initialFilters ?? EMPTY_STUDY)
   const [studyLoading,     setStudyLoading]     = useState(false)
+  const [studyProgress,    setStudyProgress]    = useState(null)
   const [studyNoResults,   setStudyNoResults]   = useState(false)
   const [studyError,       setStudyError]       = useState(null)
   const [studyTab,         setStudyTab]         = useState('filters')
@@ -49,67 +106,47 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
     setStudyLoading(true)
     setStudyNoResults(false)
     setStudyError(null)
+    setStudyProgress({ handsScanned: 0, tournamentsProcessed: 0, totalTournaments: null })
+    const searchStartedAt = performance.now()
+    const lastN = parseInt(studyDraft.lastN, 10)
+    const dateFloor = studyDateFloor(studyDraft)
+    const matched = []
+    let handsScanned = 0
     try {
-      const rows = await fetchAllUserHands(user.id)
-      const matched = rows.filter(({ raw: h }) => {
-        if (studyDraft.positions.length > 0) {
-          const heroSeat = h.seats?.find(s => s.player === 'Hero')
-          if (!heroSeat) return false
-          const pos = getPositionLabel(heroSeat.num, h.seats, h.buttonSeat)
-          if (!studyDraft.positions.includes(pos)) return false
-        }
-        if (studyDraft.notFoldedPreflop && heroFoldedPreflop(h)) return false
-        if (studyDraft.potType === 'srp'      && preflopRaiseCount(h) !== 1) return false
-        if (studyDraft.potType === 'threebet' && preflopRaiseCount(h) < 2)   return false
-        if (studyDraft.potType === 'clean'    && !preflopIsClean(h))          return false
-        if (studyDraft.potType === 'limped'   && !preflopIsLimped(h))         return false
-        if (studyDraft.heroPfr && !heroIsPfr(h)) return false
-        if (studyDraft.posVsField && heroPositionVsField(h) !== studyDraft.posVsField) return false
-        if (studyDraft.bbFold && !bbFoldedPreflop(h)) return false
-        if (studyDraft.stackBB !== null) {
-          const stack = heroBBStack(h)
-          if (stack == null) return false
-          if (studyDraft.stackBB >= 100) { if (stack < 100) return false }
-          else if (stack > studyDraft.stackBB) return false
-        }
-        if (studyDraft.players !== null) {
-          if (!h.board?.flop?.length) return false
-          const cnt = playersWhoSawFlop(h)
-          if (studyDraft.players === 'hu'       && cnt !== 2) return false
-          if (studyDraft.players === 'multiway' && cnt < 3)   return false
-        }
-        if (studyDraft.dateRange && h.datetime) {
-          const handDate = new Date(h.datetime.replace(/\//g, '-'))
-          const now = new Date()
-          if (studyDraft.dateRange === 'month') {
-            if (handDate < new Date(now - 30 * 24 * 60 * 60 * 1000)) return false
+      await fetchUserHandsIncremental(user.id, {
+        onChunk: ({ hands, chunkTournaments, tournamentsProcessed, totalTournaments }) => {
+          handsScanned += hands.length
+          for (const row of hands) {
+            if (matchesStudyFilters(row.raw, studyDraft)) matched.push(row)
           }
-          if (studyDraft.dateRange === '3months') {
-            if (handDate < new Date(now - 90 * 24 * 60 * 60 * 1000)) return false
-          }
-          if (studyDraft.dateRange === 'custom') {
-            if (studyDraft.dateFrom && handDate < new Date(studyDraft.dateFrom)) return false
-            if (studyDraft.dateTo) {
-              const to = new Date(studyDraft.dateTo); to.setHours(23, 59, 59)
-              if (handDate > to) return false
-            }
-          }
-        }
-        return true
+          setStudyProgress({ handsScanned, tournamentsProcessed, totalTournaments })
+
+          // Tournaments come most-recent-first; once a whole chunk is older than the date
+          // floor, every later chunk will be too — stop pulling more.
+          const oldestInChunk = chunkTournaments[chunkTournaments.length - 1]?.date
+          if (dateFloor && oldestInChunk && new Date(oldestInChunk.replace(/\//g, '-')) < dateFloor) return true
+
+          // Keep a safety margin past lastN since tournament date is only an approximation
+          // of individual hand order — trimmed to the exact count after the final sort below.
+          if (lastN > 0 && matched.length >= Math.ceil(lastN * 1.1)) return true
+
+          return false
+        },
       })
+
       let result = [...matched].sort((a, b) => (b.raw.datetime || '').localeCompare(a.raw.datetime || ''))
-      const lastN = parseInt(studyDraft.lastN, 10)
       if (lastN > 0) result = result.slice(0, lastN)
       if (result.length === 0) {
         setStudyNoResults(true)
       } else {
-        onSearchResults(result, studyDraft)
+        onSearchResults(result, studyDraft, performance.now() - searchStartedAt)
       }
     } catch (e) {
       console.error(e)
       setStudyError('Error al buscar manos. Inténtalo de nuevo.')
     } finally {
       setStudyLoading(false)
+      setStudyProgress(null)
     }
   }
 
@@ -407,6 +444,24 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
               </div>
             </div>
 
+            {studyLoading && (
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <div style={{ fontSize:13, color:'#7ab0d8', textAlign:'center', fontWeight:600 }}>Buscando manos...</div>
+                {studyProgress?.totalTournaments && (
+                  <div style={{ position:'relative', height:6, background:'#0e1828', borderRadius:4, overflow:'hidden' }}>
+                    <div style={{ position:'absolute', inset:0, background:'linear-gradient(to right,#1e5cad,#60b0ff)',
+                      width:`${(studyProgress.tournamentsProcessed / studyProgress.totalTournaments) * 100}%`,
+                      transition:'width 0.3s', borderRadius:4 }} />
+                  </div>
+                )}
+                {studyProgress && (
+                  <div style={{ fontSize:11, color:'#4a7090', textAlign:'center' }}>
+                    {studyProgress.handsScanned?.toLocaleString('es-ES')} manos revisadas
+                    {studyProgress.totalTournaments ? ` · ${studyProgress.tournamentsProcessed}/${studyProgress.totalTournaments} torneos` : ''}
+                  </div>
+                )}
+              </div>
+            )}
             {studyError && <div style={s.studyError}>{studyError}</div>}
             {studyNoResults && <div style={s.studyNoResults}>No se encontraron manos con esos filtros.</div>}
           </div>

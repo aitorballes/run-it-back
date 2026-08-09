@@ -295,6 +295,36 @@ export async function fetchAllUserHands(userId) {
   return results
 }
 
+// Fetches a user's hands tournament-by-tournament, most recent first, calling onChunk after each
+// batch so the caller can filter incrementally and stop early (e.g. once "last N hands" is satisfied)
+// instead of always downloading the entire hand history.
+export async function fetchUserHandsIncremental(userId, { chunkSize = 20, onChunk } = {}) {
+  const { data: tours, error } = await supabase
+    .from('tournaments')
+    .select('id, name, date, hands_count')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+  if (error) throw error
+  if (!tours?.length) return
+  const tourMap = new Map(tours.map(t => [t.id, t.name]))
+
+  for (let i = 0; i < tours.length; i += chunkSize) {
+    const chunk = tours.slice(i, i + chunkSize)
+    const { data, error: hErr } = await supabase
+      .from('hands').select('id, raw, tournament_id')
+      .in('tournament_id', chunk.map(t => t.id))
+    if (hErr) throw hErr
+    const hands = (data ?? []).map(h => ({ ...h, tournamentName: tourMap.get(h.tournament_id) }))
+    const stop = await onChunk({
+      hands,
+      chunkTournaments: chunk,
+      tournamentsProcessed: Math.min(i + chunkSize, tours.length),
+      totalTournaments: tours.length,
+    })
+    if (stop) return
+  }
+}
+
 export async function fetchTournamentsInRange(userId, fromDate, toDate) {
   // fromDate/toDate are "YYYY-MM-DD"; DB stores "YYYY/MM/DD HH:MM:SS"
   const from = fromDate.replace(/-/g, '/')
@@ -356,13 +386,13 @@ export async function fetchHands(tournamentDbId) {
 export async function fetchHandNotes(handDbIds, userId) {
   if (!handDbIds.length || !userId) return {}
   const CHUNK = 100
+  const chunks = []
+  for (let i = 0; i < handDbIds.length; i += CHUNK) chunks.push(handDbIds.slice(i, i + CHUNK))
+  const results = await Promise.all(chunks.map(chunk =>
+    supabase.from('hand_notes').select('hand_id, note').eq('user_id', userId).in('hand_id', chunk)
+  ))
   const map = {}
-  for (let i = 0; i < handDbIds.length; i += CHUNK) {
-    const { data, error } = await supabase
-      .from('hand_notes')
-      .select('hand_id, note')
-      .eq('user_id', userId)
-      .in('hand_id', handDbIds.slice(i, i + CHUNK))
+  for (const { data, error } of results) {
     if (error) throw error
     for (const row of (data ?? [])) map[row.hand_id] = row.note
   }
@@ -522,13 +552,17 @@ export async function removeHandFromList(listId, handId) {
 export async function fetchMarkedHandIds(handDbIds, userId) {
   if (!handDbIds.length || !userId) return new Set()
   const CHUNK = 100
-  const set = new Set()
-  for (let i = 0; i < handDbIds.length; i += CHUNK) {
-    const { data, error } = await supabase
+  const chunks = []
+  for (let i = 0; i < handDbIds.length; i += CHUNK) chunks.push(handDbIds.slice(i, i + CHUNK))
+  const results = await Promise.all(chunks.map(chunk =>
+    supabase
       .from('review_list_hands')
       .select('hand_id, review_lists!inner(user_id)')
       .eq('review_lists.user_id', userId)
-      .in('hand_id', handDbIds.slice(i, i + CHUNK))
+      .in('hand_id', chunk)
+  ))
+  const set = new Set()
+  for (const { data, error } of results) {
     if (error) throw error
     for (const row of (data ?? [])) set.add(row.hand_id)
   }
