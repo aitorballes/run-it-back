@@ -10,7 +10,7 @@ const EMPTY_STUDY = {
   dateRange: null, dateFrom: '', dateTo: '', heroPfr: false, posVsField: null,
   bbFold: false, stackBB: null, lastN: '',
 }
-const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
+const ALL_POSITIONS = ['UTG', 'UTG+1', 'MP', 'MP+1', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB']
 
 // onSearchResults(hands, filters) and onOpenListHands(hands) let the caller decide
 // whether to navigate to a new page or update hands in place (e.g. from study/results).
