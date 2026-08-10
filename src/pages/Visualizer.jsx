@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -118,7 +118,34 @@ const makeFmt  = (displayBB, bb) => n => {
   return fmtChips(n)
 }
 const streetIdx = s => STREET_ORDER.indexOf(s)
-const fmtSearchDuration = ms => ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`
+
+// Fixed row height for the hand list, so it can be windowed without measuring the DOM.
+const HAND_ROW_HEIGHT = 61
+
+// Renders only the rows currently in view (plus overscan) instead of the whole list —
+// needed once a study search returns thousands of hands. No external dependency:
+// tracks scroll position + container height via a callback ref + ResizeObserver.
+function useVirtualList(itemCount, rowHeight, overscan = 8) {
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
+  const roRef = useRef(null)
+
+  const containerRef = useCallback(node => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null }
+    if (node) {
+      setViewportHeight(node.clientHeight)
+      const ro = new ResizeObserver(([entry]) => setViewportHeight(entry.contentRect.height))
+      ro.observe(node)
+      roRef.current = ro
+    }
+  }, [])
+
+  const onScroll = e => setScrollTop(e.currentTarget.scrollTop)
+  const startIndex = itemCount ? Math.max(0, Math.floor(scrollTop / rowHeight) - overscan) : 0
+  const endIndex    = itemCount ? Math.min(itemCount, Math.ceil((scrollTop + viewportHeight) / rowHeight) + overscan) : 0
+
+  return { containerRef, onScroll, startIndex, endIndex, totalHeight: itemCount * rowHeight }
+}
 
 function seatPositions(n) {
   return Array.from({ length: n }, (_, i) => {
@@ -364,7 +391,6 @@ export default function Visualizer() {
   const [isComboStudy,     setIsComboStudy]     = useState(false)
   const originalHandsRef = useRef(null)
   const [showStudyModal,   setShowStudyModal]   = useState(false)
-  const [toast,            setToast]            = useState(null)
 
   const [userLists,        setUserLists]        = useState([])
   const [markedHandIds,    setMarkedHandIds]     = useState(new Set())
@@ -425,10 +451,6 @@ export default function Visualizer() {
           const rows = location.state.studyHands
           setTournament({ name: 'Búsqueda', isStudy: true })
           setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
-          if (location.state.searchDurationMs != null) {
-            setToast(`${rows.length.toLocaleString('es-ES')} manos · búsqueda en ${fmtSearchDuration(location.state.searchDurationMs)}`)
-            setTimeout(() => setToast(null), 4000)
-          }
           if (user) {
             fetchUserReviewLists(user.id).then(setUserLists)
             const ids = rows.map(row => row.id)
@@ -593,14 +615,10 @@ export default function Visualizer() {
     return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick) }
   }, [showListPopover])
 
-  async function applyStudyHands(rows, filters, elapsedMs) {
+  async function applyStudyHands(rows, filters) {
     setTournament({ name: 'Búsqueda', isStudy: true })
     setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
     setCurIdx(0); setCurStep(0)
-    if (elapsedMs != null) {
-      setToast(`${rows.length.toLocaleString('es-ES')} manos · búsqueda en ${fmtSearchDuration(elapsedMs)}`)
-      setTimeout(() => setToast(null), 4000)
-    }
     if (user) {
       fetchUserReviewLists(user.id).then(setUserLists)
       const ids = rows.map(row => row.id)
@@ -612,12 +630,64 @@ export default function Visualizer() {
       setMarkedHandIds(marked)
     }
     setShowStudyModal(false)
-    navigate(location.pathname, { replace: true, state: { studyHands: rows, studyFilters: filters, searchDurationMs: elapsedMs } })
+    navigate(location.pathname, { replace: true, state: { studyHands: rows, studyFilters: filters } })
   }
 
   function goHand(idx) {
     if (idx == null || idx < 0 || idx >= hands.length) return
     setPlaying(false); setCurIdx(idx); setCurStep(0); setShowMobileHands(false)
+  }
+
+  // Shared row markup for the desktop panel and mobile drawer hand lists (positioned absolutely for virtualization).
+  function renderHandRow(h, i, top, noteIcon = '📝') {
+    const cards  = h.holeCards?.Hero ?? []
+    const net    = heroNet(h)
+    const resCls = h.heroResult === 'won' ? '#30a860' : h.heroResult === 'folded' ? '#556070' : '#d04040'
+    const resTxt = h.heroResult === 'won' ? 'Ganó' : h.heroResult === 'folded' ? 'Fold' : 'Perdió'
+    const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
+    return (
+      <div key={i} data-idx={i}
+        style={{ ...rp.handItem, position:'absolute', top, left:0, right:0, height:HAND_ROW_HEIGHT, boxSizing:'border-box',
+          ...(handNotes[h._dbId] ? rp.handItemNoted : {}), ...(i === curIdx ? rp.handItemActive : {}) }}
+        onClick={() => goHand(i)}>
+        <div style={{ display:'flex', gap:3, flexShrink:0 }}>
+          {cards.length > 0
+            ? cards.map((c, ci) => {
+                const img = getCardImage(c)
+                return img
+                  ? <img key={ci} src={img} alt={c} width={30} height={44}
+                      style={{ borderRadius:5, boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0, display:'block' }} />
+                  : null
+              })
+            : [0,1].map(ci => (
+                <div key={ci} style={{ width:30, height:44, borderRadius:5,
+                  background:'linear-gradient(145deg,#2a6a38,#163c1e)', border:'1px solid #1a4a28' }} />
+              ))
+          }
+        </div>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:9, color:'#2e4050', fontWeight:700 }}>#{i+1}</div>
+          <div style={{ fontSize:12, fontWeight:800, color:resCls }}>{resTxt}</div>
+        </div>
+        {net !== null && (
+          <div style={{ fontSize:11, fontWeight:800, color:netCol, flexShrink:0 }}>
+            {(net >= 0 ? '+' : '') + makeFmt(true, h.bb)(net)}
+          </div>
+        )}
+        {handNotes[h._dbId] && (
+          <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
+            border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
+            {noteIcon}
+          </div>
+        )}
+        {markedHandIds.has(h._dbId) && (
+          <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
+            border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
+            ★
+          </div>
+        )}
+      </div>
+    )
   }
 
   function openFilter() {
@@ -769,6 +839,29 @@ export default function Visualizer() {
     if (start != null) setCurStep(start)
   }
 
+  // Filtered hand list — must be before conditional returns (Rules of Hooks)
+  const displayHandsWithIdx = useMemo(() => {
+    return hands
+      .map((h, i) => ({ h, i }))
+      .filter(({ h }) => {
+        if (filterPlayed && heroFoldedPreflop(h)) return false
+        if (filterCards.length > 0) {
+          const heroCards = h.holeCards?.Hero ?? []
+          if (!filterCards.every(c => heroCards.includes(c))) return false
+        }
+        if (filterPositions.length > 0) {
+          const heroSeat = h.seats.find(s => s.player === 'Hero')
+          const heroPos  = heroSeat ? getPositionLabel(heroSeat.num, h.seats, h.buttonSeat) : ''
+          if (!filterPositions.includes(heroPos)) return false
+        }
+        return true
+      })
+  }, [hands, filterPlayed, filterCards, filterPositions])
+
+  // Windowed rendering for the desktop panel and mobile drawer hand lists (independent scroll state each)
+  const desktopHandsVirtual = useVirtualList(displayHandsWithIdx.length, HAND_ROW_HEIGHT)
+  const mobileHandsVirtual  = useVirtualList(displayHandsWithIdx.length, HAND_ROW_HEIGHT)
+
   // Showdown equity — must be before conditional returns (Rules of Hooks)
   const showdownCards = useMemo(() => {
     const h = hands[curIdx]
@@ -799,21 +892,6 @@ export default function Visualizer() {
   if (!hands.length) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Sin manos.</div>
 
   const hasFilters = filterPlayed || filterCards.length > 0 || filterPositions.length > 0
-  const displayHandsWithIdx = hands
-    .map((h, i) => ({ h, i }))
-    .filter(({ h }) => {
-      if (filterPlayed && heroFoldedPreflop(h)) return false
-      if (filterCards.length > 0) {
-        const heroCards = h.holeCards?.Hero ?? []
-        if (!filterCards.every(c => heroCards.includes(c))) return false
-      }
-      if (filterPositions.length > 0) {
-        const heroSeat = h.seats.find(s => s.player === 'Hero')
-        const heroPos  = heroSeat ? getPositionLabel(heroSeat.num, h.seats, h.buttonSeat) : ''
-        if (!filterPositions.includes(heroPos)) return false
-      }
-      return true
-    })
   const dispIdx = displayHandsWithIdx.findIndex(({ i }) => i === curIdx)
 
   const hand    = hands[curIdx]
@@ -1291,56 +1369,12 @@ export default function Visualizer() {
           </div>
 
           {/* Hand list */}
-          <div style={rp.handsList}>
-            {displayHandsWithIdx.map(({ h, i }) => {
-              const cards  = h.holeCards?.Hero ?? []
-              const net    = heroNet(h)
-              const resCls = h.heroResult === 'won' ? '#30a860' : h.heroResult === 'folded' ? '#556070' : '#d04040'
-              const resTxt = h.heroResult === 'won' ? 'Ganó' : h.heroResult === 'folded' ? 'Fold' : 'Perdió'
-              const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
-              return (
-                <div key={i} data-idx={i}
-                  style={{ ...rp.handItem, ...(handNotes[h._dbId] ? rp.handItemNoted : {}), ...(i === curIdx ? rp.handItemActive : {}) }}
-                  onClick={() => goHand(i)}>
-                  <div style={{ display:'flex', gap:3, flexShrink:0 }}>
-                    {cards.length > 0
-                      ? cards.map((c, ci) => {
-                          const img = getCardImage(c)
-                          return img
-                            ? <img key={ci} src={img} alt={c} width={30} height={44}
-                                style={{ borderRadius:5, boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0, display:'block' }} />
-                            : null
-                        })
-                      : [0,1].map(ci => (
-                          <div key={ci} style={{ width:30, height:44, borderRadius:5,
-                            background:'linear-gradient(145deg,#2a6a38,#163c1e)', border:'1px solid #1a4a28' }} />
-                        ))
-                    }
-                  </div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:9, color:'#2e4050', fontWeight:700 }}>#{i+1}</div>
-                    <div style={{ fontSize:12, fontWeight:800, color:resCls }}>{resTxt}</div>
-                  </div>
-                  {net !== null && (
-                    <div style={{ fontSize:11, fontWeight:800, color:netCol, flexShrink:0 }}>
-                      {(net >= 0 ? '+' : '') + makeFmt(true, h.bb)(net)}
-                    </div>
-                  )}
-                  {handNotes[h._dbId] && (
-                    <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
-                      border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
-                      📝
-                    </div>
-                  )}
-                  {markedHandIds.has(h._dbId) && (
-                    <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
-                      border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
-                      ★
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+          <div ref={desktopHandsVirtual.containerRef} style={rp.handsList} onScroll={desktopHandsVirtual.onScroll}>
+            <div style={{ position:'relative', height: desktopHandsVirtual.totalHeight }}>
+              {displayHandsWithIdx.slice(desktopHandsVirtual.startIndex, desktopHandsVirtual.endIndex).map((item, localIdx) =>
+                renderHandRow(item.h, item.i, (desktopHandsVirtual.startIndex + localIdx) * HAND_ROW_HEIGHT)
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1361,56 +1395,12 @@ export default function Visualizer() {
               <button style={{ background:'none', border:'none', color:'#3a5060', cursor:'pointer',
                 fontSize:18, lineHeight:1 }} onClick={() => setShowMobileHands(false)}>✕</button>
             </div>
-            <div style={{ ...rp.handsList }}>
-              {displayHandsWithIdx.map(({ h, i }) => {
-                const cards  = h.holeCards?.Hero ?? []
-                const net    = heroNet(h)
-                const resCls = h.heroResult === 'won' ? '#30a860' : h.heroResult === 'folded' ? '#556070' : '#d04040'
-                const resTxt = h.heroResult === 'won' ? 'Ganó' : h.heroResult === 'folded' ? 'Fold' : 'Perdió'
-                const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
-                return (
-                  <div key={i} data-idx={i}
-                    style={{ ...rp.handItem, ...(handNotes[h._dbId] ? rp.handItemNoted : {}), ...(i === curIdx ? rp.handItemActive : {}) }}
-                    onClick={() => goHand(i)}>
-                    <div style={{ display:'flex', gap:3, flexShrink:0 }}>
-                      {cards.length > 0
-                        ? cards.map((c, ci) => {
-                            const img = getCardImage(c)
-                            return img
-                              ? <img key={ci} src={img} alt={c} width={30} height={44}
-                                  style={{ borderRadius:5, boxShadow:'0 2px 5px rgba(0,0,0,.6)', flexShrink:0, display:'block' }} />
-                              : null
-                          })
-                        : [0,1].map(ci => (
-                            <div key={ci} style={{ width:30, height:44, borderRadius:5,
-                              background:'linear-gradient(145deg,#2a6a38,#163c1e)', border:'1px solid #1a4a28' }} />
-                          ))
-                      }
-                    </div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:9, color:'#2e4050', fontWeight:700 }}>#{i+1}</div>
-                      <div style={{ fontSize:12, fontWeight:800, color:resCls }}>{resTxt}</div>
-                    </div>
-                    {net !== null && (
-                      <div style={{ fontSize:11, fontWeight:800, color:netCol, flexShrink:0 }}>
-                        {(net >= 0 ? '+' : '') + makeFmt(true, h.bb)(net)}
-                      </div>
-                    )}
-                    {handNotes[h._dbId] && (
-                      <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
-                        border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
-                        ✏
-                      </div>
-                    )}
-                    {markedHandIds.has(h._dbId) && (
-                      <div style={{ fontSize:10, fontWeight:800, color:'#c89a10', background:'rgba(180,140,0,0.15)',
-                        border:'1px solid rgba(180,140,0,0.28)', borderRadius:4, padding:'2px 5px', flexShrink:0 }}>
-                        ★
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+            <div ref={mobileHandsVirtual.containerRef} style={{ ...rp.handsList }} onScroll={mobileHandsVirtual.onScroll}>
+              <div style={{ position:'relative', height: mobileHandsVirtual.totalHeight }}>
+                {displayHandsWithIdx.slice(mobileHandsVirtual.startIndex, mobileHandsVirtual.endIndex).map((item, localIdx) =>
+                  renderHandRow(item.h, item.i, (mobileHandsVirtual.startIndex + localIdx) * HAND_ROW_HEIGHT, '✏')
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1685,11 +1675,9 @@ export default function Visualizer() {
           user={user}
           initialFilters={location.state?.studyFilters}
           onSearchResults={applyStudyHands}
-          onOpenListHands={(rows) => applyStudyHands(rows, undefined)}
+          onOpenListHands={applyStudyHands}
         />
       )}
-
-      {toast && <div style={vzToast}>{toast}</div>}
     </div>
   )
 }
@@ -1698,13 +1686,6 @@ export default function Visualizer() {
 // ── Styles ────────────────────────────────────────────────────────────
 const page = { height:'100vh', background:'radial-gradient(ellipse at 30% 20%,#1a2a3a 0%,#0d1520 40%,#050b10 100%)',
   display:'flex', flexDirection:'column', fontFamily:"'Segoe UI',system-ui,sans-serif", color:'#dde0e8', overflow:'hidden' }
-
-const vzToast = {
-  position:'fixed', bottom:28, left:'50%', transform:'translateX(-50%)',
-  background:'#0e2a1a', border:'1px solid #2a6a3a', color:'#50d080',
-  padding:'10px 26px', borderRadius:10, fontSize:13, fontWeight:700,
-  zIndex:200, boxShadow:'0 4px 20px rgba(0,0,0,0.7)', whiteSpace:'nowrap',
-}
 
 const hdr = {
   root:    { background:'#1a1e2a', borderBottom:'1px solid #2a3040', padding:'8px 16px',

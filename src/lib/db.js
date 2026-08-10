@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { calcHeroNet } from './parser'
-import { computeHandStats } from './handUtils'
+import { computeHandStats, computeStudyFilterColumns } from './handUtils'
 
 const HAND_BATCH   = 200
 const ACTION_BATCH = 1000
@@ -54,8 +54,10 @@ export async function saveTournament(tournament, userId) {
     board:         h.board,
     hole_cards:    h.holeCards,
     sequence:      { sequence: h.sequence, streetStartStep: h.streetStartStep },
+    hand_datetime: h.datetime ? h.datetime.replace(/\//g, '-') : null,
     raw:           h,
     ...computeHandStats(h),
+    ...computeStudyFilterColumns(h),
   }))
 
   const insertedHands = []
@@ -295,6 +297,89 @@ export async function fetchAllUserHands(userId) {
   return results
 }
 
+// Runs the whole "Estudia tu juego" search as a single Postgres query — every filter maps to a
+// denormalized column on `hands` (see computeStudyFilterColumns), so Supabase does the
+// filtering/sorting/limiting instead of downloading the history and scanning it in the browser.
+function studyDraftHasOtherFilters(draft) {
+  return (
+    draft.positions.length > 0 || draft.notFoldedPreflop || draft.heroPfr ||
+    draft.potType !== null || draft.posVsField !== null || draft.bbFold ||
+    draft.stackBB !== null || draft.players !== null || draft.dateRange !== null
+  )
+}
+
+export async function fetchStudyHands(userId, draft, onProgress) {
+  function buildQuery() {
+    let q = supabase
+      .from('hands')
+      .select('id, raw, tournament_id, tournaments!inner(user_id, name)')
+      .eq('tournaments.user_id', userId)
+
+    if (draft.positions.length > 0) q = q.in('hero_pos', draft.positions)
+    if (draft.notFoldedPreflop) q = q.eq('hero_folded_preflop', false)
+    if (draft.heroPfr) q = q.eq('pfr', true)
+    if (draft.potType === 'srp')      q = q.eq('preflop_raise_count', 1)
+    if (draft.potType === 'threebet') q = q.gte('preflop_raise_count', 2)
+    if (draft.potType === 'clean')    q = q.eq('preflop_clean', true)
+    if (draft.potType === 'limped')   q = q.eq('preflop_limped', true)
+    if (draft.posVsField) q = q.eq('pos_vs_field', draft.posVsField)
+    if (draft.bbFold) q = q.eq('bb_folded', true)
+    if (draft.stackBB !== null) {
+      q = draft.stackBB >= 100 ? q.gte('hero_stack_bb', 100) : q.lte('hero_stack_bb', draft.stackBB)
+    }
+    if (draft.players === 'hu')       q = q.eq('flop_players_count', 2)
+    if (draft.players === 'multiway') q = q.gte('flop_players_count', 3)
+
+    if (draft.dateRange === 'month')   q = q.gte('hand_datetime', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+    if (draft.dateRange === '3months') q = q.gte('hand_datetime', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
+    if (draft.dateRange === 'custom') {
+      if (draft.dateFrom) q = q.gte('hand_datetime', new Date(draft.dateFrom).toISOString())
+      if (draft.dateTo) {
+        const to = new Date(draft.dateTo); to.setHours(23, 59, 59)
+        q = q.lte('hand_datetime', to.toISOString())
+      }
+    }
+
+    return q
+  }
+
+  const mapRows = data => (data ?? []).map(h => ({
+    id: h.id, raw: h.raw, tournament_id: h.tournament_id, tournamentName: h.tournaments?.name,
+  }))
+
+  const lastN = parseInt(draft.lastN, 10)
+
+  if (lastN > 0 && !studyDraftHasOtherFilters(draft)) {
+    // Nothing narrows the match rate — every row qualifies, so Postgres can walk the
+    // hand_datetime index straight to the newest N rows. Safe and fast.
+    const { data, error } = await buildQuery().order('hand_datetime', { ascending: false }).limit(lastN)
+    if (error) throw error
+    return mapRows(data)
+  }
+
+  // Any other filter present: don't combine ORDER BY hand_datetime with LIMIT here — if the
+  // filter is selective (few matches), Postgres would walk the date index row by row hunting
+  // for N matches that may not exist, and can time out. Instead fetch every match with a plain
+  // filtered scan (ordered by id for stable pagination, not date), then sort/trim in JS — the
+  // filtered set is already far smaller than the full history, so that's cheap.
+  const PAGE = 1000
+  const results = []
+  let page = 0
+  while (true) {
+    const { data, error } = await buildQuery().order('id', { ascending: true }).range(page * PAGE, (page + 1) * PAGE - 1)
+    if (error) throw error
+    if (!data?.length) break
+    results.push(...data)
+    onProgress?.(results.length)
+    if (data.length < PAGE) break
+    page++
+  }
+  let rows = mapRows(results)
+  rows.sort((a, b) => (b.raw.datetime || '').localeCompare(a.raw.datetime || ''))
+  if (lastN > 0) rows = rows.slice(0, lastN)
+  return rows
+}
+
 export async function fetchTournamentsInRange(userId, fromDate, toDate) {
   // fromDate/toDate are "YYYY-MM-DD"; DB stores "YYYY/MM/DD HH:MM:SS"
   const from = fromDate.replace(/-/g, '/')
@@ -356,13 +441,13 @@ export async function fetchHands(tournamentDbId) {
 export async function fetchHandNotes(handDbIds, userId) {
   if (!handDbIds.length || !userId) return {}
   const CHUNK = 100
+  const chunks = []
+  for (let i = 0; i < handDbIds.length; i += CHUNK) chunks.push(handDbIds.slice(i, i + CHUNK))
+  const results = await Promise.all(chunks.map(chunk =>
+    supabase.from('hand_notes').select('hand_id, note').eq('user_id', userId).in('hand_id', chunk)
+  ))
   const map = {}
-  for (let i = 0; i < handDbIds.length; i += CHUNK) {
-    const { data, error } = await supabase
-      .from('hand_notes')
-      .select('hand_id, note')
-      .eq('user_id', userId)
-      .in('hand_id', handDbIds.slice(i, i + CHUNK))
+  for (const { data, error } of results) {
     if (error) throw error
     for (const row of (data ?? [])) map[row.hand_id] = row.note
   }
@@ -522,13 +607,17 @@ export async function removeHandFromList(listId, handId) {
 export async function fetchMarkedHandIds(handDbIds, userId) {
   if (!handDbIds.length || !userId) return new Set()
   const CHUNK = 100
-  const set = new Set()
-  for (let i = 0; i < handDbIds.length; i += CHUNK) {
-    const { data, error } = await supabase
+  const chunks = []
+  for (let i = 0; i < handDbIds.length; i += CHUNK) chunks.push(handDbIds.slice(i, i + CHUNK))
+  const results = await Promise.all(chunks.map(chunk =>
+    supabase
       .from('review_list_hands')
       .select('hand_id, review_lists!inner(user_id)')
       .eq('review_lists.user_id', userId)
-      .in('hand_id', handDbIds.slice(i, i + CHUNK))
+      .in('hand_id', chunk)
+  ))
+  const set = new Set()
+  for (const { data, error } of results) {
     if (error) throw error
     for (const row of (data ?? [])) set.add(row.hand_id)
   }

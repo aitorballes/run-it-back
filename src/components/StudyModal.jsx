@@ -1,14 +1,9 @@
 import { useState, useEffect } from 'react'
 import {
-  fetchAllUserHands, fetchHandsInList, fetchUserReviewLists,
+  fetchStudyHands, fetchHandsInList, fetchUserReviewLists,
   createReviewList, renameReviewList, deleteReviewList,
   fetchHeroStats, migrateHandStats,
 } from '../lib/db'
-import {
-  getPositionLabel, heroFoldedPreflop, preflopRaiseCount, playersWhoSawFlop,
-  preflopIsClean, preflopIsLimped, heroIsPfr, heroPositionVsField,
-  bbFoldedPreflop, heroBBStack,
-} from '../lib/handUtils'
 
 const EMPTY_STUDY = {
   positions: [], notFoldedPreflop: false, potType: null, players: null,
@@ -17,11 +12,12 @@ const EMPTY_STUDY = {
 }
 const ALL_POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'MP+1', 'UTG', 'UTG+1', 'SB', 'BB']
 
-// onSearchResults(hands, filters, elapsedMs) and onOpenListHands(hands) let the caller decide
+// onSearchResults(hands, filters) and onOpenListHands(hands) let the caller decide
 // whether to navigate to a new page or update hands in place (e.g. from study/results).
 export default function StudyModal({ onClose, user, initialFilters, onSearchResults, onOpenListHands }) {
   const [studyDraft,       setStudyDraft]       = useState(initialFilters ?? EMPTY_STUDY)
   const [studyLoading,     setStudyLoading]     = useState(false)
+  const [studyProgress,    setStudyProgress]    = useState(null)
   const [studyNoResults,   setStudyNoResults]   = useState(false)
   const [studyError,       setStudyError]       = useState(null)
   const [studyTab,         setStudyTab]         = useState('filters')
@@ -49,68 +45,20 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
     setStudyLoading(true)
     setStudyNoResults(false)
     setStudyError(null)
-    const searchStartedAt = performance.now()
+    setStudyProgress(null)
     try {
-      const rows = await fetchAllUserHands(user.id)
-      const matched = rows.filter(({ raw: h }) => {
-        if (studyDraft.positions.length > 0) {
-          const heroSeat = h.seats?.find(s => s.player === 'Hero')
-          if (!heroSeat) return false
-          const pos = getPositionLabel(heroSeat.num, h.seats, h.buttonSeat)
-          if (!studyDraft.positions.includes(pos)) return false
-        }
-        if (studyDraft.notFoldedPreflop && heroFoldedPreflop(h)) return false
-        if (studyDraft.potType === 'srp'      && preflopRaiseCount(h) !== 1) return false
-        if (studyDraft.potType === 'threebet' && preflopRaiseCount(h) < 2)   return false
-        if (studyDraft.potType === 'clean'    && !preflopIsClean(h))          return false
-        if (studyDraft.potType === 'limped'   && !preflopIsLimped(h))         return false
-        if (studyDraft.heroPfr && !heroIsPfr(h)) return false
-        if (studyDraft.posVsField && heroPositionVsField(h) !== studyDraft.posVsField) return false
-        if (studyDraft.bbFold && !bbFoldedPreflop(h)) return false
-        if (studyDraft.stackBB !== null) {
-          const stack = heroBBStack(h)
-          if (stack == null) return false
-          if (studyDraft.stackBB >= 100) { if (stack < 100) return false }
-          else if (stack > studyDraft.stackBB) return false
-        }
-        if (studyDraft.players !== null) {
-          if (!h.board?.flop?.length) return false
-          const cnt = playersWhoSawFlop(h)
-          if (studyDraft.players === 'hu'       && cnt !== 2) return false
-          if (studyDraft.players === 'multiway' && cnt < 3)   return false
-        }
-        if (studyDraft.dateRange && h.datetime) {
-          const handDate = new Date(h.datetime.replace(/\//g, '-'))
-          const now = new Date()
-          if (studyDraft.dateRange === 'month') {
-            if (handDate < new Date(now - 30 * 24 * 60 * 60 * 1000)) return false
-          }
-          if (studyDraft.dateRange === '3months') {
-            if (handDate < new Date(now - 90 * 24 * 60 * 60 * 1000)) return false
-          }
-          if (studyDraft.dateRange === 'custom') {
-            if (studyDraft.dateFrom && handDate < new Date(studyDraft.dateFrom)) return false
-            if (studyDraft.dateTo) {
-              const to = new Date(studyDraft.dateTo); to.setHours(23, 59, 59)
-              if (handDate > to) return false
-            }
-          }
-        }
-        return true
-      })
-      let result = [...matched].sort((a, b) => (b.raw.datetime || '').localeCompare(a.raw.datetime || ''))
-      const lastN = parseInt(studyDraft.lastN, 10)
-      if (lastN > 0) result = result.slice(0, lastN)
+      const result = await fetchStudyHands(user.id, studyDraft, handsFound => setStudyProgress({ handsFound }))
       if (result.length === 0) {
         setStudyNoResults(true)
       } else {
-        onSearchResults(result, studyDraft, performance.now() - searchStartedAt)
+        onSearchResults(result, studyDraft)
       }
     } catch (e) {
       console.error(e)
       setStudyError('Error al buscar manos. Inténtalo de nuevo.')
     } finally {
       setStudyLoading(false)
+      setStudyProgress(null)
     }
   }
 
@@ -408,6 +356,16 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
               </div>
             </div>
 
+            {studyLoading && (
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <div style={{ fontSize:13, color:'#7ab0d8', textAlign:'center', fontWeight:600 }}>Buscando manos...</div>
+                {studyProgress && (
+                  <div style={{ fontSize:11, color:'#4a7090', textAlign:'center' }}>
+                    {studyProgress.handsFound.toLocaleString('es-ES')} manos encontradas
+                  </div>
+                )}
+              </div>
+            )}
             {studyError && <div style={s.studyError}>{studyError}</div>}
             {studyNoResults && <div style={s.studyNoResults}>No se encontraron manos con esos filtros.</div>}
           </div>

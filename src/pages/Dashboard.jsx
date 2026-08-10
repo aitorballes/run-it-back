@@ -1154,9 +1154,9 @@ export default function Dashboard() {
           onClose={() => setShowStudy(false)}
           user={user}
           initialFilters={studyInitialFilters}
-          onSearchResults={(hands, filters, elapsedMs) => {
+          onSearchResults={(hands, filters) => {
             setShowStudy(false)
-            navigate('/study/results', { state: { studyHands: hands, studyFilters: filters, searchDurationMs: elapsedMs } })
+            navigate('/study/results', { state: { studyHands: hands, studyFilters: filters } })
           }}
           onOpenListHands={(hands) => {
             setShowStudy(false)
