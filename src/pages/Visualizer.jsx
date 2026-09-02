@@ -260,7 +260,11 @@ function getBetsByStep(hand, stepIdx) {
     if (!step || step.type !== 'action') continue
     const a = hand.actions[step.street]?.[step.idx]
     if (!a) continue
-    if (['post-sb', 'post-bb', 'call', 'raise', 'bet'].includes(a.type) && a.amount > 0) {
+    if (['post-sb', 'post-bb', 'call', 'bet'].includes(a.type) && a.amount > 0) {
+      // amount is the increment paid this action — accumulate onto what was already committed this street
+      bets.set(a.player, (bets.get(a.player) ?? 0) + a.amount)
+    } else if (a.type === 'raise' && a.amount > 0) {
+      // raise.amount is the total raise-to, not the increment
       bets.set(a.player, a.amount)
     } else if (a.type === 'fold' || a.type === 'uncalled') {
       bets.delete(a.player)
