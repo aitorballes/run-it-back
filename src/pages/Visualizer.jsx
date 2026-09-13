@@ -129,9 +129,11 @@ function useVirtualList(itemCount, rowHeight, overscan = 8) {
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const roRef = useRef(null)
+  const nodeRef = useRef(null)
 
   const containerRef = useCallback(node => {
     if (roRef.current) { roRef.current.disconnect(); roRef.current = null }
+    nodeRef.current = node
     if (node) {
       setViewportHeight(node.clientHeight)
       const ro = new ResizeObserver(([entry]) => setViewportHeight(entry.contentRect.height))
@@ -141,10 +143,13 @@ function useVirtualList(itemCount, rowHeight, overscan = 8) {
   }, [])
 
   const onScroll = e => setScrollTop(e.currentTarget.scrollTop)
+  const scrollToTop = useCallback(index => {
+    if (nodeRef.current) nodeRef.current.scrollTop = index * rowHeight
+  }, [rowHeight])
   const startIndex = itemCount ? Math.max(0, Math.floor(scrollTop / rowHeight) - overscan) : 0
   const endIndex    = itemCount ? Math.min(itemCount, Math.ceil((scrollTop + viewportHeight) / rowHeight) + overscan) : 0
 
-  return { containerRef, onScroll, startIndex, endIndex, totalHeight: itemCount * rowHeight }
+  return { containerRef, onScroll, startIndex, endIndex, totalHeight: itemCount * rowHeight, scrollToTop }
 }
 
 function seatPositions(n) {
@@ -890,6 +895,14 @@ export default function Visualizer() {
     if (sv >= 3 && h.board.river) board.push(h.board.river)
     return calculateEquity(showdownCards, board)
   }, [isShowdown, showdownCards, hands, curIdx, curStep])
+
+  // Keep the active hand pinned to the top of the hand list panels when navigating between hands.
+  useEffect(() => {
+    const idx = displayHandsWithIdx.findIndex(({ i }) => i === curIdx)
+    if (idx < 0) return
+    desktopHandsVirtual.scrollToTop(idx)
+    mobileHandsVirtual.scrollToTop(idx)
+  }, [curIdx, displayHandsWithIdx, desktopHandsVirtual.scrollToTop, mobileHandsVirtual.scrollToTop])
 
   if (loading) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Cargando...</div>
   if (!tournament && (token || handToken)) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Contenido no encontrado o enlace inválido.</div>
