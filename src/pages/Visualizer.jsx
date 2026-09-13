@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList } from '../lib/db'
+import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList, setTournamentReviewed } from '../lib/db'
 import { calculateEquity } from '../lib/equityCalculator'
 import StudyModal from '../components/StudyModal'
 import ggIcon from '../assets/ggpoker.png'
@@ -412,6 +412,19 @@ export default function Visualizer() {
   const [showNewListForm,  setShowNewListForm]   = useState(false)
   const [newListSaving,    setNewListSaving]     = useState(false)
   const popoverRef = useRef()
+
+  const [reviewSaving, setReviewSaving] = useState(false)
+
+  async function toggleTournamentReviewed() {
+    if (!tournament?.id || reviewSaving) return
+    const next = !tournament.reviewed
+    setReviewSaving(true)
+    try {
+      await setTournamentReviewed(tournament.id, next)
+      setTournament(t => ({ ...t, reviewed: next }))
+    } catch(e) { console.error(e) }
+    finally { setReviewSaving(false) }
+  }
 
   // ── Range map (aggregated across all loaded hands) ──
   const rangeMap = useMemo(() => {
@@ -1106,6 +1119,19 @@ export default function Visualizer() {
               </div>
             )
           })()}
+          {user && !handToken && !token && !tournament?.isStudy && !tournament?.isSharedList && curIdx === hands.length - 1 && (
+            <button
+              style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5, opacity: reviewSaving ? 0.6 : 1,
+                ...(tournament?.reviewed ? { border:'1px solid #2a7a4a', color:'#40c070' } : {}) }}
+              onClick={toggleTournamentReviewed} disabled={reviewSaving}
+              title={tournament?.reviewed ? 'Quitar marca de revisado' : 'Marcar este torneo como revisado'}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              {!isMobile && (tournament?.reviewed ? 'Revisado' : 'Marcar como revisado')}
+            </button>
+          )}
           {!handToken && (
             <div style={{ textAlign:'right' }}>
               <div style={{ fontSize:11, color:'#70aaff', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.3px' }}>#{hand.id}</div>

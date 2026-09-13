@@ -105,7 +105,7 @@ export async function saveTournament(tournament, userId) {
 
 export async function fetchTournaments(userId) {
   const PAGE = 1000
-  const COLS = 'id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at, entries'
+  const COLS = 'id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at, entries, reviewed'
   const results = []
   let page = 0
   while (true) {
@@ -236,6 +236,14 @@ export async function updateTournamentSummary(tournamentId, userId, data) {
     })
     .eq('tournament_id', tournamentId)
     .eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function setTournamentReviewed(tournamentDbId, reviewed) {
+  const { error } = await supabase
+    .from('tournaments')
+    .update({ reviewed })
+    .eq('id', tournamentDbId)
   if (error) throw error
 }
 

@@ -1033,7 +1033,9 @@ export default function Dashboard() {
                                 )}
                               </div>
                             </div>
-                            <div style={s.rowBadge}>{t.hands_count} manos</div>
+                            <div style={{ ...s.rowBadge, ...(t.reviewed ? s.rowBadgeReviewed : {}) }}>
+                              {t.hands_count} manos{t.reviewed ? ' · Revisado' : ''}
+                            </div>
                             <div style={{ position: 'relative', flexShrink: 0 }}>
                               <button
                                 style={s.menuBtn}
@@ -1842,6 +1844,11 @@ const s = {
     borderRadius: 6,
     padding: '3px 10px',
     flexShrink: 0,
+  },
+  rowBadgeReviewed: {
+    color: '#40c070',
+    background: 'rgba(64, 192, 112, 0.10)',
+    border: '1px solid rgba(64, 192, 112, 0.35)',
   },
   menuBtn: {
     background: 'none',
