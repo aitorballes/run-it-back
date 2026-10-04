@@ -11,6 +11,7 @@ import psIcon from '../assets/pokerstars.png'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
+import { supportsFolderAccess, listLinkedFolders, saveLinkedFolder, removeLinkedFolder, pickFolder, ensurePermission, collectTxtFiles } from '../lib/folderSync'
 import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
 import StudyModal from '../components/StudyModal'
 
@@ -219,11 +220,15 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
   )
 }
 
+const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }
+const PLATFORM_NAMES = { ggpoker: 'GGPoker', winamax: 'Winamax', '888poker': '888poker', coinpoker: 'CoinPoker', ipoker: 'iPoker', pokerstars: 'PokerStars' }
+
 export default function Dashboard() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const fileInputRef    = useRef()
+  const folderInputRef  = useRef()
   const monthHeaderRefs = useRef({})
   const isAutoScrolling = useRef(false)
 
@@ -247,6 +252,7 @@ export default function Dashboard() {
   const [toast,            setToast]            = useState(null)
   const [showImport,       setShowImport]       = useState(false)
   const [dragOver,         setDragOver]         = useState(false)
+  const [linkedFolders,    setLinkedFolders]    = useState([])
   const [showStudy,        setShowStudy]        = useState(false)
   const [studyInitialFilters, setStudyInitialFilters] = useState(null)
 
@@ -477,6 +483,21 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
+    if (supportsFolderAccess) listLinkedFolders().then(setLinkedFolders).catch(console.error)
+  }, [])
+
+  // Al abrir el modal, detecta la sala de las carpetas que aún no la tienen (si ya hay permiso)
+  useEffect(() => {
+    if (!showImport) return
+    for (const folder of linkedFolders) {
+      if (folder.platform) continue
+      folder.handle.queryPermission({ mode: 'read' })
+        .then(state => state === 'granted' && detectFolderPlatform(folder))
+        .catch(console.error)
+    }
+  }, [showImport]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!openMenu) return
     function handleClick() { setOpenMenu(null) }
     document.addEventListener('click', handleClick)
@@ -576,7 +597,7 @@ export default function Dashboard() {
       }
       return true
     })
-    if (!files.length) return
+    if (!files.length) return null
     setShowImport(false)
     setUploading(true)
     setUploadStatus(null)
@@ -594,6 +615,7 @@ export default function Dashboard() {
       const handTexts    = texts.filter(t => !isSummary(t))
 
       let saved = 0, skipped = 0, summariesUpdated = 0
+      let platform = null
 
       if (handTexts.length > 0) {
         const parsedPerFile = handTexts.map(t => parseFile(t))
@@ -603,6 +625,10 @@ export default function Dashboard() {
           for (const tid of tids) entriesMap.set(tid, (entriesMap.get(tid) || 0) + 1)
         }
         const allHands = parsedPerFile.flat()
+        // Sala mayoritaria de las manos importadas
+        const platformCounts = {}
+        for (const h of allHands) if (h.platform) platformCounts[h.platform] = (platformCounts[h.platform] || 0) + 1
+        platform = Object.keys(platformCounts).sort((a, b) => platformCounts[b] - platformCounts[a])[0] ?? null
         const grouped  = groupByTournament(allHands)
         for (const t of grouped) t.entries = entriesMap.get(t.id) || 1
 
@@ -641,15 +667,84 @@ export default function Dashboard() {
       setUploadStatus({ ok: true, message: parts.join(' · ') || 'Sin cambios' })
       setTimeout(() => setUploadStatus(null), 4000)
       await loadTournaments()
+      return { platform }
     } catch (err) {
       console.error(err)
       setUploadStatus({ ok: false, message: 'Error al procesar los archivos.' })
       setTimeout(() => setUploadStatus(null), 4000)
+      return null
     } finally {
       setUploading(false)
       setProgress(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  async function handleLinkFolder() {
+    if (!supportsFolderAccess) return folderInputRef.current.click()
+    try {
+      const folder = await pickFolder()
+      setLinkedFolders(prev => [...prev, folder])
+      await handleSyncFolder(folder)
+    } catch (err) {
+      if (err.name === 'AbortError') return
+      console.error(err)
+      setUploadStatus({ ok: false, message: 'No se pudo acceder a la carpeta.' })
+      setTimeout(() => setUploadStatus(null), 4000)
+    }
+  }
+
+  async function handleSyncFolder(folder) {
+    try {
+      await syncFolder(folder)
+    } catch (err) {
+      console.error(err)
+      setUploadStatus({ ok: false, message: `Error al sincronizar "${folder.name}".` })
+      setTimeout(() => setUploadStatus(null), 4000)
+    }
+  }
+
+  async function syncFolder(folder) {
+    if (!await ensurePermission(folder.handle)) {
+      setUploadStatus({ ok: false, message: `Sin permiso para leer "${folder.name}".` })
+      setTimeout(() => setUploadStatus(null), 4000)
+      return
+    }
+    const files = await collectTxtFiles(folder.handle, folder.lastSync)
+    if (!files.length) {
+      if (!folder.platform) await detectFolderPlatform(folder)
+      setShowImport(false)
+      setUploadStatus({ ok: true, message: `"${folder.name}": sin archivos nuevos` })
+      setTimeout(() => setUploadStatus(null), 4000)
+      return
+    }
+    const result = await handleFiles(files)
+    if (!result) return
+    const updated = {
+      ...folder,
+      platform: result.platform ?? folder.platform,
+      lastSync: Math.max(...files.map(f => f.lastModified)),
+    }
+    await saveLinkedFolder(updated)
+    setLinkedFolders(prev => prev.map(f => f.id === updated.id ? updated : f))
+    if (!updated.platform) await detectFolderPlatform(updated)
+  }
+
+  // Sin manos en la importación (p.ej. solo summaries): detecta la sala del primer archivo de manos
+  async function detectFolderPlatform(folder) {
+    for (const file of await collectTxtFiles(folder.handle)) {
+      const platform = parseFile(await file.text())[0]?.platform
+      if (!platform) continue
+      const updated = { ...folder, platform }
+      await saveLinkedFolder(updated)
+      setLinkedFolders(prev => prev.map(f => f.id === updated.id ? updated : f))
+      return
+    }
+  }
+
+  async function handleUnlinkFolder(folder) {
+    await removeLinkedFolder(folder.id)
+    setLinkedFolders(prev => prev.filter(f => f.id !== folder.id))
   }
 
   function handleDrop(e) {
@@ -815,6 +910,8 @@ export default function Dashboard() {
       <div style={s.header}>
         <div style={s.headerInner}>
           <input ref={fileInputRef} type="file" accept=".txt" multiple style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
+          <input ref={folderInputRef} type="file" webkitdirectory="" style={{ display: 'none' }}
+            onChange={e => { handleFiles(Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.txt'))); e.target.value = '' }} />
           <div style={s.headerLeft}>
             <div style={s.logo}>
               <span style={s.logoSpade}>♠</span>
@@ -1010,7 +1107,7 @@ export default function Dashboard() {
                         {items.map(t => (
                           <div key={t.id} style={s.row} onClick={() => navigate(`/tournament/${t.id}`)}>
                             <img
-                              src={{ winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }[t.platform] ?? ggIcon}
+                              src={PLATFORM_ICONS[t.platform] ?? ggIcon}
                               alt={t.platform || 'ggpoker'}
                               style={s.rowIcon}
                             />
@@ -1289,6 +1386,33 @@ export default function Dashboard() {
                 onClick={() => fileInputRef.current.click()}>
                 Buscar en mi ordenador
               </button>
+
+              {/* Carpetas vinculadas */}
+              <div style={s.folderSection}>
+                <span style={s.fieldLabel}>Carpetas de salas</span>
+                {linkedFolders.map(folder => (
+                  <div key={folder.id} style={s.folderRow}>
+                    {folder.platform
+                      ? <img src={PLATFORM_ICONS[folder.platform]} alt={folder.platform} style={s.rowIcon} />
+                      : <span>📁</span>}
+                    <span style={s.folderName} title={folder.handle.name}>
+                      {PLATFORM_NAMES[folder.platform] ?? folder.name}
+                    </span>
+                    <span style={s.folderMeta}>
+                      {folder.lastSync ? new Date(folder.lastSync).toLocaleDateString() : 'Nunca'}
+                    </span>
+                    <button style={s.chipBtn} onClick={() => handleSyncFolder(folder)} disabled={uploading}>Sincronizar</button>
+                    <button style={s.modalClose} onClick={() => handleUnlinkFolder(folder)} title="Desvincular">✕</button>
+                  </div>
+                ))}
+                <button style={{ ...s.clearBtn, flex: 'none' }} onClick={handleLinkFolder} disabled={uploading}>
+                  {supportsFolderAccess ? '+ Vincular carpeta de sala' : 'Importar carpeta completa'}
+                </button>
+                <span style={s.folderHint}>
+                  Winamax en Mac: <code>~/Library/Application Support/winamax/documents/accounts</code>.
+                  En el selector pulsa ⌘⇧G y pega la ruta.
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -2163,6 +2287,20 @@ const s = {
     background: 'rgba(10,20,35,0.5)', transition: 'border-color 0.15s, background 0.15s',
     color: '#3a6080', fontSize: 13, fontWeight: 600, textAlign: 'center',
   },
+  folderSection: {
+    width: '100%', display: 'flex', flexDirection: 'column', gap: 8,
+    borderTop: '1px solid #1a2a3a', paddingTop: 16,
+  },
+  folderRow: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'rgba(10,20,35,0.5)', border: '1px solid #1a2a3a', borderRadius: 9, padding: '6px 6px 6px 12px',
+  },
+  folderName: {
+    flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    fontSize: 13, fontWeight: 700, color: '#7ab0d8',
+  },
+  folderMeta: { fontSize: 11, color: '#3a5a70', whiteSpace: 'nowrap' },
+  folderHint: { fontSize: 11, color: '#2a5070', lineHeight: 1.5, wordBreak: 'break-word' },
   dropZoneActive: {
     borderColor: '#60b0ff', background: 'rgba(20,60,140,0.12)', color: '#7ab0d8',
   },
