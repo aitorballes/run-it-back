@@ -105,7 +105,7 @@ export async function saveTournament(tournament, userId) {
 
 export async function fetchTournaments(userId) {
   const PAGE = 1000
-  const COLS = 'id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at, entries, reviewed'
+  const COLS = 'id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, bounty_won, duration, created_at, entries, reviewed'
   const results = []
   let page = 0
   while (true) {
@@ -232,6 +232,7 @@ export async function updateTournamentSummary(tournamentId, userId, data) {
       prize_pool:      data.prizePool        ?? null,
       finish_position: data.finishPosition   ?? null,
       prize_won:       data.prizeWon         ?? null,
+      bounty_won:      data.bountyWon        ?? null,
       duration:        data.duration         ?? null,
     })
     .eq('tournament_id', tournamentId)
@@ -395,7 +396,7 @@ export async function fetchTournamentsInRange(userId, fromDate, toDate) {
 
   const { data, error } = await supabase
     .from('tournaments')
-    .select('id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, duration, created_at, entries')
+    .select('id, tournament_id, name, date, end_time, hands_count, platform, buyin, buyin_rake, players, prize_pool, finish_position, prize_won, bounty_won, duration, created_at, entries')
     .eq('user_id', userId)
     .gte('date', from)
     .lte('date', to)

@@ -635,6 +635,7 @@ export function serializeSummary(tournament) {
   const prizePool  = tournament.prize_pool ?? 0
   const finish     = tournament.finish_position
   const prizeWon   = tournament.prize_won  ?? 0
+  const bountyWon  = tournament.bounty_won ?? 0
 
   if (platform === 'ggpoker') {
     const lines = [`Tournament #${tid}`]
@@ -652,7 +653,8 @@ export function serializeSummary(tournament) {
     lines.push(`Prizepool : ${prizePool}€`)
     if (finish != null) {
       lines.push(`You finished in ${ordinal(finish)} place`)
-      lines.push(`You won ${prizeWon}€`)
+      const won = [prizeWon > 0 && `${prizeWon}€`, bountyWon > 0 && `Bounty ${bountyWon}€`].filter(Boolean)
+      if (won.length) lines.push(`You won ${won.join(' + ')}`)
     }
     if (tournament.duration) lines.push(`You played ${tournament.duration}`)
     return lines.join('\n')

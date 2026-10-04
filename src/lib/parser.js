@@ -1131,20 +1131,31 @@ function parseGGSummary(text) {
   const m0 = lines[0]?.match(/Tournament #(\d+)/)
   if (!m0) return null
   const result = { tournamentId: m0[1] }
+  const num = str => parseFloat(str.replace(/,/g, ''))
 
   for (const line of lines) {
     let m
-    m = line.match(/Buy-in: \$?([\d,.]+)\+\$?([\d,.]+)/)
-    if (m) { result.buyin = parseFloat(m[1].replace(',', '')); result.buyinRake = parseFloat(m[2].replace(',', '')) }
+    // Normal: "$23+$2" (buy-in + rake). KO: "$10.5+$2+$12.5" (buy-in + rake + bounty)
+    m = line.match(/Buy-in: \$?([\d,.]+)\+\$?([\d,.]+)(?:\+\$?([\d,.]+))?/)
+    if (m) {
+      result.buyin     = Math.round((num(m[1]) + (m[3] ? num(m[3]) : 0)) * 100) / 100
+      result.buyinRake = num(m[2])
+    }
 
     m = line.match(/^([\d,]+) Players$/)
-    if (m) result.players = parseInt(m[1].replace(',', ''))
+    if (m) result.players = parseInt(m[1].replace(/,/g, ''))
 
     m = line.match(/Total Prize Pool: \$?([\d,.]+)/)
-    if (m) result.prizePool = parseFloat(m[1].replace(',', ''))
+    if (m) result.prizePool = num(m[1])
 
-    m = line.match(/^(\d+)\w+ : Hero, \$?([\d,.]+)/)
-    if (m) { result.finishPosition = parseInt(m[1]); result.prizeWon = parseFloat(m[2].replace(',', '')) }
+    // "8th : Hero, $110.32". On KOs the amount already includes bounties (GG doesn't split them),
+    // except when advancing to the next day: "216th : Hero, $0 Entry$192.51" → Entry = bounties won
+    m = line.match(/^(\d+)\w+ : Hero, \$?([\d,.]+)(?: Entry\$?([\d,.]+))?/)
+    if (m) {
+      result.finishPosition = parseInt(m[1])
+      result.prizeWon       = num(m[2])
+      if (m[3]) result.bountyWon = num(m[3])
+    }
   }
   return result
 }
@@ -1156,10 +1167,19 @@ function parseWinamaxSummary(text) {
   if (!m0) return null
   const result = { tournamentId: m0[1] }
 
+  // Re-entries: one summary block per entry in the same file. Winnings add up;
+  // the rest of the fields keep the last (final) block's values.
+  let prizeWon = null, bountyWon = null
+
   for (const line of lines) {
     let m
-    m = line.match(/Buy-In : ([\d.]+)€ \+ ([\d.]+)€/)
-    if (m) { result.buyin = parseFloat(m[1]); result.buyinRake = parseFloat(m[2]) }
+    // Normal: "4€ + 1€" (buy-in + rake). KO: "4€ + 5€ + 1€" (buy-in + bounty + rake)
+    m = line.match(/Buy-In : ([\d.]+)€ \+ ([\d.]+)€(?: \+ ([\d.]+)€)?/)
+    if (m) {
+      const parts = m.slice(1).filter(Boolean).map(parseFloat)
+      result.buyinRake = parts.pop()
+      result.buyin     = Math.round(parts.reduce((a, b) => a + b, 0) * 100) / 100
+    }
 
     m = line.match(/Registered players : (\d+)/)
     if (m) result.players = parseInt(m[1])
@@ -1170,12 +1190,19 @@ function parseWinamaxSummary(text) {
     m = line.match(/You finished in (\d+)\w+ place/)
     if (m) result.finishPosition = parseInt(m[1])
 
-    m = line.match(/You won ([\d.]+)€/)
-    if (m) result.prizeWon = parseFloat(m[1])
+    // "You won 12€", "You won Bounty 5€", "You won 12€ + Bounty 5€" (tickets are ignored)
+    if (line.startsWith('You won')) {
+      m = line.match(/You won ([\d.]+)€/)
+      if (m) prizeWon = (prizeWon ?? 0) + parseFloat(m[1])
+      m = line.match(/Bounty ([\d.]+)€/)
+      if (m) bountyWon = (bountyWon ?? 0) + parseFloat(m[1])
+    }
 
     m = line.match(/You played (.+)/)
     if (m) result.duration = m[1].trim()
   }
+  if (prizeWon  != null) result.prizeWon  = Math.round(prizeWon  * 100) / 100
+  if (bountyWon != null) result.bountyWon = Math.round(bountyWon * 100) / 100
   return result
 }
 

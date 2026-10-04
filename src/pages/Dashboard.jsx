@@ -220,6 +220,8 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
   )
 }
 
+const formatMoney = n => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }
 const PLATFORM_NAMES = { ggpoker: 'GGPoker', winamax: 'Winamax', '888poker': '888poker', coinpoker: 'CoinPoker', ipoker: 'iPoker', pokerstars: 'PokerStars' }
 
@@ -1128,7 +1130,10 @@ export default function Dashboard() {
                                   </span>
                                 )}
                                 {t.prize_won > 0 && (
-                                  <span style={s.rowPrize}>+{t.prize_won.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  <span style={s.rowPrize}>+{formatMoney(t.prize_won)}</span>
+                                )}
+                                {t.bounty_won > 0 && (
+                                  <span style={s.rowBounty}>KO {formatMoney(t.bounty_won)}</span>
                                 )}
                               </div>
                             </div>
@@ -1980,6 +1985,11 @@ const s = {
   rowPrize: {
     fontSize: 11,
     color: '#40c070',
+    fontWeight: 800,
+  },
+  rowBounty: {
+    fontSize: 11,
+    color: '#e0a040',
     fontWeight: 800,
   },
   rowReentry: {
