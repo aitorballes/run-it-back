@@ -253,6 +253,7 @@ export default function Dashboard() {
   const [showImport,       setShowImport]       = useState(false)
   const [dragOver,         setDragOver]         = useState(false)
   const [linkedFolders,    setLinkedFolders]    = useState([])
+  const [showFolderHelp,   setShowFolderHelp]   = useState(false)
   const [showStudy,        setShowStudy]        = useState(false)
   const [studyInitialFilters, setStudyInitialFilters] = useState(null)
 
@@ -687,7 +688,8 @@ export default function Dashboard() {
       setLinkedFolders(prev => [...prev, folder])
       await handleSyncFolder(folder)
     } catch (err) {
-      if (err.name === 'AbortError') return
+      // Chrome no avisa a la web cuando bloquea una carpeta de sistema: el usuario cancela y llega un AbortError
+      if (err.name === 'AbortError') return setShowFolderHelp(true)
       console.error(err)
       setUploadStatus({ ok: false, message: 'No se pudo acceder a la carpeta.' })
       setTimeout(() => setUploadStatus(null), 4000)
@@ -1409,10 +1411,41 @@ export default function Dashboard() {
                   {supportsFolderAccess ? '+ Vincular carpeta de sala' : 'Importar carpeta completa'}
                 </button>
                 <span style={s.folderHint}>
-                  Winamax en Mac: <code>~/Library/Application Support/winamax/documents/accounts</code>.
-                  En el selector pulsa ⌘⇧G y pega la ruta.
+                  Para saber dónde guarda las manos tu sala, ve a los ajustes de la aplicación
+                  y busca el apartado <b>Tracker</b> o <b>Hand history</b>.
                 </span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FOLDER HELP MODAL */}
+      {showFolderHelp && (
+        <div style={{ ...s.backdrop, zIndex: 110 }} onClick={e => e.target === e.currentTarget && setShowFolderHelp(false)}>
+          <div style={{ ...s.modal, width: 'min(440px, calc(100vw - 32px))' }}>
+            <div style={s.modalHeader}>
+              <span style={s.modalTitle}>¿Chrome no pudo abrir la carpeta?</span>
+              <button style={s.modalClose} onClick={() => setShowFolderHelp(false)}>✕</button>
+            </div>
+            <div style={s.modalBody}>
+              <span style={s.folderHelpText}>
+                Si el navegador te ha dicho que la carpeta <i>contiene archivos de sistema</i>, es porque tu sala
+                guarda las manos en una carpeta protegida (por ejemplo, dentro de <code>Library</code>) a la que
+                el navegador no puede acceder.
+              </span>
+              <ol style={s.folderHelpList}>
+                <li>Crea una carpeta nueva dentro de <b>Documentos</b>, por ejemplo <code>Documentos/Winamax</code>.</li>
+                <li>En los ajustes de tu sala (apartado <b>Tracker</b> o <b>Hand history</b>), cambia la ruta del historial a esa carpeta.</li>
+                <li>Copia en la carpeta nueva el contenido de la antigua para no perder las manos anteriores.</li>
+                <li>Vuelve aquí y vincula la carpeta nueva.</li>
+              </ol>
+            </div>
+            <div style={s.modalFooter}>
+              <button style={s.clearBtn} onClick={() => setShowFolderHelp(false)}>Cerrar</button>
+              <button style={s.applyBtn} onClick={() => { setShowFolderHelp(false); handleLinkFolder() }}>
+                Elegir otra carpeta
+              </button>
             </div>
           </div>
         </div>
@@ -2300,6 +2333,8 @@ const s = {
     fontSize: 13, fontWeight: 700, color: '#7ab0d8',
   },
   folderMeta: { fontSize: 11, color: '#3a5a70', whiteSpace: 'nowrap' },
+  folderHelpText: { fontSize: 13, color: '#7ab0d8', lineHeight: 1.6 },
+  folderHelpList: { margin: 0, paddingLeft: 20, fontSize: 13, color: '#c0d8f0', lineHeight: 1.7 },
   folderHint: { fontSize: 11, color: '#2a5070', lineHeight: 1.5, wordBreak: 'break-word' },
   dropZoneActive: {
     borderColor: '#60b0ff', background: 'rgba(20,60,140,0.12)', color: '#7ab0d8',
