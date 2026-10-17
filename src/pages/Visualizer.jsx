@@ -22,6 +22,8 @@ function getCardImage(code) {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────
+const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }
+
 const SUITS       = { h: '♥', d: '♦', s: '♠', c: '♣' }
 const COLORS      = { h: 'hearts', d: 'diamonds', s: 'spades', c: 'clubs' }
 const RANKS       = { T: '10', J: 'J', Q: 'Q', K: 'K', A: 'A' }
@@ -925,6 +927,7 @@ export default function Visualizer() {
   const dispIdx = displayHandsWithIdx.findIndex(({ i }) => i === curIdx)
 
   const hand    = hands[curIdx]
+  const platform = hand.platform ?? tournament?.platform
   const seq     = hand.sequence
   const step    = seq[curStep] ?? seq[0]
   const street  = step?.street ?? 'preflop'
@@ -996,8 +999,8 @@ export default function Visualizer() {
         <div style={hdr.center}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <img
-              src={{ winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }[tournament?.platform] ?? ggIcon}
-              alt={tournament?.platform || 'ggpoker'}
+              src={PLATFORM_ICONS[platform] ?? ggIcon}
+              alt={platform || 'ggpoker'}
               style={{ width:22, height:22, borderRadius:5, objectFit:'contain', flexShrink:0 }}
             />
             <span style={hdr.name}>{hand._tournamentName ?? tournament?.name}</span>
@@ -1157,8 +1160,12 @@ export default function Visualizer() {
             {/* Felt */}
             <div style={ta.felt}>
               {/* Watermark */}
-              <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
-                fontSize:160, color:'rgba(255,255,255,0.022)', pointerEvents:'none', userSelect:'none', lineHeight:1 }}>♠</div>
+              {PLATFORM_ICONS[platform] ? (
+                <img src={PLATFORM_ICONS[platform]} alt="" draggable={false} style={ta.roomWatermark} />
+              ) : (
+                <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+                  fontSize:160, color:'rgba(255,255,255,0.022)', pointerEvents:'none', userSelect:'none', lineHeight:1 }}>♠</div>
+              )}
             </div>
 
             {/* Board */}
@@ -1767,6 +1774,9 @@ const ta = {
                background:'radial-gradient(ellipse at 50% 38%, #1e4070 0%, #102348 55%, #070f28 100%)',
                borderRadius:'50%', border:'26px solid #080808',
                boxShadow:'0 0 0 3px #1a1a1a, 0 0 0 4px #0a0a0a, 0 0 0 6px rgba(150,120,40,0.18), 0 20px 80px rgba(0,0,0,.98), inset 0 0 90px rgba(0,0,0,.35)' },
+  roomWatermark: { position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+               width:150, height:150, objectFit:'contain', borderRadius:28, opacity:0.1,
+               filter:'grayscale(0.3)', pointerEvents:'none', userSelect:'none' },
   boardWrap: { position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-56%)',
                display:'flex', flexDirection:'column', alignItems:'center', gap:8 },
   pot:       { background:'rgba(0,0,0,0.75)', border:'1px solid rgba(200,160,0,0.25)', borderRadius:8,
