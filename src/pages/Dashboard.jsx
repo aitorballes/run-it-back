@@ -12,7 +12,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
 import { supportsFolderAccess, listLinkedFolders, saveLinkedFolder, removeLinkedFolder, pickFolder, ensurePermission, collectTxtFiles } from '../lib/folderSync'
-import { saveTournament, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
+import { saveTournament, refreshTournamentHands, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
 import StudyModal from '../components/StudyModal'
 
 function extractBuyin(name) {
@@ -637,18 +637,23 @@ export default function Dashboard() {
 
         // Dedup en batch: una sola query para todos los torneos
         const existingIds = await fetchExistingTournamentIds(user.id, grouped.map(t => t.id))
-        const toSave = grouped.filter(t => !existingIds.has(t.id))
-        skipped = grouped.length - toSave.length
+        const toSave    = grouped.filter(t => !existingIds.has(t.id))
+        const toRefresh = grouped.filter(t => existingIds.has(t.id))
         saved   = toSave.length
+        skipped = toRefresh.length
 
-        setProgress({ current: skipped, total: grouped.length })
+        setProgress({ current: 0, total: grouped.length })
 
-        // Saves en paralelo (3 a la vez)
+        // Saves en paralelo (3 a la vez); los torneos ya existentes se reescriben conservando notas y marcas
         const CONCURRENCY = 3
-        for (let i = 0; i < toSave.length; i += CONCURRENCY) {
+        const jobs = [
+          ...toSave.map(t => () => saveTournament(t, user.id)),
+          ...toRefresh.map(t => () => refreshTournamentHands(t, user.id)),
+        ]
+        for (let i = 0; i < jobs.length; i += CONCURRENCY) {
           await Promise.all(
-            toSave.slice(i, i + CONCURRENCY).map(async t => {
-              await saveTournament(t, user.id)
+            jobs.slice(i, i + CONCURRENCY).map(async job => {
+              await job()
               setProgress(p => ({ ...p, current: p.current + 1 }))
             })
           )
@@ -665,7 +670,7 @@ export default function Dashboard() {
 
       const parts = []
       if (saved             > 0) parts.push(`${saved} torneo${saved > 1 ? 's' : ''} guardado${saved > 1 ? 's' : ''}`)
-      if (skipped           > 0) parts.push(`${skipped} ya existía${skipped > 1 ? 'n' : ''}`)
+      if (skipped           > 0) parts.push(`${skipped} actualizado${skipped > 1 ? 's' : ''}`)
       if (summariesUpdated  > 0) parts.push(`${summariesUpdated} resumen${summariesUpdated > 1 ? 'es' : ''} actualizado${summariesUpdated > 1 ? 's' : ''}`)
       setUploadStatus({ ok: true, message: parts.join(' · ') || 'Sin cambios' })
       setTimeout(() => setUploadStatus(null), 4000)

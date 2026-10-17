@@ -19,6 +19,63 @@ export async function fetchExistingTournamentIds(userId, tournamentIds) {
   return result
 }
 
+function buildHandRow(h, tournamentDbId) {
+  return {
+    tournament_id: tournamentDbId,
+    hand_id:       h.id,
+    hero_result:   h.heroResult,
+    net:           calcHeroNet(h),
+    bb:            h.bb,
+    sb:            h.sb,
+    total_pot:     h.totalPot,
+    board:         h.board,
+    hole_cards:    h.holeCards,
+    sequence:      { sequence: h.sequence, streetStartStep: h.streetStartStep },
+    hand_datetime: h.datetime ? h.datetime.replace(/\//g, '-') : null,
+    raw:           h,
+    ...computeHandStats(h),
+    ...computeStudyFilterColumns(h),
+  }
+}
+
+// Re-import of an existing tournament: rewrite its hands in place (same DB ids) so notes,
+// review marks and share tokens survive. Hands not already in the DB are left out.
+export async function refreshTournamentHands(tournament, userId) {
+  const { data: tourRows, error: tourErr } = await supabase
+    .from('tournaments')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('tournament_id', tournament.id)
+    .limit(1)
+  if (tourErr) throw tourErr
+  const tourDbId = tourRows?.[0]?.id
+  if (!tourDbId) return 0
+
+  const PAGE = 1000
+  const dbIdByHandId = new Map()
+  for (let page = 0; ; page++) {
+    const { data, error } = await supabase
+      .from('hands')
+      .select('id, hand_id')
+      .eq('tournament_id', tourDbId)
+      .range(page * PAGE, (page + 1) * PAGE - 1)
+    if (error) throw error
+    data.forEach(r => dbIdByHandId.set(r.hand_id, r.id))
+    if (data.length < PAGE) break
+  }
+
+  const rows = tournament.hands
+    .filter(h => dbIdByHandId.has(h.id))
+    .map(h => ({ id: dbIdByHandId.get(h.id), ...buildHandRow(h, tourDbId) }))
+  for (let i = 0; i < rows.length; i += HAND_BATCH) {
+    const { error } = await supabase
+      .from('hands')
+      .upsert(rows.slice(i, i + HAND_BATCH), { onConflict: 'id' })
+    if (error) throw error
+  }
+  return rows.length
+}
+
 export async function saveTournament(tournament, userId) {
   // Hora de la última mano del torneo
   const lastHandDatetime = tournament.hands
@@ -43,22 +100,7 @@ export async function saveTournament(tournament, userId) {
   if (tourErr) throw tourErr
 
   // Insertar manos en lotes
-  const handsToInsert = tournament.hands.map(h => ({
-    tournament_id: tourRow.id,
-    hand_id:       h.id,
-    hero_result:   h.heroResult,
-    net:           calcHeroNet(h),
-    bb:            h.bb,
-    sb:            h.sb,
-    total_pot:     h.totalPot,
-    board:         h.board,
-    hole_cards:    h.holeCards,
-    sequence:      { sequence: h.sequence, streetStartStep: h.streetStartStep },
-    hand_datetime: h.datetime ? h.datetime.replace(/\//g, '-') : null,
-    raw:           h,
-    ...computeHandStats(h),
-    ...computeStudyFilterColumns(h),
-  }))
+  const handsToInsert = tournament.hands.map(h => buildHandRow(h, tourRow.id))
 
   const insertedHands = []
   for (let i = 0; i < handsToInsert.length; i += HAND_BATCH) {
