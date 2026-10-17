@@ -22,6 +22,11 @@ function getCardImage(code) {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────
+function fmtBounty(amount, currency = '€') {
+  const n = Number.isInteger(amount) ? amount : amount.toFixed(2)
+  return currency === '€' ? `${n}€` : `${currency}${n}`
+}
+
 const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }
 
 const SUITS       = { h: '♥', d: '♦', s: '♠', c: '♣' }
@@ -1245,8 +1250,13 @@ export default function Visualizer() {
                       whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:96 }}>
                       {isHero ? '★ Hero' : seat.player.slice(0,10)}
                     </div>
-                    <div style={{ fontSize:13, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700, marginTop:2 }}>
-                      {fmt(stacks.get(seat.player) ?? seat.chips)}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:5, marginTop:2 }}>
+                      <span style={{ fontSize:13, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700 }}>
+                        {fmt(stacks.get(seat.player) ?? seat.chips)}
+                      </span>
+                      {seat.bounty != null && (
+                        <span style={bountyStyle} title="Bounty">{fmtBounty(seat.bounty, hand.bountyCurrency)}</span>
+                      )}
                     </div>
                   </div>
 
@@ -1763,6 +1773,9 @@ const hdr = {
   filterDot:       { position:'absolute', top:4, right:4, width:6, height:6,
                      borderRadius:'50%', background:'#60b0ff' },
 }
+
+const bountyStyle = { fontSize:10, fontWeight:800, color:'#ffb340', background:'rgba(255,160,40,0.12)',
+  border:'1px solid rgba(255,160,40,0.35)', borderRadius:4, padding:'0 4px', whiteSpace:'nowrap', lineHeight:'15px' }
 
 const ta = {
   root:      { flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',

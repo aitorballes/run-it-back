@@ -311,9 +311,10 @@ function parseWinamaxHand(raw) {
     // ── Seats ──
     // Format: Seat N: PLAYER (chips, optional bounty)
     if (seating) {
-      m = line.match(/^Seat (\d+): (.+?) \((\d+)/)
+      m = line.match(/^Seat (\d+): (.+?) \((\d+)(?:, ([\d.]+)€ bounty)?/)
       if (m) {
         h.seats.push({ num: +m[1], player: m[2], chips: parseAmt(m[3]), pos: '', folded: false, allin: false, foldedStreet: null, allinStreet: null })
+        if (m[4]) { h.seats.at(-1).bounty = parseFloat(m[4]); h.bountyCurrency = '€' }
         continue
       }
     }
@@ -1030,9 +1031,10 @@ function parsePokerStarsHand(raw) {
 
     if (seating) {
       // Seat with optional bounty: Seat 1: player (chips in chips, €X bounty)
-      m = line.match(/^Seat (\d+): (.+?) \(([\d,]+) in chips/)
+      m = line.match(/^Seat (\d+): (.+?) \(([\d,]+) in chips(?:, ([$€£]?)([\d.,]+)\s*([$€£]?) bounty)?/)
       if (m) {
         h.seats.push({ num: +m[1], player: m[2], chips: parseAmt(m[3]), pos: '', folded: false, allin: false, foldedStreet: null, allinStreet: null })
+        if (m[5]) { h.seats.at(-1).bounty = parseFloat(m[5].replace(/,/g, '')); h.bountyCurrency = m[4] || m[6] || '$' }
         continue
       }
     }
