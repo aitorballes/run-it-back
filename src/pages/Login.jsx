@@ -11,6 +11,36 @@ function validatePassword(pw) {
   return rules
 }
 
+const COUNTRY_CODES = [
+  'AD','AE','AF','AG','AL','AM','AO','AR','AT','AU','AZ','BA','BB','BD','BE','BF','BG','BH','BI','BJ',
+  'BN','BO','BR','BS','BT','BW','BY','BZ','CA','CD','CF','CG','CH','CI','CL','CM','CN','CO','CR','CU',
+  'CV','CY','CZ','DE','DJ','DK','DM','DO','DZ','EC','EE','EG','ER','ES','ET','FI','FJ','FM','FR','GA',
+  'GB','GD','GE','GH','GM','GN','GQ','GR','GT','GW','GY','HN','HR','HT','HU','ID','IE','IL','IN','IQ',
+  'IR','IS','IT','JM','JO','JP','KE','KG','KH','KI','KM','KN','KP','KR','KW','KZ','LA','LB','LC','LI',
+  'LK','LR','LS','LT','LU','LV','LY','MA','MC','MD','ME','MG','MH','MK','ML','MM','MN','MR','MT','MU',
+  'MV','MW','MX','MY','MZ','NA','NE','NG','NI','NL','NO','NP','NR','NZ','OM','PA','PE','PG','PH','PK',
+  'PL','PR','PS','PT','PW','PY','QA','RO','RS','RU','RW','SA','SB','SC','SD','SE','SG','SI','SK','SL',
+  'SM','SN','SO','SR','SS','ST','SV','SY','SZ','TD','TG','TH','TJ','TL','TM','TN','TO','TR','TT','TV',
+  'TW','TZ','UA','UG','US','UY','UZ','VA','VC','VE','VN','VU','WS','XK','YE','ZA','ZM','ZW',
+]
+
+const regionNames = new Intl.DisplayNames(['es'], { type: 'region' })
+const COUNTRIES = COUNTRY_CODES
+  .map(code => ({ code, name: regionNames.of(code) }))
+  .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+
+const MIN_AGE = 18
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+const isValidEmail = e => EMAIL_RE.test(e.trim())
+const sameEmail = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+function maxBirthDate() {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - MIN_AGE)
+  return d.toISOString().slice(0, 10)
+}
+
 export default function Login() {
   const { signIn, signUp, resetPassword } = useAuth()
   const navigate = useNavigate()
@@ -19,6 +49,12 @@ export default function Login() {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
+  const [emailConfirm, setEmailConfirm] = useState('')
+  const [emailTouched, setEmailTouched] = useState(false)
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName]   = useState('')
+  const [birthDate, setBirthDate] = useState('')
+  const [country, setCountry]     = useState('')
   const [error, setError]       = useState('')
   const [message, setMessage]   = useState('')
   const [loading, setLoading]   = useState(false)
@@ -30,6 +66,8 @@ export default function Login() {
   function switchMode(m) {
     setMode(m); setError(''); setMessage('')
     setPassword(''); setConfirm('')
+    setFirstName(''); setLastName(''); setBirthDate(''); setCountry('')
+    setEmailConfirm(''); setEmailTouched(false)
   }
 
   async function handleSubmit(e) {
@@ -38,7 +76,12 @@ export default function Login() {
     setMessage('')
 
     if (mode === 'register') {
-      if (!pwValid)              { setError('La contraseña no cumple los requisitos.'); return }
+      if (!firstName.trim() || !lastName.trim()) { setError('Introduce tu nombre y apellidos.'); return }
+      if (!birthDate || birthDate > maxBirthDate()) { setError(`Debes tener al menos ${MIN_AGE} años.`); return }
+      if (!country)              { setError('Selecciona tu país de residencia.'); return }
+      if (!isValidEmail(email))  { setError('Introduce un email válido.'); return }
+      if (!sameEmail(email, emailConfirm)) { setError('Los emails no coinciden.'); return }
+      if (!pwValid)             { setError('La contraseña no cumple los requisitos.'); return }
       if (password !== confirm)  { setError('Las contraseñas no coinciden.'); return }
     }
 
@@ -49,8 +92,16 @@ export default function Login() {
       if (error) setError(error.message)
       else navigate('/')
     } else if (mode === 'register') {
-      const { error } = await signUp(email, password)
+      const { data, error } = await signUp(email.trim(), password, {
+        first_name: firstName.trim(),
+        last_name:  lastName.trim(),
+        birth_date: birthDate,
+        country,
+      })
+      // With email confirmation on, Supabase returns no error for an existing
+      // email — just a user with an empty identities array
       if (error) setError(error.message)
+      else if (data.user?.identities?.length === 0) setError('Ya existe una cuenta con este email. Inicia sesión o recupera tu contraseña.')
       else setMessage('Revisa tu email para confirmar la cuenta.')
     } else {
       const { error } = await resetPassword(email)
@@ -105,6 +156,66 @@ export default function Login() {
           )}
 
           <form onSubmit={handleSubmit} style={s.form}>
+            {mode === 'register' && (
+              <>
+                <div style={s.row}>
+                  <div style={{ ...s.field, ...s.half }}>
+                    <label style={s.label}>Nombre</label>
+                    <input
+                      style={s.input}
+                      type="text"
+                      autoComplete="given-name"
+                      value={firstName}
+                      onChange={e => setFirstName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={{ ...s.field, ...s.half }}>
+                    <label style={s.label}>Apellidos</label>
+                    <input
+                      style={s.input}
+                      type="text"
+                      autoComplete="family-name"
+                      value={lastName}
+                      onChange={e => setLastName(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div style={s.row}>
+                  <div style={{ ...s.field, ...s.half }}>
+                    <label style={s.label}>Fecha de nacimiento</label>
+                    <input
+                      style={{ ...s.input, colorScheme: 'dark', cursor: 'pointer' }}
+                      type="date"
+                      autoComplete="bday"
+                      max={maxBirthDate()}
+                      onClick={e => { try { e.currentTarget.showPicker() } catch { /* unsupported */ } }}
+                      value={birthDate}
+                      onChange={e => setBirthDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={{ ...s.field, ...s.half }}>
+                    <label style={s.label}>País de residencia</label>
+                    <select
+                      style={{ ...s.input, ...s.select, color: country ? '#c8d4e8' : '#5a6a80' }}
+                      autoComplete="country"
+                      value={country}
+                      onChange={e => setCountry(e.target.value)}
+                      required
+                    >
+                      <option value="" disabled>Selecciona…</option>
+                      {COUNTRIES.map(c => (
+                        <option key={c.code} value={c.code}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+
             <div style={s.field}>
               <label style={s.label}>Email</label>
               <input
@@ -113,9 +224,35 @@ export default function Login() {
                 placeholder="tu@email.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
+                onBlur={() => setEmailTouched(true)}
                 required
               />
+              {mode === 'register' && emailTouched && email && !isValidEmail(email) && (
+                <div style={s.inlineError}>Email no válido</div>
+              )}
             </div>
+
+            {/* Confirmar email — solo en registro */}
+            {mode === 'register' && (
+              <div style={s.field}>
+                <label style={s.label}>Confirmar email</label>
+                <input
+                  style={{
+                    ...s.input,
+                    borderColor: emailConfirm && !sameEmail(email, emailConfirm) ? '#8b3030' : '#1e2e42',
+                  }}
+                  type="email"
+                  placeholder="tu@email.com"
+                  autoComplete="off"
+                  value={emailConfirm}
+                  onChange={e => setEmailConfirm(e.target.value)}
+                  required
+                />
+                {emailConfirm && !sameEmail(email, emailConfirm) && (
+                  <div style={s.inlineError}>Los emails no coinciden</div>
+                )}
+              </div>
+            )}
 
             {mode !== 'forgot' && (
               <div style={s.field}>
@@ -262,6 +399,8 @@ const s = {
   },
   form: { display: 'flex', flexDirection: 'column', gap: 14 },
   field: { display: 'flex', flexDirection: 'column', gap: 5 },
+  row: { display: 'flex', gap: 10 },
+  half: { flex: 1, minWidth: 0 },
   label: {
     fontSize: 10, fontWeight: 800, color: '#3a5a7a',
     letterSpacing: '1px', textTransform: 'uppercase',
@@ -274,6 +413,16 @@ const s = {
     color: '#c8d4e8',
     fontSize: 14,
     outline: 'none',
+  },
+  select: {
+    colorScheme: 'dark',
+    cursor: 'pointer',
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    paddingRight: 38,
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%235a7a9a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 14px center',
   },
   rules: {
     display: 'flex',

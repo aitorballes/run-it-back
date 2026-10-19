@@ -23,8 +23,15 @@ export function AuthProvider({ children }) {
   const signIn = (email, password) =>
     supabase.auth.signInWithPassword({ email, password })
 
-  const signUp = (email, password) =>
-    supabase.auth.signUp({ email, password })
+  const signUp = (email, password, profile) =>
+    supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: profile,
+        emailRedirectTo: window.location.origin,
+      },
+    })
 
   const signOut = () => supabase.auth.signOut()
 
