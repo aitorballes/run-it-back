@@ -14,6 +14,26 @@ import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
 import { supportsFolderAccess, listLinkedFolders, saveLinkedFolder, removeLinkedFolder, pickFolder, ensurePermission, collectTxtFiles } from '../lib/folderSync'
 import { saveTournament, refreshTournamentHands, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
 import StudyModal from '../components/StudyModal'
+import OnboardingTour from '../components/OnboardingTour'
+
+const TOUR_STEPS = [
+  { target: 'import',      title: 'Importar torneos',
+    body: 'Sube tus historiales de manos (.txt) de GGPoker, PokerStars, Winamax, 888poker, iPoker o CoinPoker, o vincula las carpetas de tus salas para sincronizarlas con un clic.' },
+  { target: 'empty-upload', title: 'Cargar torneos',
+    body: 'Atajo para elegir directamente los archivos .txt desde tu ordenador.' },
+  { target: 'study',       title: 'Estudia tu juego',
+    body: 'Busca manos de todos tus torneos por posición, tipo de bote, jugadores o fechas, o repasa las que marcaste para revisar.' },
+  { target: 'filter',      title: 'Filtrar',
+    body: 'Encuentra torneos por nombre, rango de fechas o buy-in.' },
+  { target: 'list-menu',   title: 'Más opciones',
+    body: 'Desde aquí puedes exportar tus torneos a archivos de texto.' },
+  { target: 'calendar',    title: 'Tus sesiones',
+    body: 'Los días que jugaste aparecen resaltados. Pulsa uno para saltar a esa sesión en la lista.' },
+  { target: 'tournament',  title: 'Tus torneos',
+    body: 'Pulsa un torneo para revisarlo mano a mano. Con el menú ⋯ puedes compartirlo o eliminarlo.' },
+  { target: 'help',        title: '¿Necesitas ayuda?',
+    body: 'Puedes volver a ver esta guía cuando quieras desde este botón.' },
+]
 
 function extractBuyin(name) {
   if (!name) return null
@@ -165,7 +185,7 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
 
   return (
-    <div style={calStyle.outer}>
+    <div style={calStyle.outer} data-tour="calendar">
       <div style={calStyle.title}>Tus sesiones</div>
       <div style={calStyle.widget}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -226,7 +246,7 @@ const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, 
 const PLATFORM_NAMES = { ggpoker: 'GGPoker', winamax: 'Winamax', '888poker': '888poker', coinpoker: 'CoinPoker', ipoker: 'iPoker', pokerstars: 'PokerStars' }
 
 export default function Dashboard() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, updateUserData } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const fileInputRef    = useRef()
@@ -253,6 +273,7 @@ export default function Dashboard() {
   const [openMenu,         setOpenMenu]         = useState(null) // tournament id with open menu
   const [toast,            setToast]            = useState(null)
   const [showImport,       setShowImport]       = useState(false)
+  const [showTour,         setShowTour]         = useState(false)
   const [dragOver,         setDragOver]         = useState(false)
   const [linkedFolders,    setLinkedFolders]    = useState([])
   const [showFolderHelp,   setShowFolderHelp]   = useState(false)
@@ -882,6 +903,18 @@ export default function Dashboard() {
     return () => observer.disconnect()
   }, [isWide, monthGroups])
 
+  // Guía de bienvenida: se abre sola una vez, solo si el usuario aún no tiene torneos
+  const onboardingSeen = !!user?.user_metadata?.onboarding_seen
+  const hasTournaments = tournaments.length > 0
+  useEffect(() => {
+    if (!loading && user && !hasTournaments && !onboardingSeen) setShowTour(true)
+  }, [loading, user, hasTournaments, onboardingSeen])
+
+  const closeTour = useCallback(() => {
+    setShowTour(false)
+    if (!onboardingSeen) updateUserData({ onboarding_seen: true })
+  }, [onboardingSeen, updateUserData])
+
   const handleCalendarMonthChange = useCallback((delta) => {
     const newOffset = Math.min(0, calMonthOffset + delta)
     if (newOffset === calMonthOffset) return
@@ -932,16 +965,17 @@ export default function Dashboard() {
                 <span style={s.toolbarProgressText}>{progress.current}/{progress.total} torneos</span>
               </div>
             ) : (
-              <button style={s.importBtn} onClick={() => setShowImport(true)} disabled={uploading}>
+              <button style={s.importBtn} data-tour="import" onClick={() => setShowImport(true)} disabled={uploading}>
                 📂 Importar torneos
               </button>
             ))}
           </div>
           <div style={s.headerRight}>
-            <button style={s.studyBtn} onClick={() => { setStudyInitialFilters(null); setShowStudy(true) }}>
+            <button style={s.studyBtn} data-tour="study" onClick={() => { setStudyInitialFilters(null); setShowStudy(true) }}>
               🎓 Estudia tu juego
             </button>
             {!isMobile && <span style={s.email}>{user?.email}</span>}
+            <button style={s.helpBtn} data-tour="help" onClick={() => setShowTour(true)} title="Ver guía">?</button>
             <button style={s.signOutBtn} onClick={signOut}>Salir</button>
           </div>
         </div>
@@ -988,7 +1022,7 @@ export default function Dashboard() {
               Sube los historiales de manos de cualquier sala o vincula sus carpetas
               desde <b>Importar torneos</b> para sincronizarlos con un clic
             </div>
-            <button style={s.emptyBtn} onClick={() => fileInputRef.current.click()}>
+            <button style={s.emptyBtn} data-tour="empty-upload" onClick={() => fileInputRef.current.click()}>
               Cargar torneos
             </button>
           </div>
@@ -1005,6 +1039,7 @@ export default function Dashboard() {
               )}
               <button
                 style={{ ...s.listFilterBtn, ...(hasFilters ? s.listFilterBtnActive : {}) }}
+                data-tour="filter"
                 onClick={openFilter}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -1017,6 +1052,7 @@ export default function Dashboard() {
               {!isMobile && <div style={{ position: 'relative' }}>
                 <button
                   style={s.listMenuBtn}
+                  data-tour="list-menu"
                   onClick={e => { e.stopPropagation(); setShowListMenu(v => !v) }}
                 >
                   ⋯
@@ -1117,7 +1153,7 @@ export default function Dashboard() {
                     {isExpanded && (
                       <div style={s.sessionRows}>
                         {items.map(t => (
-                          <div key={t.id} style={s.row} onClick={() => navigate(`/tournament/${t.id}`)}>
+                          <div key={t.id} style={s.row} data-tour="tournament" onClick={() => navigate(`/tournament/${t.id}`)}>
                             <img
                               src={PLATFORM_ICONS[t.platform] ?? ggIcon}
                               alt={t.platform || 'ggpoker'}
@@ -1261,6 +1297,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* ONBOARDING TOUR */}
+      {showTour && <OnboardingTour steps={TOUR_STEPS} onClose={closeTour} />}
 
       {/* STUDY MODAL */}
       {showStudy && (
@@ -1759,6 +1798,19 @@ const s = {
     letterSpacing: '0.3px',
     position: 'relative',
     zIndex: 1,
+  },
+  helpBtn: {
+    background: 'none',
+    border: '1px solid #1a3048',
+    borderRadius: '50%',
+    color: '#3a6080',
+    width: 26,
+    height: 26,
+    padding: 0,
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 800,
+    flexShrink: 0,
   },
   signOutBtn: {
     background: 'none',

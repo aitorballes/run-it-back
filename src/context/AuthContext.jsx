@@ -43,8 +43,12 @@ export function AuthProvider({ children }) {
   const updatePassword = (newPassword) =>
     supabase.auth.updateUser({ password: newPassword })
 
+  // Merges into user_metadata
+  const updateUserData = (data) =>
+    supabase.auth.updateUser({ data })
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, resetPassword, updatePassword, updateUserData }}>
       {!loading && children}
     </AuthContext.Provider>
   )
