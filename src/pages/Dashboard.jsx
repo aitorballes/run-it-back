@@ -16,26 +16,20 @@ import { saveTournament, refreshTournamentHands, fetchTournaments, deleteTournam
 import StudyModal from '../components/StudyModal'
 import OnboardingTour from '../components/OnboardingTour'
 import Avatar from '../components/Avatar'
+import Logo from '../components/Logo'
+import { useI18n, fmtNumber, getLocale } from '../i18n/core'
+import Rich from '../i18n/Rich'
 
 const TOUR_STEPS = [
-  { target: 'import',      title: 'Importar torneos',
-    body: 'Sube tus historiales de manos (.txt) de GGPoker, PokerStars, Winamax, 888poker, iPoker o CoinPoker, o vincula las carpetas de tus salas para sincronizarlas con un clic.' },
-  { target: 'empty-upload', title: 'Cargar torneos',
-    body: 'Atajo para elegir directamente los archivos .txt desde tu ordenador.' },
-  { target: 'study',       title: 'Estudia tu juego',
-    body: 'Busca manos de todos tus torneos por posición, tipo de bote, jugadores o fechas, o repasa las que marcaste para revisar.' },
-  { target: 'filter',      title: 'Filtrar',
-    body: 'Encuentra torneos por nombre, rango de fechas o buy-in.' },
-  { target: 'list-menu',   title: 'Más opciones',
-    body: 'Desde aquí puedes exportar tus torneos a archivos de texto.' },
-  { target: 'calendar',    title: 'Tus sesiones',
-    body: 'Los días que jugaste aparecen resaltados. Pulsa uno para saltar a esa sesión en la lista.' },
-  { target: 'tournament',  title: 'Tus torneos',
-    body: 'Pulsa un torneo para revisarlo mano a mano. Con el menú ⋯ puedes compartirlo o eliminarlo.' },
-  { target: 'profile',     title: 'Perfil',
-    body: 'Desde aquí entras en tu perfil para revisar tus datos o cambiar la contraseña, y cierras sesión.' },
-  { target: 'help',        title: '¿Necesitas ayuda?',
-    body: 'Puedes volver a ver esta guía cuando quieras desde este botón.' },
+  { target: 'import',       key: 'import' },
+  { target: 'empty-upload', key: 'emptyUpload' },
+  { target: 'study',        key: 'study' },
+  { target: 'filter',       key: 'filter' },
+  { target: 'list-menu',    key: 'listMenu' },
+  { target: 'calendar',     key: 'calendar' },
+  { target: 'tournament',   key: 'tournament' },
+  { target: 'profile',      key: 'profile' },
+  { target: 'help',         key: 'help' },
 ]
 
 function extractBuyin(name) {
@@ -163,14 +157,17 @@ const calStyle = {
   },
 }
 
-const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+// Monday-first narrow weekday names (L M X J V S D in Spanish); 2024-01-01 was a Monday
+const dayLabels = locale => Array.from({ length: 7 }, (_, i) =>
+  new Date(2024, 0, 1 + i).toLocaleDateString(locale, { weekday: 'narrow' }))
 
 function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, onMonthChange }) {
+  const { t, locale } = useI18n()
   const today = new Date()
   const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1)
   const year = base.getFullYear()
   const month = base.getMonth()
-  const monthLabel = base.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).replace(' de ', ' ')
+  const monthLabel = base.toLocaleDateString(locale, { month: 'long', year: 'numeric' }).replace(' de ', ' ')
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const firstDay = new Date(year, month, 1).getDay()
   const offset = (firstDay + 6) % 7 // Monday-first
@@ -181,7 +178,7 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
   const monthKey = `${year}/${String(month + 1).padStart(2, '0')}`
   const monthDayGroups = sessionGroups.filter(g => g.day.startsWith(monthKey))
   const monthTournaments = monthDayGroups.reduce((s, g) => s + g.items.length, 0)
-  const monthHands = monthDayGroups.reduce((s, g) => s + g.items.reduce((ss, t) => ss + (t.hands_count || 0), 0), 0)
+  const monthHands = monthDayGroups.reduce((s, g) => s + g.items.reduce((ss, tour) => ss + (tour.hands_count || 0), 0), 0)
 
   const cells = []
   for (let i = 0; i < offset; i++) cells.push(null)
@@ -189,7 +186,7 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
 
   return (
     <div style={calStyle.outer} data-tour="calendar">
-      <div style={calStyle.title}>Tus sesiones</div>
+      <div style={calStyle.title}>{t('dashboard.calendar.title')}</div>
       <div style={calStyle.widget}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <button style={calStyle.navBtn} onClick={() => onMonthChange(-1)}>‹</button>
@@ -198,8 +195,8 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
         </div>
         <div key={monthOffset} style={{ animation: 'calMonthIn 0.2s ease' }}>
           <div style={calStyle.grid}>
-            {DAY_LABELS.map(l => (
-              <div key={l} style={calStyle.dayLabel}>{l}</div>
+            {dayLabels(locale).map((l, i) => (
+              <div key={i} style={calStyle.dayLabel}>{l}</div>
             ))}
             {cells.map((d, i) => {
               if (!d) return <div key={`e-${i}`} />
@@ -228,12 +225,12 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
             <div style={calStyle.monthStats}>
               <div style={calStyle.monthStatItem}>
                 <span style={calStyle.monthStatValue}>{monthTournaments}</span>
-                <span style={calStyle.monthStatLabel}>Torneos</span>
+                <span style={calStyle.monthStatLabel}>{t('dashboard.tournamentsLabel')}</span>
               </div>
               <div style={{ width: 1, background: '#1a2a3a', margin: '0 8px' }} />
               <div style={calStyle.monthStatItem}>
-                <span style={calStyle.monthStatValue}>{monthHands.toLocaleString('es-ES')}</span>
-                <span style={calStyle.monthStatLabel}>Manos</span>
+                <span style={calStyle.monthStatValue}>{fmtNumber(monthHands)}</span>
+                <span style={calStyle.monthStatLabel}>{t('dashboard.handsLabel')}</span>
               </div>
             </div>
           )}
@@ -243,13 +240,14 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
   )
 }
 
-const formatMoney = n => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const formatMoney = n => n.toLocaleString(getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }
 const PLATFORM_NAMES = { ggpoker: 'GGPoker', winamax: 'Winamax', '888poker': '888poker', coinpoker: 'CoinPoker', ipoker: 'iPoker', pokerstars: 'PokerStars' }
 
 export default function Dashboard() {
   const { user, signOut, updateUserData } = useAuth()
+  const { t, locale } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const fileInputRef    = useRef()
@@ -348,11 +346,11 @@ export default function Dashboard() {
       const data = await fetchTournamentsInRange(user.id, exportDateFrom, exportDateTo)
       setExportHandLimits({})
       setExportTournaments(data)
-      setExportSelected(new Set(data.map(t => t.id)))
+      setExportSelected(new Set(data.map(tour => tour.id)))
       setExportLoaded(true)
     } catch (e) {
       console.error(e)
-      setExportError('Error al cargar torneos.')
+      setExportError(t('dashboard.export.loadError'))
     } finally {
       setExportLoading(false)
     }
@@ -368,10 +366,10 @@ export default function Dashboard() {
     // `tournaments` is already loaded (dashboard list), sorted by date desc
     const selected = []
     let acc = 0
-    for (const t of tournaments) {
+    for (const tour of tournaments) {
       if (acc >= n) break
-      selected.push(t)
-      acc += t.hands_count || 0
+      selected.push(tour)
+      acc += tour.hands_count || 0
     }
 
     const limits = {}
@@ -383,7 +381,7 @@ export default function Dashboard() {
 
     setExportHandLimits(limits)
     setExportTournaments(selected)
-    setExportSelected(new Set(selected.map(t => t.id)))
+    setExportSelected(new Set(selected.map(tour => tour.id)))
     setExportLoaded(true)
   }
 
@@ -396,41 +394,41 @@ export default function Dashboard() {
   }
 
   function toggleExportAll() {
-    const allSelected = exportTournaments.every(t => exportSelected.has(t.id))
-    setExportSelected(allSelected ? new Set() : new Set(exportTournaments.map(t => t.id)))
+    const allSelected = exportTournaments.every(tour => exportSelected.has(tour.id))
+    setExportSelected(allSelected ? new Set() : new Set(exportTournaments.map(tour => tour.id)))
   }
 
   function toggleExportSession(items) {
-    const allSelected = items.every(t => exportSelected.has(t.id))
+    const allSelected = items.every(tour => exportSelected.has(tour.id))
     setExportSelected(prev => {
       const next = new Set(prev)
-      if (allSelected) { items.forEach(t => next.delete(t.id)) }
-      else             { items.forEach(t => next.add(t.id)) }
+      if (allSelected) { items.forEach(tour => next.delete(tour.id)) }
+      else             { items.forEach(tour => next.add(tour.id)) }
       return next
     })
   }
 
   async function handleExport() {
-    const selected = exportTournaments.filter(t => exportSelected.has(t.id))
+    const selected = exportTournaments.filter(tour => exportSelected.has(tour.id))
     if (!selected.length) return
     setExporting(true)
     setExportProgress({ current: 0, total: selected.length })
     setExportError(null)
     setExportDone(null)
     try {
-      const handsMap = await fetchHandsBatch(selected.map(t => t.id))
+      const handsMap = await fetchHandsBatch(selected.map(tour => tour.id))
       let totalHands = 0
       const files = {}
 
       for (let i = 0; i < selected.length; i++) {
-        const t = selected[i]
-        let hands = handsMap.get(t.id) || []
-        const limit = exportHandLimits[t.id]
+        const tour = selected[i]
+        let hands = handsMap.get(tour.id) || []
+        const limit = exportHandLimits[tour.id]
         if (limit != null) hands = hands.slice(-limit)
         totalHands += hands.length
-        const text    = serializeTournament(t, hands)
-        const summary = exportIncludeSummary ? serializeSummary(t) : null
-        const fname   = `${sanitizeFilename(t.name)}_${t.tournament_id}`
+        const text    = serializeTournament(tour, hands)
+        const summary = exportIncludeSummary ? serializeSummary(tour) : null
+        const fname   = `${sanitizeFilename(tour.name)}_${tour.tournament_id}`
 
         if (selected.length === 1) {
           downloadText(text, `${fname}.txt`)
@@ -445,18 +443,18 @@ export default function Dashboard() {
       if (selected.length > 1) {
         const zip = zipSync(files)
         const zipName = exportMode === 'count'
-          ? `torneos_ultimas_${exportHandCount}_manos.zip`
-          : `torneos_${exportDateFrom}_${exportDateTo}.zip`
+          ? `${t('dashboard.export.zipLast', { n: exportHandCount })}.zip`
+          : `${t('dashboard.export.zipRange', { from: exportDateFrom, to: exportDateTo })}.zip`
         downloadBlob(zip, zipName, 'application/zip')
       }
 
       setShowExport(false)
-      const msg = `${selected.length} torneo${selected.length !== 1 ? 's' : ''} exportado${selected.length !== 1 ? 's' : ''} · ${totalHands.toLocaleString('es-ES')} manos`
+      const msg = t('dashboard.export.done', { n: selected.length, hands: fmtNumber(totalHands) })
       setToast(msg)
       setTimeout(() => setToast(null), 3500)
     } catch (e) {
       console.error(e)
-      setExportError('Error al exportar. Inténtalo de nuevo.')
+      setExportError(t('dashboard.export.error'))
     } finally {
       setExporting(false)
       setExportProgress(null)
@@ -467,14 +465,14 @@ export default function Dashboard() {
     if (!confirmDeleteSession) return
     setDeletingSession(true)
     try {
-      for (const t of confirmDeleteSession.items) {
-        await deleteTournament(t.id, user.id)
+      for (const tour of confirmDeleteSession.items) {
+        await deleteTournament(tour.id, user.id)
       }
       setConfirmDeleteSession(null)
       await loadTournaments()
     } catch (e) {
       console.error(e.message ?? e)
-      setToast('Error al eliminar. Inténtalo de nuevo.')
+      setToast(t('dashboard.deleteError'))
       setTimeout(() => setToast(null), 3500)
     } finally {
       setDeletingSession(false)
@@ -490,7 +488,7 @@ export default function Dashboard() {
       await loadTournaments()
     } catch (e) {
       console.error(e.message ?? e)
-      setToast('Error al eliminar. Inténtalo de nuevo.')
+      setToast(t('dashboard.deleteError'))
       setTimeout(() => setToast(null), 3500)
     } finally {
       setDeleting(false)
@@ -503,7 +501,7 @@ export default function Dashboard() {
       const token = await generateShareToken(tournamentDbId)
       const url = `${window.location.origin}/share/${token}`
       await navigator.clipboard.writeText(url)
-      setToast('¡Enlace copiado!')
+      setToast(t('common.linkCopied'))
       setTimeout(() => setToast(null), 2500)
     } catch (e) {
       console.error(e)
@@ -626,7 +624,7 @@ export default function Dashboard() {
     const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
     const files = Array.from(fileList).filter(f => {
       if (f.size > MAX_FILE_SIZE) {
-        setUploadStatus({ ok: false, message: `El archivo "${f.name}" supera el límite de 10 MB.` })
+        setUploadStatus({ ok: false, message: t('dashboard.import.fileTooBig', { name: f.name, mb: 10 }) })
         setTimeout(() => setUploadStatus(null), 4000)
         return false
       }
@@ -640,20 +638,20 @@ export default function Dashboard() {
     try {
       const texts = await Promise.all(files.map(f => f.text()))
 
-      const isSummary = t => {
-        const tr = t.trimStart()
+      const isSummary = text => {
+        const tr = text.trimStart()
         return tr.startsWith('Winamax Poker - Tournament summary')
           || tr.startsWith('Tournament #')
           || tr.startsWith('PokerTracker 4 Tournament Summary')
       }
       const summaryTexts = texts.filter(isSummary)
-      const handTexts    = texts.filter(t => !isSummary(t))
+      const handTexts    = texts.filter(text => !isSummary(text))
 
       let saved = 0, skipped = 0, summariesUpdated = 0
       let platform = null
 
       if (handTexts.length > 0) {
-        const parsedPerFile = handTexts.map(t => parseFile(t))
+        const parsedPerFile = handTexts.map(text => parseFile(text))
         const entriesMap = new Map()
         for (const fileHands of parsedPerFile) {
           const tids = new Set(fileHands.map(h => h.tournamentId).filter(Boolean))
@@ -665,12 +663,12 @@ export default function Dashboard() {
         for (const h of allHands) if (h.platform) platformCounts[h.platform] = (platformCounts[h.platform] || 0) + 1
         platform = Object.keys(platformCounts).sort((a, b) => platformCounts[b] - platformCounts[a])[0] ?? null
         const grouped  = groupByTournament(allHands)
-        for (const t of grouped) t.entries = entriesMap.get(t.id) || 1
+        for (const tour of grouped) tour.entries = entriesMap.get(tour.id) || 1
 
         // Dedup en batch: una sola query para todos los torneos
-        const existingIds = await fetchExistingTournamentIds(user.id, grouped.map(t => t.id))
-        const toSave    = grouped.filter(t => !existingIds.has(t.id))
-        const toRefresh = grouped.filter(t => existingIds.has(t.id))
+        const existingIds = await fetchExistingTournamentIds(user.id, grouped.map(tour => tour.id))
+        const toSave    = grouped.filter(tour => !existingIds.has(tour.id))
+        const toRefresh = grouped.filter(tour => existingIds.has(tour.id))
         saved   = toSave.length
         skipped = toRefresh.length
 
@@ -679,8 +677,8 @@ export default function Dashboard() {
         // Saves en paralelo (3 a la vez); los torneos ya existentes se reescriben conservando notas y marcas
         const CONCURRENCY = 3
         const jobs = [
-          ...toSave.map(t => () => saveTournament(t, user.id)),
-          ...toRefresh.map(t => () => refreshTournamentHands(t, user.id)),
+          ...toSave.map(tour => () => saveTournament(tour, user.id)),
+          ...toRefresh.map(tour => () => refreshTournamentHands(tour, user.id)),
         ]
         for (let i = 0; i < jobs.length; i += CONCURRENCY) {
           await Promise.all(
@@ -701,16 +699,16 @@ export default function Dashboard() {
       }
 
       const parts = []
-      if (saved             > 0) parts.push(`${saved} torneo${saved > 1 ? 's' : ''} guardado${saved > 1 ? 's' : ''}`)
-      if (skipped           > 0) parts.push(`${skipped} actualizado${skipped > 1 ? 's' : ''}`)
-      if (summariesUpdated  > 0) parts.push(`${summariesUpdated} resumen${summariesUpdated > 1 ? 'es' : ''} actualizado${summariesUpdated > 1 ? 's' : ''}`)
-      setUploadStatus({ ok: true, message: parts.join(' · ') || 'Sin cambios' })
+      if (saved             > 0) parts.push(t('dashboard.import.saved', { n: saved }))
+      if (skipped           > 0) parts.push(t('dashboard.import.updated', { n: skipped }))
+      if (summariesUpdated  > 0) parts.push(t('dashboard.import.summaries', { n: summariesUpdated }))
+      setUploadStatus({ ok: true, message: parts.join(' · ') || t('dashboard.import.noChanges') })
       setTimeout(() => setUploadStatus(null), 4000)
       await loadTournaments()
       return { platform }
     } catch (err) {
       console.error(err)
-      setUploadStatus({ ok: false, message: 'Error al procesar los archivos.' })
+      setUploadStatus({ ok: false, message: t('dashboard.import.processError') })
       setTimeout(() => setUploadStatus(null), 4000)
       return null
     } finally {
@@ -730,7 +728,7 @@ export default function Dashboard() {
       // Chrome no avisa a la web cuando bloquea una carpeta de sistema: el usuario cancela y llega un AbortError
       if (err.name === 'AbortError') return setShowFolderHelp(true)
       console.error(err)
-      setUploadStatus({ ok: false, message: 'No se pudo acceder a la carpeta.' })
+      setUploadStatus({ ok: false, message: t('dashboard.folders.accessError') })
       setTimeout(() => setUploadStatus(null), 4000)
     }
   }
@@ -740,14 +738,14 @@ export default function Dashboard() {
       await syncFolder(folder)
     } catch (err) {
       console.error(err)
-      setUploadStatus({ ok: false, message: `Error al sincronizar "${folder.name}".` })
+      setUploadStatus({ ok: false, message: t('dashboard.folders.syncError', { name: folder.name }) })
       setTimeout(() => setUploadStatus(null), 4000)
     }
   }
 
   async function syncFolder(folder) {
     if (!await ensurePermission(folder.handle)) {
-      setUploadStatus({ ok: false, message: `Sin permiso para leer "${folder.name}".` })
+      setUploadStatus({ ok: false, message: t('dashboard.folders.noPermission', { name: folder.name }) })
       setTimeout(() => setUploadStatus(null), 4000)
       return
     }
@@ -755,7 +753,7 @@ export default function Dashboard() {
     if (!files.length) {
       if (!folder.platform) await detectFolderPlatform(folder)
       setShowImport(false)
-      setUploadStatus({ ok: true, message: `"${folder.name}": sin archivos nuevos` })
+      setUploadStatus({ ok: true, message: t('dashboard.folders.noNewFiles', { name: folder.name }) })
       setTimeout(() => setUploadStatus(null), 4000)
       return
     }
@@ -807,9 +805,9 @@ export default function Dashboard() {
       return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null
     }
     const intervals = []
-    for (const t of items) {
-      const start = parseDate(t.date)
-      const end   = parseDate(t.end_time)
+    for (const tour of items) {
+      const start = parseDate(tour.date)
+      const end   = parseDate(tour.end_time)
       if (start && end && end > start) intervals.push([start.getTime(), end.getTime()])
     }
     if (intervals.length === 0) return '—'
@@ -831,15 +829,15 @@ export default function Dashboard() {
   function formatDayHeader(dayKey) {
     const [y, mo, d] = dayKey.split('/')
     const date = new Date(+y, +mo - 1, +d)
-    return date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    return date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   }
 
   function groupByDay(list) {
     const map = new Map()
-    for (const t of list) {
-      const day = t.date ? t.date.slice(0, 10) : '—'
+    for (const tour of list) {
+      const day = tour.date ? tour.date.slice(0, 10) : '—'
       if (!map.has(day)) map.set(day, [])
-      map.get(day).push(t)
+      map.get(day).push(tour)
     }
     return Array.from(map.entries()).map(([day, items]) => ({ day, items }))
   }
@@ -856,7 +854,7 @@ export default function Dashboard() {
 
   function formatMonthHeader(monthKey) {
     const [y, m] = monthKey.split('/')
-    const label = new Date(+y, +m - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
+    const label = new Date(+y, +m - 1, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' })
     return label.replace(' de ', ' ').replace(/^\w/, c => c.toUpperCase())
   }
 
@@ -866,21 +864,21 @@ export default function Dashboard() {
     let list = tournaments
     if (filters.name) {
       const q = filters.name.toLowerCase()
-      list = list.filter(t => t.name?.toLowerCase().includes(q))
+      list = list.filter(tour => tour.name?.toLowerCase().includes(q))
     }
     if (filters.dateFrom) {
       const from = filters.dateFrom // YYYY-MM-DD
-      list = list.filter(t => t.date && t.date.slice(0, 10).replace(/\//g, '-') >= from)
+      list = list.filter(tour => tour.date && tour.date.slice(0, 10).replace(/\//g, '-') >= from)
     }
     if (filters.dateTo) {
       const to = filters.dateTo
-      list = list.filter(t => t.date && t.date.slice(0, 10).replace(/\//g, '-') <= to)
+      list = list.filter(tour => tour.date && tour.date.slice(0, 10).replace(/\//g, '-') <= to)
     }
     if (filters.buyinMin || filters.buyinMax) {
       const min = filters.buyinMin ? parseFloat(filters.buyinMin) : 0
       const max = filters.buyinMax ? parseFloat(filters.buyinMax) : Infinity
-      list = list.filter(t => {
-        const b = extractBuyin(t.name)
+      list = list.filter(tour => {
+        const b = extractBuyin(tour.name)
         return b !== null && b >= min && b <= max
       })
     }
@@ -938,7 +936,7 @@ export default function Dashboard() {
 
     const el = document.getElementById(`month-${targetMonthKey}`)
     if (!el) {
-      setEmptyMonthNotice(`No hay torneos en ${formatMonthHeader(targetMonthKey)}`)
+      setEmptyMonthNotice(t('dashboard.calendar.emptyMonth', { month: formatMonthHeader(targetMonthKey) }))
       return
     }
 
@@ -947,7 +945,7 @@ export default function Dashboard() {
       document.getElementById(`month-${targetMonthKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 50)
     setTimeout(() => { isAutoScrolling.current = false }, 1000)
-  }, [calMonthOffset])
+  }, [calMonthOffset, t]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={s.page}>
@@ -966,37 +964,34 @@ export default function Dashboard() {
           <input ref={folderInputRef} type="file" webkitdirectory="" style={{ display: 'none' }}
             onChange={e => { handleFiles(Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.txt'))); e.target.value = '' }} />
           <div style={s.headerLeft}>
-            <div style={s.logo}>
-              <span style={s.logoSpade}>♠</span>
-              <span style={s.logoText}>RunItBack</span>
-            </div>
+            <Logo />
             {!isMobile && (uploading && progress ? (
               <div style={s.headerProgress}>
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,70,140,0.25)', width: `${(progress.current / progress.total) * 100}%`, transition: 'width 0.2s', borderRadius: 8 }} />
-                <span style={s.toolbarProgressText}>{progress.current}/{progress.total} torneos</span>
+                <span style={s.toolbarProgressText}>{t('dashboard.import.progress', { current: progress.current, total: progress.total })}</span>
               </div>
             ) : (
               <button style={s.importBtn} data-tour="import" onClick={() => setShowImport(true)} disabled={uploading}>
-                📂 Importar torneos
+                📂 {t('dashboard.import.title')}
               </button>
             ))}
           </div>
           <div style={s.headerRight}>
             <button style={s.studyBtn} data-tour="study" onClick={() => { setStudyInitialFilters(null); setShowStudy(true) }}>
-              🎓 Estudia tu juego
+              🎓 {t('study.title')}
             </button>
             {!loading && !hasTournaments && (
-              <button style={s.helpBtn} data-tour="help" onClick={() => setShowTour(true)} title="Ver guía">?</button>
+              <button style={s.helpBtn} data-tour="help" onClick={() => setShowTour(true)} title={t('tour.show')}>?</button>
             )}
             <div style={{ position: 'relative' }}>
               <button
                 style={s.profileBtn}
                 data-tour="profile"
                 onClick={e => { e.stopPropagation(); setShowUserMenu(v => !v) }}
-                title="Perfil"
+                title={t('nav.profile')}
               >
                 <Avatar url={user?.user_metadata?.avatar_url} name={user?.user_metadata?.first_name || user?.email} />
-                {!isMobile && <span style={s.email}>Perfil</span>}
+                {!isMobile && <span style={s.email}>{t('nav.profile')}</span>}
               </button>
               {showUserMenu && (
                 <div style={{ ...s.listMenuDropdown, minWidth: 200 }} onClick={e => e.stopPropagation()}>
@@ -1009,10 +1004,10 @@ export default function Dashboard() {
                     <div style={s.userMenuEmail}>{user?.email}</div>
                   </div>
                   <button style={s.dropdownItem} onClick={() => { setShowUserMenu(false); navigate('/profile') }}>
-                    Perfil
+                    {t('nav.profile')}
                   </button>
                   <button style={{ ...s.dropdownItem, color: '#e07070', borderBottom: 'none' }} onClick={signOut}>
-                    Salir
+                    {t('nav.signOut')}
                   </button>
                 </div>
               )}
@@ -1053,28 +1048,27 @@ export default function Dashboard() {
       {/* CONTENT */}
       <div style={{ ...s.content, paddingTop: isMobile ? 16 : 24, paddingBottom: isMobile ? 20 : 48, paddingLeft: isMobile ? 12 : 24, paddingRight: isWide ? 322 : isMobile ? 12 : 24 }}>
         {loading ? (
-          <div style={s.hint}>Cargando...</div>
+          <div style={s.hint}>{t('common.loading')}</div>
         ) : tournaments.length === 0 ? (
           <div style={s.empty}>
             <div style={s.emptySpade}>♠</div>
-            <div style={s.emptyTitle}>No hay torneos todavía</div>
+            <div style={s.emptyTitle}>{t('dashboard.empty.title')}</div>
             <div style={s.hint}>
-              Sube los historiales de manos de cualquier sala o vincula sus carpetas
-              desde <b>Importar torneos</b> para sincronizarlos con un clic
+              <Rich text={t('dashboard.empty.hint')} />
             </div>
             <button style={s.emptyBtn} data-tour="empty-upload" onClick={() => fileInputRef.current.click()}>
-              Cargar torneos
+              {t('dashboard.empty.button')}
             </button>
           </div>
         ) : (
           <div style={s.listWrap}>
             <div style={s.listHeader}>
-              <span style={s.listTitle}>Mis torneos</span>
+              <span style={s.listTitle}>{t('dashboard.myTournaments')}</span>
               <span style={s.listCount}>{tournaments.length}</span>
               {hasFilters && (
                 <span style={s.filterInfo}>
-                  {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
-                  <button style={s.clearFiltersBtn} onClick={clearFilter}>✕ Limpiar filtros</button>
+                  {t('dashboard.results', { n: filtered.length })}
+                  <button style={s.clearFiltersBtn} onClick={clearFilter}>✕ {t('dashboard.clearFilters')}</button>
                 </span>
               )}
               <button
@@ -1086,7 +1080,7 @@ export default function Dashboard() {
                   <circle cx="11" cy="11" r="7"/>
                   <line x1="16.5" y1="16.5" x2="22" y2="22"/>
                 </svg>
-                Filtrar
+                {t('common.filter')}
                 {hasFilters && <span style={s.filterDot} />}
               </button>
               {!isMobile && <div style={{ position: 'relative' }}>
@@ -1100,7 +1094,7 @@ export default function Dashboard() {
                 {showListMenu && (
                   <div style={s.listMenuDropdown} onClick={e => e.stopPropagation()}>
                     <button style={{ ...s.dropdownItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} onClick={() => { setShowListMenu(false); openExportModal() }}>
-                      Exportar torneos
+                      {t('dashboard.export.title')}
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                         <polyline points="8 18 12 22 16 18"/>
                         <line x1="12" y1="22" x2="12" y2="9"/>
@@ -1114,7 +1108,7 @@ export default function Dashboard() {
 
             <div style={s.list}>
               {monthGroups.length === 0 ? (
-                <div style={{ ...s.hint, marginTop: 40 }}>Sin resultados para los filtros aplicados.</div>
+                <div style={{ ...s.hint, marginTop: 40 }}>{t('dashboard.noFilterResults')}</div>
               ) : monthGroups.map(({ month, days }) => (
                 <div key={month}>
                   <div
@@ -1129,7 +1123,7 @@ export default function Dashboard() {
                   </div>
                   {days.map(({ day, items }) => {
                 const isExpanded = hasFilters || expandedDays.has(day)
-                const totalHands = items.reduce((sum, t) => sum + (t.hands_count || 0), 0)
+                const totalHands = items.reduce((sum, tour) => sum + (tour.hands_count || 0), 0)
                 const playDuration = formatPlayDuration(items)
                 return (
                   <div key={day} id={`day-${day}`} style={{ marginBottom: 6, scrollMarginTop: 78 }}>
@@ -1155,7 +1149,7 @@ export default function Dashboard() {
                                   style={{ ...s.dropdownItem, color: '#e07070', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
                                   onClick={() => { setOpenSessionMenu(null); setConfirmDeleteSession({ day, items }) }}
                                 >
-                                  Eliminar sesión
+                                  {t('dashboard.session.delete')}
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e07070" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                                     <polyline points="3 6 5 6 21 6"/>
                                     <path d="M19 6l-1 14H6L5 6"/>
@@ -1174,17 +1168,17 @@ export default function Dashboard() {
                       <div style={s.sessionStats}>
                         <div style={s.stat}>
                           <span style={{ ...s.statValue, fontSize: isMobile ? 14 : 18 }}>{items.length}</span>
-                          <span style={s.statLabel}>torneos</span>
+                          <span style={s.statLabel}>{t('dashboard.tournamentsLabel')}</span>
                         </div>
                         <div style={s.statDivider} />
                         <div style={s.stat}>
-                          <span style={{ ...s.statValue, fontSize: isMobile ? 14 : 18 }}>{totalHands.toLocaleString('es-ES')}</span>
-                          <span style={s.statLabel}>manos</span>
+                          <span style={{ ...s.statValue, fontSize: isMobile ? 14 : 18 }}>{fmtNumber(totalHands)}</span>
+                          <span style={s.statLabel}>{t('dashboard.handsLabel')}</span>
                         </div>
                         <div style={s.statDivider} />
                         <div style={s.stat}>
                           <span style={{ ...s.statValue, fontSize: isMobile ? 12 : 18, whiteSpace: 'nowrap' }}>{playDuration}</span>
-                          <span style={s.statLabel}>duración</span>
+                          <span style={s.statLabel}>{t('dashboard.durationLabel')}</span>
                         </div>
                       </div>
                     </div>
@@ -1192,57 +1186,57 @@ export default function Dashboard() {
                     {/* Tournament rows */}
                     {isExpanded && (
                       <div style={s.sessionRows}>
-                        {items.map(t => (
-                          <div key={t.id} style={s.row} data-tour="tournament" onClick={() => navigate(`/tournament/${t.id}`)}>
+                        {items.map(tour => (
+                          <div key={tour.id} style={s.row} data-tour="tournament" onClick={() => navigate(`/tournament/${tour.id}`)}>
                             <img
-                              src={PLATFORM_ICONS[t.platform] ?? ggIcon}
-                              alt={t.platform || 'ggpoker'}
+                              src={PLATFORM_ICONS[tour.platform] ?? ggIcon}
+                              alt={tour.platform || 'ggpoker'}
                               style={s.rowIcon}
                             />
                             <div style={s.rowInfo}>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                                <div style={s.rowName}>{t.name}</div>
-                                {t.entries > 1 && (
-                                  <span style={s.rowReentry}>[{t.entries}]</span>
+                                <div style={s.rowName}>{tour.name}</div>
+                                {tour.entries > 1 && (
+                                  <span style={s.rowReentry}>[{tour.entries}]</span>
                                 )}
                               </div>
                               <div style={s.rowMeta}>
-                                <span style={s.rowTime}>{formatTime(t.date)}</span>
-                                {t.finish_position != null && (
+                                <span style={s.rowTime}>{formatTime(tour.date)}</span>
+                                {tour.finish_position != null && (
                                   <span style={s.rowPos}>
-                                    {t.finish_position}º{t.players ? ` / ${t.players.toLocaleString('es-ES')}` : ''}
+                                    {tour.finish_position}º{tour.players ? ` / ${fmtNumber(tour.players)}` : ''}
                                   </span>
                                 )}
-                                {t.prize_won > 0 && (
-                                  <span style={s.rowPrize}>+{formatMoney(t.prize_won)}</span>
+                                {tour.prize_won > 0 && (
+                                  <span style={s.rowPrize}>+{formatMoney(tour.prize_won)}</span>
                                 )}
-                                {t.bounty_won > 0 && (
-                                  <span style={s.rowBounty}>KO {formatMoney(t.bounty_won)}</span>
+                                {tour.bounty_won > 0 && (
+                                  <span style={s.rowBounty}>KO {formatMoney(tour.bounty_won)}</span>
                                 )}
                               </div>
                             </div>
-                            <div style={{ ...s.rowBadge, ...(t.reviewed ? s.rowBadgeReviewed : {}) }}>
-                              {t.hands_count} manos{t.reviewed ? ' · Revisado' : ''}
+                            <div style={{ ...s.rowBadge, ...(tour.reviewed ? s.rowBadgeReviewed : {}) }}>
+                              {t('common.hands', { n: tour.hands_count })}{tour.reviewed ? ` · ${t('visualizer.reviewed.done')}` : ''}
                             </div>
                             <div style={{ position: 'relative', flexShrink: 0 }}>
                               <button
                                 style={s.menuBtn}
-                                onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === t.id ? null : t.id) }}
+                                onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === tour.id ? null : tour.id) }}
                               >
                                 ⋯
                               </button>
-                              {openMenu === t.id && (
+                              {openMenu === tour.id && (
                                 <div style={{ ...s.dropdown, minWidth: 160 }} onClick={e => e.stopPropagation()}>
-                                  <button style={{ ...s.dropdownItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} onClick={() => handleShare(t.id)}>
-                                    Compartir
+                                  <button style={{ ...s.dropdownItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} onClick={() => handleShare(tour.id)}>
+                                    {t('common.share')}
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                                       <polyline points="8 6 12 2 16 6"/>
                                       <line x1="12" y1="2" x2="12" y2="15"/>
                                       <path d="M4 15v6h16v-6"/>
                                     </svg>
                                   </button>
-                                  <button style={{ ...s.dropdownItem, color: '#e07070', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} onClick={() => { setOpenMenu(null); setConfirmDelete({ id: t.id, name: t.name }) }}>
-                                    Eliminar
+                                  <button style={{ ...s.dropdownItem, color: '#e07070', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} onClick={() => { setOpenMenu(null); setConfirmDelete({ id: tour.id, name: tour.name }) }}>
+                                    {t('common.delete')}
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e07070" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                                       <polyline points="3 6 5 6 21 6"/>
                                       <path d="M19 6l-1 14H6L5 6"/>
@@ -1279,12 +1273,12 @@ export default function Dashboard() {
         <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setConfirmDelete(null)}>
           <div style={{ ...s.modal, width: 'min(380px, calc(100vw - 32px))' }}>
             <div style={s.modalHeader}>
-              <span style={s.modalTitle}>Borrar torneo</span>
+              <span style={s.modalTitle}>{t('dashboard.deleteTournament.title')}</span>
               <button style={s.modalClose} onClick={() => setConfirmDelete(null)}>✕</button>
             </div>
             <div style={{ padding: '22px 22px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <p style={{ fontSize: 13, color: '#8ab0cc', margin: 0 }}>
-                ¿Seguro que quieres borrar este torneo? Esta acción no se puede deshacer.
+                {t('dashboard.deleteTournament.confirm')}
               </p>
               <p style={{ fontSize: 12, color: '#3a6080', margin: 0, fontWeight: 700 }}>
                 {confirmDelete.name}
@@ -1292,14 +1286,14 @@ export default function Dashboard() {
             </div>
             <div style={s.modalFooter}>
               <button style={s.clearBtn} onClick={() => setConfirmDelete(null)} disabled={deleting}>
-                Cancelar
+                {t('common.cancel')}
               </button>
               <button
                 style={{ ...s.applyBtn, background: 'linear-gradient(135deg, #8a1a1a, #5a0a0a)', borderColor: '#6a2020', opacity: deleting ? 0.6 : 1 }}
                 onClick={handleDelete}
                 disabled={deleting}
               >
-                {deleting ? 'Borrando...' : 'Sí, borrar'}
+                {deleting ? t('common.deleting') : t('dashboard.deleteTournament.button')}
               </button>
             </div>
           </div>
@@ -1311,27 +1305,27 @@ export default function Dashboard() {
         <div style={s.backdrop} onClick={e => e.target === e.currentTarget && !deletingSession && setConfirmDeleteSession(null)}>
           <div style={{ ...s.modal, width: 'min(380px, calc(100vw - 32px))' }}>
             <div style={s.modalHeader}>
-              <span style={s.modalTitle}>Borrar sesión</span>
+              <span style={s.modalTitle}>{t('dashboard.session.deleteTitle')}</span>
               <button style={s.modalClose} onClick={() => !deletingSession && setConfirmDeleteSession(null)}>✕</button>
             </div>
             <div style={{ padding: '22px 22px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <p style={{ fontSize: 13, color: '#8ab0cc', margin: 0 }}>
-                ¿Seguro que quieres borrar esta sesión? Se eliminarán todos sus torneos. Esta acción no se puede deshacer.
+                {t('dashboard.session.deleteConfirm')}
               </p>
               <p style={{ fontSize: 12, color: '#3a6080', margin: 0, fontWeight: 700 }}>
-                {formatDayHeader(confirmDeleteSession.day)} — {confirmDeleteSession.items.length} torneo{confirmDeleteSession.items.length !== 1 ? 's' : ''}
+                {formatDayHeader(confirmDeleteSession.day)} — {t('common.tournaments', { n: confirmDeleteSession.items.length })}
               </p>
             </div>
             <div style={s.modalFooter}>
               <button style={s.clearBtn} onClick={() => setConfirmDeleteSession(null)} disabled={deletingSession}>
-                Cancelar
+                {t('common.cancel')}
               </button>
               <button
                 style={{ ...s.applyBtn, background: 'linear-gradient(135deg, #8a1a1a, #5a0a0a)', borderColor: '#6a2020', opacity: deletingSession ? 0.6 : 1 }}
                 onClick={handleDeleteSession}
                 disabled={deletingSession}
               >
-                {deletingSession ? 'Borrando...' : `Sí, borrar sesión`}
+                {deletingSession ? t('common.deleting') : t('dashboard.session.deleteButton')}
               </button>
             </div>
           </div>
@@ -1363,18 +1357,18 @@ export default function Dashboard() {
         <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setShowFilter(false)}>
           <div style={s.modal}>
             <div style={s.modalHeader}>
-              <span style={s.modalTitle}>Filtrar torneos</span>
+              <span style={s.modalTitle}>{t('dashboard.filter.title')}</span>
               <button style={s.modalClose} onClick={() => setShowFilter(false)}>✕</button>
             </div>
 
             <div style={s.modalBody}>
               {/* Nombre */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Nombre</label>
+                <label style={s.fieldLabel}>{t('dashboard.filter.name')}</label>
                 <input
                   style={s.fieldInput}
                   type="text"
-                  placeholder="Ej: NLH, Freezeout, GGMasters..."
+                  placeholder={t('dashboard.filter.namePlaceholder')}
                   value={draft.name}
                   onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
                 />
@@ -1382,7 +1376,7 @@ export default function Dashboard() {
 
               {/* Fechas */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Rango de fechas</label>
+                <label style={s.fieldLabel}>{t('dashboard.dateRange')}</label>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <input
                     style={{ ...s.fieldInput, flex: 1 }}
@@ -1410,7 +1404,7 @@ export default function Dashboard() {
                       style={s.priceField}
                       type="number"
                       min="0"
-                      placeholder="Mín"
+                      placeholder={t('common.min')}
                       value={draft.buyinMin}
                       onChange={e => setDraft(d => ({ ...d, buyinMin: e.target.value }))}
                     />
@@ -1422,7 +1416,7 @@ export default function Dashboard() {
                       style={s.priceField}
                       type="number"
                       min="0"
-                      placeholder="Máx"
+                      placeholder={t('common.max')}
                       value={draft.buyinMax}
                       onChange={e => setDraft(d => ({ ...d, buyinMax: e.target.value }))}
                     />
@@ -1432,8 +1426,8 @@ export default function Dashboard() {
             </div>
 
             <div style={s.modalFooter}>
-              <button style={s.clearBtn} onClick={clearFilter}>Limpiar</button>
-              <button style={s.applyBtn} onClick={applyFilter}>Aplicar filtros</button>
+              <button style={s.clearBtn} onClick={clearFilter}>{t('common.reset')}</button>
+              <button style={s.applyBtn} onClick={applyFilter}>{t('common.applyFilters')}</button>
             </div>
           </div>
         </div>
@@ -1444,7 +1438,7 @@ export default function Dashboard() {
         <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setShowImport(false)}>
           <div style={{ ...s.modal, width: 'min(460px, calc(100vw - 32px))' }}>
             <div style={s.modalHeader}>
-              <span style={s.modalTitle}>📂 Importar torneos</span>
+              <span style={s.modalTitle}>📂 {t('dashboard.import.title')}</span>
               <button style={s.modalClose} onClick={() => setShowImport(false)}>✕</button>
             </div>
             <div style={{ padding: '24px 22px', display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center' }}>
@@ -1464,26 +1458,26 @@ export default function Dashboard() {
                   <line x1="12" y1="2" x2="12" y2="15"/>
                   <path d="M4 15v6h16v-6"/>
                 </svg>
-                <span style={{ fontSize: 14, fontWeight: 700 }}>Arrastra aquí tus archivos</span>
-                <span style={{ fontSize: 12, color: '#2a5070' }}>.txt de GGPoker, Winamax, PokerStars, 888poker…</span>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{t('dashboard.import.dropHere')}</span>
+                <span style={{ fontSize: 12, color: '#2a5070' }}>{t('dashboard.import.dropHint')}</span>
               </div>
 
               {/* Separador */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
                 <div style={{ flex: 1, height: 1, background: '#1a2a3a' }} />
-                <span style={{ fontSize: 11, color: '#2a4060' }}>o</span>
+                <span style={{ fontSize: 11, color: '#2a4060' }}>{t('common.or')}</span>
                 <div style={{ flex: 1, height: 1, background: '#1a2a3a' }} />
               </div>
 
               {/* Botón buscar */}
               <button style={{ ...s.applyBtn, alignSelf: 'stretch' }}
                 onClick={() => fileInputRef.current.click()}>
-                Buscar en mi ordenador
+                {t('dashboard.import.browse')}
               </button>
 
               {/* Carpetas vinculadas */}
               <div style={s.folderSection}>
-                <span style={s.fieldLabel}>Carpetas de salas</span>
+                <span style={s.fieldLabel}>{t('dashboard.folders.title')}</span>
                 {linkedFolders.map(folder => (
                   <div key={folder.id} style={s.folderRow}>
                     {folder.platform
@@ -1493,18 +1487,17 @@ export default function Dashboard() {
                       {PLATFORM_NAMES[folder.platform] ?? folder.name}
                     </span>
                     <span style={s.folderMeta}>
-                      {folder.lastSync ? new Date(folder.lastSync).toLocaleDateString() : 'Nunca'}
+                      {folder.lastSync ? new Date(folder.lastSync).toLocaleDateString(locale) : t('common.never')}
                     </span>
-                    <button style={s.chipBtn} onClick={() => handleSyncFolder(folder)} disabled={uploading}>Sincronizar</button>
-                    <button style={s.modalClose} onClick={() => handleUnlinkFolder(folder)} title="Desvincular">✕</button>
+                    <button style={s.chipBtn} onClick={() => handleSyncFolder(folder)} disabled={uploading}>{t('dashboard.folders.sync')}</button>
+                    <button style={s.modalClose} onClick={() => handleUnlinkFolder(folder)} title={t('dashboard.folders.unlink')}>✕</button>
                   </div>
                 ))}
                 <button style={{ ...s.clearBtn, flex: 'none' }} onClick={handleLinkFolder} disabled={uploading}>
-                  {supportsFolderAccess ? '+ Vincular carpeta de sala' : 'Importar carpeta completa'}
+                  {supportsFolderAccess ? `+ ${t('dashboard.folders.link')}` : t('dashboard.folders.importFolder')}
                 </button>
                 <span style={s.folderHint}>
-                  Para saber dónde guarda las manos tu sala, ve a los ajustes de la aplicación
-                  y busca el apartado <b>Tracker</b> o <b>Hand history</b>.
+                  <Rich text={t('dashboard.folders.hint')} />
                 </span>
               </div>
             </div>
@@ -1517,26 +1510,23 @@ export default function Dashboard() {
         <div style={{ ...s.backdrop, zIndex: 110 }} onClick={e => e.target === e.currentTarget && setShowFolderHelp(false)}>
           <div style={{ ...s.modal, width: 'min(440px, calc(100vw - 32px))' }}>
             <div style={s.modalHeader}>
-              <span style={s.modalTitle}>¿Chrome no pudo abrir la carpeta?</span>
+              <span style={s.modalTitle}>{t('dashboard.folderHelp.title')}</span>
               <button style={s.modalClose} onClick={() => setShowFolderHelp(false)}>✕</button>
             </div>
             <div style={s.modalBody}>
               <span style={s.folderHelpText}>
-                Si el navegador te ha dicho que la carpeta <i>contiene archivos de sistema</i>, es porque tu sala
-                guarda las manos en una carpeta protegida (por ejemplo, dentro de <code>Library</code>) a la que
-                el navegador no puede acceder.
+                <Rich text={t('dashboard.folderHelp.intro')} />
               </span>
               <ol style={s.folderHelpList}>
-                <li>Crea una carpeta nueva dentro de <b>Documentos</b>, por ejemplo <code>Documentos/Winamax</code>.</li>
-                <li>En los ajustes de tu sala (apartado <b>Tracker</b> o <b>Hand history</b>), cambia la ruta del historial a esa carpeta.</li>
-                <li>Copia en la carpeta nueva el contenido de la antigua para no perder las manos anteriores.</li>
-                <li>Vuelve aquí y vincula la carpeta nueva.</li>
+                {['step1', 'step2', 'step3', 'step4'].map(k => (
+                  <li key={k}><Rich text={t(`dashboard.folderHelp.${k}`)} /></li>
+                ))}
               </ol>
             </div>
             <div style={s.modalFooter}>
-              <button style={s.clearBtn} onClick={() => setShowFolderHelp(false)}>Cerrar</button>
+              <button style={s.clearBtn} onClick={() => setShowFolderHelp(false)}>{t('common.close')}</button>
               <button style={s.applyBtn} onClick={() => { setShowFolderHelp(false); handleLinkFolder() }}>
-                Elegir otra carpeta
+                {t('dashboard.folderHelp.chooseAnother')}
               </button>
             </div>
           </div>
@@ -1548,30 +1538,30 @@ export default function Dashboard() {
         <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setShowExport(false)}>
           <div style={{ ...s.modal, width: 'min(700px, calc(100vw - 32px))' }}>
             <div style={s.modalHeader}>
-              <span style={s.modalTitle}>Exportar torneos</span>
+              <span style={s.modalTitle}>{t('dashboard.export.title')}</span>
               <button style={s.modalClose} onClick={() => setShowExport(false)}>✕</button>
             </div>
 
             <div style={s.modalBody}>
               {/* Mode toggle */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Seleccionar por</label>
+                <label style={s.fieldLabel}>{t('dashboard.export.selectBy')}</label>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
                     style={{ ...s.chipBtn, flex: 1, ...(exportMode === 'date' ? s.chipBtnActive : {}) }}
                     onClick={() => { setExportMode('date'); setExportLoaded(false) }}
-                  >Rango de fechas</button>
+                  >{t('dashboard.dateRange')}</button>
                   <button
                     style={{ ...s.chipBtn, flex: 1, ...(exportMode === 'count' ? s.chipBtnActive : {}) }}
                     onClick={() => { setExportMode('count'); setExportLoaded(false) }}
-                  >Número de manos</button>
+                  >{t('dashboard.export.handCount')}</button>
                 </div>
               </div>
 
               {/* Date range */}
               {exportMode === 'date' && (
                 <div style={s.field}>
-                  <label style={s.fieldLabel}>Rango de fechas</label>
+                  <label style={s.fieldLabel}>{t('dashboard.dateRange')}</label>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                     <input
                       style={{ ...s.fieldInput, flex: 1 }}
@@ -1593,17 +1583,17 @@ export default function Dashboard() {
               {/* Hand count */}
               {exportMode === 'count' && (
                 <div style={s.field}>
-                  <label style={s.fieldLabel}>Número de manos</label>
+                  <label style={s.fieldLabel}>{t('dashboard.export.handCount')}</label>
                   <input
                     style={s.fieldInput}
                     type="number"
                     min="1"
-                    placeholder="p. ej. 1000"
+                    placeholder={t('dashboard.export.handCountPlaceholder')}
                     value={exportHandCount}
                     onChange={e => { setExportHandCount(e.target.value); setExportLoaded(false) }}
                   />
                   <span style={{ fontSize: 11, color: '#4a7090' }}>
-                    Se exportarán las últimas {exportHandCount || 'N'} manos, empezando por los torneos más recientes.
+                    {t('dashboard.export.handCountHint', { n: exportHandCount || 'N' })}
                   </span>
                 </div>
               )}
@@ -1618,7 +1608,7 @@ export default function Dashboard() {
                   style={{ accentColor: '#50d080', width: 14, height: 14 }}
                 />
                 <label htmlFor="includeSummary" style={{ fontSize: 12, color: '#4a7090', cursor: 'pointer', userSelect: 'none' }}>
-                  Incluir summary de torneo
+                  {t('dashboard.export.includeSummary')}
                 </label>
               </div>
 
@@ -1629,7 +1619,7 @@ export default function Dashboard() {
                   onClick={loadExportTournaments}
                   disabled={exportLoading || !exportDateFrom || !exportDateTo}
                 >
-                  {exportLoading ? 'Cargando...' : 'Cargar torneos'}
+                  {exportLoading ? t('common.loading') : t('dashboard.export.load')}
                 </button>
               )}
               {!exportLoaded && exportMode === 'count' && (
@@ -1638,7 +1628,7 @@ export default function Dashboard() {
                   onClick={loadExportByHandCount}
                   disabled={!exportHandCount || Number(exportHandCount) <= 0}
                 >
-                  Cargar torneos
+                  {t('dashboard.export.load')}
                 </button>
               )}
 
@@ -1647,7 +1637,7 @@ export default function Dashboard() {
                 <>
                   {exportTournaments.length === 0 ? (
                     <div style={{ fontSize: 13, color: '#4a7090', textAlign: 'center', padding: '10px 0' }}>
-                      {exportMode === 'count' ? 'No hay manos disponibles para exportar.' : 'No hay torneos en ese rango de fechas.'}
+                      {exportMode === 'count' ? t('dashboard.export.noHands') : t('dashboard.export.noTournaments')}
                     </div>
                   ) : (
                     <>
@@ -1656,11 +1646,11 @@ export default function Dashboard() {
                         <label style={{ ...s.checkLabel, fontSize: 12 }}>
                           <input
                             type="checkbox"
-                            checked={exportTournaments.every(t => exportSelected.has(t.id))}
+                            checked={exportTournaments.every(tour => exportSelected.has(tour.id))}
                             onChange={toggleExportAll}
                             style={{ accentColor: '#50d080', width: 14, height: 14 }}
                           />
-                          Seleccionar todos
+                          {t('common.selectAll')}
                         </label>
                         <span style={{ fontSize: 11, color: '#4a7090', fontWeight: 700 }}>
                           {exportSelected.size}/{exportTournaments.length}
@@ -1670,8 +1660,8 @@ export default function Dashboard() {
                       {/* Scrollable grouped list */}
                       <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {groupByDay(exportTournaments).map(({ day, items }) => {
-                          const allSel  = items.every(t => exportSelected.has(t.id))
-                          const someSel = items.some(t => exportSelected.has(t.id))
+                          const allSel  = items.every(tour => exportSelected.has(tour.id))
+                          const someSel = items.some(tour => exportSelected.has(tour.id))
                           return (
                             <div key={day}>
                               {/* Session header */}
@@ -1687,23 +1677,23 @@ export default function Dashboard() {
                                   {formatDayHeader(day)}
                                 </span>
                                 <span style={{ fontSize: 11, color: '#2a5070', fontWeight: 700, flexShrink: 0 }}>
-                                  {items.length} torneo{items.length !== 1 ? 's' : ''}
+                                  {t('common.tournaments', { n: items.length })}
                                 </span>
                               </label>
                               {/* Tournament rows */}
-                              {items.map(t => (
-                                <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 6px 6px 28px', cursor: 'pointer', borderBottom: '1px solid #0e1828' }}>
+                              {items.map(tour => (
+                                <label key={tour.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 6px 6px 28px', cursor: 'pointer', borderBottom: '1px solid #0e1828' }}>
                                   <input
                                     type="checkbox"
-                                    checked={exportSelected.has(t.id)}
-                                    onChange={() => toggleExportTournament(t.id)}
+                                    checked={exportSelected.has(tour.id)}
+                                    onChange={() => toggleExportTournament(tour.id)}
                                     style={{ accentColor: '#50d080', width: 14, height: 14, flexShrink: 0 }}
                                   />
                                   <span style={{ flex: 1, fontSize: 12, color: '#7ab0d8', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {t.name}
+                                    {tour.name}
                                   </span>
                                   <span style={{ fontSize: 11, color: '#2a5070', flexShrink: 0 }}>
-                                    {exportHandLimits[t.id] != null ? `${exportHandLimits[t.id]}/${t.hands_count}` : t.hands_count} manos
+                                    {t('common.hands', { n: exportHandLimits[tour.id] != null ? `${exportHandLimits[tour.id]}/${tour.hands_count}` : tour.hands_count })}
                                   </span>
                                 </label>
                               ))}
@@ -1718,7 +1708,7 @@ export default function Dashboard() {
                           <div style={s.progressBar}>
                             <div style={{ ...s.progressFill, width: `${(exportProgress.current / exportProgress.total) * 100}%` }} />
                           </div>
-                          <span style={s.progressText}>{exportProgress.current} / {exportProgress.total} torneos</span>
+                          <span style={s.progressText}>{t('dashboard.import.progress', { current: exportProgress.current, total: exportProgress.total })}</span>
                         </div>
                       )}
 
@@ -1735,7 +1725,7 @@ export default function Dashboard() {
 
             <div style={s.modalFooter}>
               <button style={s.clearBtn} onClick={() => setShowExport(false)}>
-                Cerrar
+                {t('common.close')}
               </button>
               {exportLoaded && exportTournaments.length > 0 && (
                 <button
@@ -1743,7 +1733,7 @@ export default function Dashboard() {
                   onClick={handleExport}
                   disabled={exporting || exportSelected.size === 0}
                 >
-                  {exporting ? 'Exportando...' : `Exportar ${exportSelected.size} torneo${exportSelected.size !== 1 ? 's' : ''}`}
+                  {exporting ? t('dashboard.export.exporting') : t('dashboard.export.button', { n: exportSelected.size })}
                 </button>
               )}
             </div>
@@ -1795,24 +1785,6 @@ const s = {
     display: 'flex',
     alignItems: 'center',
     gap: 16,
-  },
-  logo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 0,
-  },
-  logoSpade: {
-    fontSize: 22,
-    color: '#60b0ff',
-    textShadow: '0 0 20px rgba(60,140,255,0.6)',
-    lineHeight: 1,
-  },
-  logoText: {
-    fontSize: 18,
-    fontWeight: 900,
-    color: '#e8f0ff',
-    letterSpacing: '-0.3px',
   },
   headerRight: {
     display: 'flex',

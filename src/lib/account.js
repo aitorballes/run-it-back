@@ -1,10 +1,11 @@
 // Shared sign-up / profile helpers
 
+// `key` is an i18n key (password.rules.*)
 export function validatePassword(pw) {
   const rules = [
-    { ok: pw.length >= 8,          text: 'Mínimo 8 caracteres' },
-    { ok: /[0-9]/.test(pw),        text: 'Al menos un número' },
-    { ok: /[^a-zA-Z0-9]/.test(pw), text: 'Al menos un carácter especial' },
+    { ok: pw.length >= 8,          key: 'password.rules.minLength' },
+    { ok: /[0-9]/.test(pw),        key: 'password.rules.number' },
+    { ok: /[^a-zA-Z0-9]/.test(pw), key: 'password.rules.special' },
   ]
   return rules
 }
@@ -22,10 +23,17 @@ const COUNTRY_CODES = [
   'TW','TZ','UA','UG','US','UY','UZ','VA','VC','VE','VN','VU','WS','XK','YE','ZA','ZM','ZW',
 ]
 
-const regionNames = new Intl.DisplayNames(['es'], { type: 'region' })
-export const COUNTRIES = COUNTRY_CODES
-  .map(code => ({ code, name: regionNames.of(code) }))
-  .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+// Country list with names in the given UI language, sorted for that language
+const countriesCache = {}
+export function countriesFor(lang) {
+  if (!countriesCache[lang]) {
+    const regionNames = new Intl.DisplayNames([lang], { type: 'region' })
+    countriesCache[lang] = COUNTRY_CODES
+      .map(code => ({ code, name: regionNames.of(code) }))
+      .sort((a, b) => a.name.localeCompare(b.name, lang))
+  }
+  return countriesCache[lang]
+}
 
 export const MIN_AGE = 18
 

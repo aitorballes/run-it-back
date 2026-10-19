@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-import { validatePassword, COUNTRIES, MIN_AGE, isValidEmail, sameEmail, maxBirthDate } from '../lib/account'
+import { validatePassword, countriesFor, MIN_AGE, isValidEmail, sameEmail, maxBirthDate } from '../lib/account'
+import { useI18n, langFromCountry } from '../i18n/core'
+
+// Supabase sign-in error codes we translate; anything else shows Supabase's own message
+const SIGN_IN_ERRORS = ['invalid_credentials', 'email_not_confirmed']
 
 export default function Login() {
   const { signIn, signUp, resetPassword } = useAuth()
   const navigate = useNavigate()
+  const { t, lang } = useI18n()
 
   const [mode, setMode]         = useState('login')
   const [email, setEmail]       = useState('')
@@ -38,20 +43,20 @@ export default function Login() {
     setMessage('')
 
     if (mode === 'register') {
-      if (!firstName.trim() || !lastName.trim()) { setError('Introduce tu nombre y apellidos.'); return }
-      if (!birthDate || birthDate > maxBirthDate()) { setError(`Debes tener al menos ${MIN_AGE} años.`); return }
-      if (!country)              { setError('Selecciona tu país de residencia.'); return }
-      if (!isValidEmail(email))  { setError('Introduce un email válido.'); return }
-      if (!sameEmail(email, emailConfirm)) { setError('Los emails no coinciden.'); return }
-      if (!pwValid)             { setError('La contraseña no cumple los requisitos.'); return }
-      if (password !== confirm)  { setError('Las contraseñas no coinciden.'); return }
+      if (!firstName.trim() || !lastName.trim()) { setError(t('account.errors.nameRequired')); return }
+      if (!birthDate || birthDate > maxBirthDate()) { setError(t('account.errors.minAge', { age: MIN_AGE })); return }
+      if (!country)              { setError(t('account.errors.countryRequired')); return }
+      if (!isValidEmail(email))  { setError(t('account.errors.emailInvalid')); return }
+      if (!sameEmail(email, emailConfirm)) { setError(t('account.errors.emailMismatch')); return }
+      if (!pwValid)             { setError(t('password.errors.rules')); return }
+      if (password !== confirm)  { setError(t('password.errors.mismatch')); return }
     }
 
     setLoading(true)
 
     if (mode === 'login') {
       const { error } = await signIn(email, password)
-      if (error) setError(error.message)
+      if (error) setError(SIGN_IN_ERRORS.includes(error.code) ? t(`auth.errors.${error.code}`) : error.message)
       else navigate('/')
     } else if (mode === 'register') {
       const { data, error } = await signUp(email.trim(), password, {
@@ -59,16 +64,17 @@ export default function Login() {
         last_name:  lastName.trim(),
         birth_date: birthDate,
         country,
+        language: langFromCountry(country),
       })
       // With email confirmation on, Supabase returns no error for an existing
       // email — just a user with an empty identities array
       if (error) setError(error.message)
-      else if (data.user?.identities?.length === 0) setError('Ya existe una cuenta con este email. Inicia sesión o recupera tu contraseña.')
-      else setMessage('Revisa tu email para confirmar la cuenta.')
+      else if (data.user?.identities?.length === 0) setError(t('auth.emailExists'))
+      else setMessage(t('auth.checkEmail'))
     } else {
       const { error } = await resetPassword(email)
       if (error) setError(error.message)
-      else setMessage('Te hemos enviado un email para restablecer tu contraseña.')
+      else setMessage(t('auth.resetSent'))
     }
 
     setLoading(false)
@@ -88,7 +94,7 @@ export default function Login() {
           <div style={s.logoSuit}>♠</div>
           <div>
             <div style={s.logoName}>RunItBack</div>
-            <div style={s.logoSub}>Tu historial de torneos</div>
+            <div style={s.logoSub}>{t('auth.tagline')}</div>
           </div>
         </div>
 
@@ -99,21 +105,21 @@ export default function Login() {
                 style={{ ...s.tab, ...(mode === 'login' ? s.tabActive : {}) }}
                 onClick={() => switchMode('login')}
               >
-                Iniciar sesión
+                {t('auth.signIn')}
               </button>
               <button
                 style={{ ...s.tab, ...(mode === 'register' ? s.tabActive : {}) }}
                 onClick={() => switchMode('register')}
               >
-                Registrarse
+                {t('auth.signUp')}
               </button>
             </div>
           )}
 
           {mode === 'forgot' && (
             <div style={s.forgotHeader}>
-              <div style={s.forgotTitle}>Recuperar contraseña</div>
-              <div style={s.forgotSub}>Te enviaremos un enlace a tu email</div>
+              <div style={s.forgotTitle}>{t('auth.recoverTitle')}</div>
+              <div style={s.forgotSub}>{t('auth.recoverSubtitle')}</div>
             </div>
           )}
 
@@ -122,7 +128,7 @@ export default function Login() {
               <>
                 <div style={s.row}>
                   <div style={{ ...s.field, ...s.half }}>
-                    <label style={s.label}>Nombre</label>
+                    <label style={s.label}>{t('account.firstName')}</label>
                     <input
                       style={s.input}
                       type="text"
@@ -133,7 +139,7 @@ export default function Login() {
                     />
                   </div>
                   <div style={{ ...s.field, ...s.half }}>
-                    <label style={s.label}>Apellidos</label>
+                    <label style={s.label}>{t('account.lastName')}</label>
                     <input
                       style={s.input}
                       type="text"
@@ -147,7 +153,7 @@ export default function Login() {
 
                 <div style={s.row}>
                   <div style={{ ...s.field, ...s.half }}>
-                    <label style={s.label}>Fecha de nacimiento</label>
+                    <label style={s.label}>{t('account.birthDate')}</label>
                     <input
                       style={{ ...s.input, colorScheme: 'dark', cursor: 'pointer' }}
                       type="date"
@@ -160,7 +166,7 @@ export default function Login() {
                     />
                   </div>
                   <div style={{ ...s.field, ...s.half }}>
-                    <label style={s.label}>País de residencia</label>
+                    <label style={s.label}>{t('account.country')}</label>
                     <select
                       style={{ ...s.input, ...s.select, color: country ? '#c8d4e8' : '#5a6a80' }}
                       autoComplete="country"
@@ -168,8 +174,8 @@ export default function Login() {
                       onChange={e => setCountry(e.target.value)}
                       required
                     >
-                      <option value="" disabled>Selecciona…</option>
-                      {COUNTRIES.map(c => (
+                      <option value="" disabled>{t('common.select')}</option>
+                      {countriesFor(lang).map(c => (
                         <option key={c.code} value={c.code}>{c.name}</option>
                       ))}
                     </select>
@@ -179,46 +185,46 @@ export default function Login() {
             )}
 
             <div style={s.field}>
-              <label style={s.label}>Email</label>
+              <label style={s.label}>{t('account.email')}</label>
               <input
                 style={s.input}
                 type="email"
-                placeholder="tu@email.com"
+                placeholder={t('account.emailPlaceholder')}
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 onBlur={() => setEmailTouched(true)}
                 required
               />
               {mode === 'register' && emailTouched && email && !isValidEmail(email) && (
-                <div style={s.inlineError}>Email no válido</div>
+                <div style={s.inlineError}>{t('account.emailInvalidShort')}</div>
               )}
             </div>
 
             {/* Confirmar email — solo en registro */}
             {mode === 'register' && (
               <div style={s.field}>
-                <label style={s.label}>Confirmar email</label>
+                <label style={s.label}>{t('account.confirmEmail')}</label>
                 <input
                   style={{
                     ...s.input,
                     borderColor: emailConfirm && !sameEmail(email, emailConfirm) ? '#8b3030' : '#1e2e42',
                   }}
                   type="email"
-                  placeholder="tu@email.com"
+                  placeholder={t('account.emailPlaceholder')}
                   autoComplete="off"
                   value={emailConfirm}
                   onChange={e => setEmailConfirm(e.target.value)}
                   required
                 />
                 {emailConfirm && !sameEmail(email, emailConfirm) && (
-                  <div style={s.inlineError}>Los emails no coinciden</div>
+                  <div style={s.inlineError}>{t('account.emailMismatchShort')}</div>
                 )}
               </div>
             )}
 
             {mode !== 'forgot' && (
               <div style={s.field}>
-                <label style={s.label}>Contraseña</label>
+                <label style={s.label}>{t('password.password')}</label>
                 <input
                   style={s.input}
                   type="password"
@@ -234,8 +240,8 @@ export default function Login() {
             {showRules && (
               <div style={s.rules}>
                 {pwRules.map(r => (
-                  <div key={r.text} style={{ ...s.rule, color: r.ok ? '#50d080' : '#e07070' }}>
-                    {r.ok ? '✓' : '✗'} {r.text}
+                  <div key={r.key} style={{ ...s.rule, color: r.ok ? '#50d080' : '#e07070' }}>
+                    {r.ok ? '✓' : '✗'} {t(r.key)}
                   </div>
                 ))}
               </div>
@@ -244,7 +250,7 @@ export default function Login() {
             {/* Confirmar contraseña — solo en registro */}
             {mode === 'register' && (
               <div style={s.field}>
-                <label style={s.label}>Confirmar contraseña</label>
+                <label style={s.label}>{t('password.confirm')}</label>
                 <input
                   style={{
                     ...s.input,
@@ -257,7 +263,7 @@ export default function Login() {
                   required
                 />
                 {confirm && confirm !== password && (
-                  <div style={s.inlineError}>Las contraseñas no coinciden</div>
+                  <div style={s.inlineError}>{t('password.mismatchShort')}</div>
                 )}
               </div>
             )}
@@ -266,17 +272,17 @@ export default function Login() {
             {message && <div style={s.success}>{message}</div>}
 
             <button style={{ ...s.btn, opacity: loading ? 0.7 : 1 }} type="submit" disabled={loading}>
-              {loading ? 'Cargando...' : mode === 'login' ? 'Entrar' : mode === 'register' ? 'Crear cuenta' : 'Enviar enlace'}
+              {loading ? t('common.loading') : mode === 'login' ? t('auth.enter') : mode === 'register' ? t('auth.createAccount') : t('auth.sendLink')}
             </button>
 
             {mode === 'login' && (
               <button type="button" style={s.forgotLink} onClick={() => switchMode('forgot')}>
-                ¿Olvidaste tu contraseña?
+                {t('auth.forgot')}
               </button>
             )}
             {mode === 'forgot' && (
               <button type="button" style={s.forgotLink} onClick={() => switchMode('login')}>
-                Volver al inicio de sesión
+                {t('auth.backToSignIn')}
               </button>
             )}
           </form>

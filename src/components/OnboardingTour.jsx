@@ -1,7 +1,9 @@
 import { useState, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useI18n } from '../i18n/core'
 
 // Each step points at an element marked with data-tour="<target>".
 // Steps whose element isn't on screen when the tour starts are skipped.
+// Texts come from tour.<key>.title / tour.<key>.body.
 const PAD = 6
 const GAP = 12
 const CARD_W = 300
@@ -10,6 +12,7 @@ export default function OnboardingTour({ steps, onClose }) {
   const [active] = useState(() => steps.filter(st => document.querySelector(`[data-tour="${st.target}"]`)))
   const [index, setIndex] = useState(0)
   const [rect, setRect]   = useState(null)
+  const { t } = useI18n()
 
   const step   = active[index]
   const isLast = index === active.length - 1
@@ -64,11 +67,11 @@ export default function OnboardingTour({ steps, onClose }) {
   const arrowLeft = Math.min(Math.max(16, rect.left + rect.width / 2 - left - 7), cardW - 30)
 
   return (
-    <div style={t.root}>
+    <div style={ts.root}>
       {/* Click-catcher so the page underneath can't be used mid-tour */}
-      <div style={t.backdrop} />
+      <div style={ts.backdrop} />
       <div style={{
-        ...t.spot,
+        ...ts.spot,
         top: rect.top - PAD,
         left: rect.left - PAD,
         width: rect.width + PAD * 2,
@@ -77,9 +80,9 @@ export default function OnboardingTour({ steps, onClose }) {
 
       <div
         role="dialog"
-        aria-label={step.title}
+        aria-label={t(`tour.${step.key}.title`)}
         style={{
-          ...t.card,
+          ...ts.card,
           width: cardW,
           left,
           ...(below
@@ -87,16 +90,16 @@ export default function OnboardingTour({ steps, onClose }) {
             : { bottom: vh - rect.top + PAD + GAP }),
         }}
       >
-        <div style={{ ...t.arrow, left: arrowLeft, ...(below ? t.arrowTop : t.arrowBottom) }} />
-        <div style={t.counter}>{index + 1} / {active.length}</div>
-        <div style={t.title}>{step.title}</div>
-        <div style={t.body}>{step.body}</div>
-        <div style={t.actions}>
-          {!isLast && <button style={t.skip} onClick={onClose}>Saltar guía</button>}
+        <div style={{ ...ts.arrow, left: arrowLeft, ...(below ? ts.arrowTop : ts.arrowBottom) }} />
+        <div style={ts.counter}>{index + 1} / {active.length}</div>
+        <div style={ts.title}>{t(`tour.${step.key}.title`)}</div>
+        <div style={ts.body}>{t(`tour.${step.key}.body`)}</div>
+        <div style={ts.actions}>
+          {!isLast && <button style={ts.skip} onClick={onClose}>{t('tour.skip')}</button>}
           <div style={{ flex: 1 }} />
-          {index > 0 && <button style={t.secondary} onClick={prev}>Anterior</button>}
-          <button style={t.primary} onClick={next} autoFocus>
-            {isLast ? 'Entendido' : 'Siguiente'}
+          {index > 0 && <button style={ts.secondary} onClick={prev}>{t('common.previous')}</button>}
+          <button style={ts.primary} onClick={next} autoFocus>
+            {isLast ? t('tour.done') : t('common.next')}
           </button>
         </div>
       </div>
@@ -104,7 +107,7 @@ export default function OnboardingTour({ steps, onClose }) {
   )
 }
 
-const t = {
+const ts = {
   root: { position: 'fixed', inset: 0, zIndex: 1000 },
   backdrop: { position: 'absolute', inset: 0 },
   spot: {

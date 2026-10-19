@@ -4,6 +4,7 @@ import {
   createReviewList, renameReviewList, deleteReviewList,
   fetchHeroStats, migrateHandStats,
 } from '../lib/db'
+import { useI18n, fmtNumber } from '../i18n/core'
 
 const EMPTY_STUDY = {
   positions: [], notFoldedPreflop: false, potType: null, players: null,
@@ -15,6 +16,7 @@ const ALL_POSITIONS = ['UTG', 'UTG+1', 'MP', 'MP+1', 'LJ', 'HJ', 'CO', 'BTN', 'S
 // onSearchResults(hands, filters) and onOpenListHands(hands) let the caller decide
 // whether to navigate to a new page or update hands in place (e.g. from study/results).
 export default function StudyModal({ onClose, user, initialFilters, onSearchResults, onOpenListHands }) {
+  const { t, locale } = useI18n()
   const [studyDraft,       setStudyDraft]       = useState(initialFilters ?? EMPTY_STUDY)
   const [studyLoading,     setStudyLoading]     = useState(false)
   const [studyProgress,    setStudyProgress]    = useState(null)
@@ -55,7 +57,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
       }
     } catch (e) {
       console.error(e)
-      setStudyError('Error al buscar manos. Inténtalo de nuevo.')
+      setStudyError(t('study.errors.search'))
     } finally {
       setStudyLoading(false)
       setStudyProgress(null)
@@ -71,7 +73,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
       setHeroStats(data)
     } catch (e) {
       console.error(e)
-      setStatsError('No se pudieron cargar las stats.')
+      setStatsError(t('study.errors.loadStats'))
     } finally {
       setStatsLoading(false)
     }
@@ -88,7 +90,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
       setHeroStats(stats)
     } catch (e) {
       console.error(e)
-      setStatsError(`Error: ${e?.message || e?.toString() || 'desconocido'}`)
+      setStatsError(`${t('common.error')}: ${e?.message || e?.toString() || t('common.unknown')}`)
     } finally {
       setMigrating(false)
       setMigrationProgress(null)
@@ -151,13 +153,13 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
     <div style={s.backdrop} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ ...s.modal, width:'min(560px, calc(100vw - 32px))' }}>
         <div style={s.modalHeader}>
-          <span style={s.modalTitle}>🎓 Estudia tu juego</span>
+          <span style={s.modalTitle}>🎓 {t('study.title')}</span>
           <button style={s.modalClose} onClick={onClose}>✕</button>
         </div>
 
         {/* Tab bar */}
         <div style={{ display:'flex', borderBottom:'1px solid #1a2a3a', flexShrink:0 }}>
-          {[{ key:'filters', label:'Filtros' }, { key:'lists', label:'Listas de manos marcadas' }, { key:'stats', label:'Mis stats' }].map(tab => (
+          {[{ key:'filters', label:t('study.tabs.filters') }, { key:'lists', label:t('study.tabs.lists') }, { key:'stats', label:t('study.tabs.stats') }].map(tab => (
             <button key={tab.key}
               style={{ flex:1, background:'none', border:'none',
                 borderBottom: studyTab === tab.key ? '2px solid #50d080' : '2px solid transparent',
@@ -175,7 +177,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
 
               {/* Posición */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Posición del Hero</label>
+                <label style={s.fieldLabel}>{t('study.heroPosition')}</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {ALL_POSITIONS.map(pos => {
                     const active = studyDraft.positions.includes(pos)
@@ -210,9 +212,9 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
 
               {/* Posición vs el resto de la mano */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Posición vs el resto de la mano</label>
+                <label style={s.fieldLabel}>{t('study.posVsField')}</label>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  {[{ value: null, label: 'Cualquiera' }, { value: 'oop', label: 'OOP' }, { value: 'ip', label: 'IP' }].map(opt => {
+                  {[{ value: null, label: t('common.any') }, { value: 'oop', label: 'OOP' }, { value: 'ip', label: 'IP' }].map(opt => {
                     const active = studyDraft.posVsField === opt.value
                     return (
                       <button key={String(opt.value)}
@@ -230,7 +232,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
                   <input type="checkbox" checked={studyDraft.stackBB !== null}
                     onChange={e => setStudyDraft(d => ({ ...d, stackBB: e.target.checked ? 100 : null }))}
                     style={{ accentColor: '#50d080', width: 15, height: 15 }} />
-                  Profundidad de stack del hero
+                  {t('study.stackDepth')}
                 </label>
                 {studyDraft.stackBB !== null && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 2 }}>
@@ -239,7 +241,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
                       onChange={e => setStudyDraft(d => ({ ...d, stackBB: Number(e.target.value) }))}
                       style={s.stackSlider} />
                     <div style={s.stackSliderValue}>
-                      {studyDraft.stackBB >= 100 ? '100 BBs o más' : `${studyDraft.stackBB} BBs o menos`}
+                      {studyDraft.stackBB >= 100 ? t('study.stackMore', { bb: 100 }) : t('study.stackLess', { bb: studyDraft.stackBB })}
                     </div>
                   </div>
                 )}
@@ -248,14 +250,14 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
 
             {/* ---------- BOTE ---------- */}
             <div style={s.filterSection}>
-              <div style={s.sectionTitle}>Bote</div>
+              <div style={s.sectionTitle}>{t('study.pot')}</div>
 
               {/* Tipo de bote */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Tipo de bote</label>
+                <label style={s.fieldLabel}>{t('study.potType')}</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {[[{ value: null, label: 'Cualquiera' }, { value: 'limped', label: 'Limped pot' }],
-                    [{ value: 'srp', label: 'SRP' }, { value: 'threebet', label: '3-bet pot' }, { value: 'clean', label: 'Sin acción previa' }]
+                  {[[{ value: null, label: t('common.any') }, { value: 'limped', label: 'Limped pot' }],
+                    [{ value: 'srp', label: 'SRP' }, { value: 'threebet', label: '3-bet pot' }, { value: 'clean', label: t('study.potClean') }]
                   ].map((row, ri) => (
                     <div key={ri} style={{ display: 'flex', gap: 6 }}>
                       {row.map(opt => {
@@ -274,9 +276,9 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
 
               {/* Jugadores en el bote */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Jugadores en el bote</label>
+                <label style={s.fieldLabel}>{t('study.playersInPot')}</label>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  {[{ value: null, label: 'Cualquiera' }, { value: 'hu', label: 'Heads Up' }, { value: 'multiway', label: 'Multiway' }].map(opt => {
+                  {[{ value: null, label: t('common.any') }, { value: 'hu', label: 'Heads Up' }, { value: 'multiway', label: 'Multiway' }].map(opt => {
                     const active = studyDraft.players === opt.value
                     return (
                       <button key={String(opt.value)}
@@ -294,24 +296,24 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
                   <input type="checkbox" checked={studyDraft.bbFold}
                     onChange={e => setStudyDraft(d => ({ ...d, bbFold: e.target.checked }))}
                     style={{ accentColor: '#50d080', width: 15, height: 15 }} />
-                  BB no se une a la mano
+                  {t('study.bbFold')}
                 </label>
               </div>
             </div>
 
             {/* ---------- MUESTRA ---------- */}
             <div style={s.filterSection}>
-              <div style={s.sectionTitle}>Muestra</div>
+              <div style={s.sectionTitle}>{t('study.sample')}</div>
 
               {/* Fecha */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Fecha</label>
+                <label style={s.fieldLabel}>{t('study.date')}</label>
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                   {[
-                    { value: null,      label: 'Cualquiera' },
-                    { value: 'month',   label: 'Último mes' },
-                    { value: '3months', label: 'Últimos 3 meses' },
-                    { value: 'custom',  label: 'Custom' },
+                    { value: null,      label: t('common.any') },
+                    { value: 'month',   label: t('study.lastMonth') },
+                    { value: '3months', label: t('study.last3Months') },
+                    { value: 'custom',  label: t('study.custom') },
                   ].map(opt => {
                     const active = studyDraft.dateRange === opt.value
                     return (
@@ -326,14 +328,14 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
                 {studyDraft.dateRange === 'custom' && (
                   <div style={{ display:'flex', gap:10, marginTop:8, alignItems:'center', flexWrap:'wrap' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                      <span style={{ fontSize:11, color:'#3a6080', fontWeight:700 }}>Desde</span>
+                      <span style={{ fontSize:11, color:'#3a6080', fontWeight:700 }}>{t('common.from')}</span>
                       <input type="date"
                         style={{ ...s.fieldInput, padding:'6px 10px', fontSize:12, colorScheme:'dark' }}
                         value={studyDraft.dateFrom}
                         onChange={e => setStudyDraft(d => ({ ...d, dateFrom: e.target.value }))} />
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                      <span style={{ fontSize:11, color:'#3a6080', fontWeight:700 }}>Hasta</span>
+                      <span style={{ fontSize:11, color:'#3a6080', fontWeight:700 }}>{t('common.to')}</span>
                       <input type="date"
                         style={{ ...s.fieldInput, padding:'6px 10px', fontSize:12, colorScheme:'dark' }}
                         value={studyDraft.dateTo}
@@ -345,36 +347,36 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
 
               {/* Últimas X manos */}
               <div style={s.field}>
-                <label style={s.fieldLabel}>Últimas X manos</label>
-                <input type="number" min="1" placeholder="Ej: 50000"
+                <label style={s.fieldLabel}>{t('study.lastN')}</label>
+                <input type="number" min="1" placeholder={t('study.lastNPlaceholder')}
                   style={s.fieldInput}
                   value={studyDraft.lastN}
                   onChange={e => setStudyDraft(d => ({ ...d, lastN: e.target.value }))} />
                 {studyDraft.lastN > 0 && (
-                  <div style={s.stackSliderValue}>Se mostrarán ordenadas de más reciente a más antigua</div>
+                  <div style={s.stackSliderValue}>{t('study.lastNHint')}</div>
                 )}
               </div>
             </div>
 
             {studyLoading && (
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                <div style={{ fontSize:13, color:'#7ab0d8', textAlign:'center', fontWeight:600 }}>Buscando manos...</div>
+                <div style={{ fontSize:13, color:'#7ab0d8', textAlign:'center', fontWeight:600 }}>{t('study.searching')}</div>
                 {studyProgress && (
                   <div style={{ fontSize:11, color:'#4a7090', textAlign:'center' }}>
-                    {studyProgress.handsFound.toLocaleString('es-ES')} manos encontradas
+                    {t('study.handsFound', { n: fmtNumber(studyProgress.handsFound) })}
                   </div>
                 )}
               </div>
             )}
             {studyError && <div style={s.studyError}>{studyError}</div>}
-            {studyNoResults && <div style={s.studyNoResults}>No se encontraron manos con esos filtros.</div>}
+            {studyNoResults && <div style={s.studyNoResults}>{t('study.noResults')}</div>}
           </div>
 
           <div style={s.modalFooter}>
-            <button style={s.clearBtn} onClick={onClose} disabled={studyLoading}>Cancelar</button>
+            <button style={s.clearBtn} onClick={onClose} disabled={studyLoading}>{t('common.cancel')}</button>
             <button style={{ ...s.studySearchBtn, opacity: studyLoading ? 0.6 : 1 }}
               onClick={handleStudySearch} disabled={studyLoading}>
-              {studyLoading ? 'Buscando...' : 'Buscar manos'}
+              {studyLoading ? t('study.searchingShort') : t('study.search')}
             </button>
           </div>
         </>)}
@@ -382,10 +384,10 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
         {studyTab === 'lists' && (<>
           <div style={{ ...s.modalBody, padding:'16px 18px', minHeight:280, maxHeight:'60vh', overflowY:'auto' }}>
             {listsLoading ? (
-              <div style={{ color:'#3a6080', fontSize:12, textAlign:'center', padding:'20px 0' }}>Cargando...</div>
+              <div style={{ color:'#3a6080', fontSize:12, textAlign:'center', padding:'20px 0' }}>{t('common.loading')}</div>
             ) : reviewLists.length === 0 ? (
               <div style={{ color:'#3a6080', fontSize:13, textAlign:'center', padding:'20px 0', lineHeight:1.7 }}>
-                No tienes listas de revisión aún.<br/>Márcalas desde el visualizador de manos.
+                {t('study.noLists')}<br/>{t('study.noListsHint')}
               </div>
             ) : reviewLists.map(list => (
               <div key={list.id}
@@ -411,7 +413,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
                       style={{ background:'none', border:'1px solid #2a6a3a', borderRadius:6,
                         padding:'4px 8px', color:'#50d080', cursor:'pointer', flexShrink:0, display:'flex', alignItems:'center' }}
                       onClick={handleRenameList}
-                      title="Guardar">
+                      title={t('common.save')}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="20 6 9 17 4 12"/>
@@ -422,28 +424,28 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
                   <span style={{ flex:1, fontSize:13, color:'#7ab0d8', fontWeight:700 }}>{list.name}</span>
                 )}
                 <span style={{ fontSize:11, color:'#3a6080', flexShrink:0 }}>
-                  {list.hand_count ?? 0} mano{list.hand_count !== 1 ? 's' : ''}
+                  {t('common.hands', { n: list.hand_count ?? 0 })}
                 </span>
                 {list.last_hand_added_at && (
                   <span style={{ fontSize:10, color:'#2a5070', flexShrink:0 }}>
-                    {new Date(list.last_hand_added_at).toLocaleDateString('es-ES')}
+                    {new Date(list.last_hand_added_at).toLocaleDateString(locale)}
                   </span>
                 )}
                 <button style={{ background:'none', border:'none', color:'#3a6080', cursor:'pointer', fontSize:13, padding:'2px 6px' }}
                   onClick={e => { e.stopPropagation(); setRenamingListId(list.id); setRenameValue(list.name) }}
-                  title="Renombrar">✎</button>
+                  title={t('common.rename')}>✎</button>
                 <button style={{ background:'none', border:'none', color:'#803030', cursor:'pointer', fontSize:13, padding:'2px 6px' }}
                   onClick={e => { e.stopPropagation(); setConfirmDeleteList({ id: list.id, name: list.name }) }}
-                  title="Eliminar lista">✕</button>
+                  title={t('study.deleteList')}>✕</button>
               </div>
             ))}
 
           </div>
 
           <div style={s.modalFooter}>
-            <button style={s.clearBtn} onClick={onClose}>Cerrar</button>
+            <button style={s.clearBtn} onClick={onClose}>{t('common.close')}</button>
             <button style={s.studySearchBtn} onClick={() => { setNewListNameDash(''); setShowCreateList(true) }}>
-              + Nueva lista
+              + {t('study.newList')}
             </button>
           </div>
         </>)}
@@ -452,7 +454,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
           <div style={{ ...s.modalBody, padding:'20px 22px', minHeight:320 }}>
             {(statsLoading || migrating) && (
               <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-                <div style={s.hint}>{migrating ? 'Calculando stats...' : 'Cargando...'}</div>
+                <div style={s.hint}>{migrating ? t('study.computingStats') : t('common.loading')}</div>
                 {migrating && migrationProgress?.total && (
                   <div style={{ position:'relative', height:6, background:'#0e1828', borderRadius:4, overflow:'hidden' }}>
                     <div style={{ position:'absolute', inset:0, background:'linear-gradient(to right,#1e5cad,#60b0ff)', width:`${(migrationProgress.current/migrationProgress.total)*100}%`, transition:'width 0.3s', borderRadius:4 }} />
@@ -460,7 +462,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
                 )}
                 {migrating && migrationProgress && (
                   <div style={{ fontSize:11, color:'#4a7090', textAlign:'center' }}>
-                    {migrationProgress.current?.toLocaleString('es-ES')}{migrationProgress.total ? ` / ${migrationProgress.total.toLocaleString('es-ES')}` : ''} manos
+                    {t('study.migrationProgress', { current: fmtNumber(migrationProgress.current), total: migrationProgress.total ? fmtNumber(migrationProgress.total) : null })}
                   </div>
                 )}
               </div>
@@ -471,25 +473,25 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
             {!heroStats?.total_hands && !statsLoading && !migrating && !statsError && (
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:14, marginTop:32 }}>
                 <div style={{ fontSize:13, color:'#7ab0d8', textAlign:'center', lineHeight:1.6 }}>
-                  Las stats se calculan una vez a partir de tus manos importadas.<br/>
-                  <span style={{ color:'#4a7090', fontSize:12 }}>Tardará unos segundos según el volumen.</span>
+                  {t('study.statsIntro')}<br/>
+                  <span style={{ color:'#4a7090', fontSize:12 }}>{t('study.statsIntroHint')}</span>
                 </div>
-                <button style={s.studySearchBtn} onClick={runMigration}>Calcular mis stats</button>
+                <button style={s.studySearchBtn} onClick={runMigration}>{t('study.computeStats')}</button>
               </div>
             )}
             {heroStats?.total_hands > 0 && !statsLoading && !migrating && (
               <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                 <div style={{ fontSize:11, fontWeight:800, letterSpacing:'1.5px', textTransform:'uppercase', color:'#5a8aaa', marginBottom:8 }}>
-                  General Stats · {heroStats.total_hands?.toLocaleString('es-ES')} manos
+                  {t('study.generalStats', { n: fmtNumber(heroStats.total_hands) })}
                 </div>
                 {[
-                  { label:'VPIP',         value: heroStats.vpip,         desc:'Entra voluntariamente al bote preflop' },
-                  { label:'PFR',          value: heroStats.pfr,          desc:'Raise preflop' },
-                  { label:'3Bet %',       value: heroStats.three_bet,    desc:'Re-raise preflop tras un raise previo' },
-                  { label:'Fold vs 3Bet', value: heroStats.fold_vs_3bet, desc:'Foldea su RFI cuando le hacen 3bet' },
-                  { label:'WWSF %',       value: heroStats.wwsf,         desc:'Gana el bote habiendo visto el flop' },
-                  { label:'WTSD %',       value: heroStats.wtsd,         desc:'Va a showdown habiendo visto el flop' },
-                  { label:'WonSD %',      value: heroStats.won_sd,       desc:'Gana cuando llega a showdown' },
+                  { label:'VPIP',         value: heroStats.vpip,         desc:t('study.statDesc.vpip') },
+                  { label:'PFR',          value: heroStats.pfr,          desc:t('study.statDesc.pfr') },
+                  { label:'3Bet %',       value: heroStats.three_bet,    desc:t('study.statDesc.threeBet') },
+                  { label:'Fold vs 3Bet', value: heroStats.fold_vs_3bet, desc:t('study.statDesc.foldVs3bet') },
+                  { label:'WWSF %',       value: heroStats.wwsf,         desc:t('study.statDesc.wwsf') },
+                  { label:'WTSD %',       value: heroStats.wtsd,         desc:t('study.statDesc.wtsd') },
+                  { label:'WonSD %',      value: heroStats.won_sd,       desc:t('study.statDesc.wonsd') },
                 ].map(({ label, value, desc }) => (
                   <div key={label} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'#090e18', borderRadius:8, border:'1px solid #1a2a3a' }}>
                     <span style={{ fontSize:12, fontWeight:800, color:'#dde0e8', minWidth:90 }}>{label}</span>
@@ -501,9 +503,9 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
             )}
           </div>
           <div style={s.modalFooter}>
-            <button style={s.clearBtn} onClick={onClose}>Cerrar</button>
+            <button style={s.clearBtn} onClick={onClose}>{t('common.close')}</button>
             {heroStats?.total_hands > 0 && !migrating && (
-              <button style={{ ...s.studySearchBtn, opacity: migrating ? 0.5 : 1 }} onClick={() => { setHeroStats(null); runMigration() }} disabled={migrating}>↺ Recalcular</button>
+              <button style={{ ...s.studySearchBtn, opacity: migrating ? 0.5 : 1 }} onClick={() => { setHeroStats(null); runMigration() }} disabled={migrating}>↺ {t('study.recompute')}</button>
             )}
           </div>
         </>)}
@@ -515,25 +517,25 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
       <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setConfirmDeleteList(null)}>
         <div style={{ ...s.modal, width:'min(380px, calc(100vw - 32px))' }}>
           <div style={s.modalHeader}>
-            <span style={s.modalTitle}>Eliminar lista</span>
+            <span style={s.modalTitle}>{t('study.deleteList')}</span>
             <button style={s.modalClose} onClick={() => setConfirmDeleteList(null)}>✕</button>
           </div>
           <div style={{ padding:'20px 22px 10px', display:'flex', flexDirection:'column', gap:8 }}>
             <p style={{ fontSize:13, color:'#8ab0cc', margin:0 }}>
-              ¿Seguro que quieres eliminar esta lista? Las manos no se borran, solo se elimina la lista.
+              {t('study.deleteListConfirm')}
             </p>
             <p style={{ fontSize:12, color:'#3a6080', margin:0, fontWeight:700 }}>
               {confirmDeleteList.name}
             </p>
           </div>
           <div style={s.modalFooter}>
-            <button style={s.clearBtn} onClick={() => setConfirmDeleteList(null)} disabled={deletingList}>Cancelar</button>
+            <button style={s.clearBtn} onClick={() => setConfirmDeleteList(null)} disabled={deletingList}>{t('common.cancel')}</button>
             <button
               style={{ ...s.studySearchBtn, background:'linear-gradient(135deg,#8a1a1a,#5a0a0a)',
                 borderColor:'#6a2020', opacity: deletingList ? 0.6 : 1 }}
               onClick={handleDeleteList}
               disabled={deletingList}>
-              {deletingList ? 'Eliminando...' : 'Eliminar lista'}
+              {deletingList ? t('common.deleting') : t('study.deleteList')}
             </button>
           </div>
         </div>
@@ -545,7 +547,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
       <div style={s.backdrop} onClick={e => e.target === e.currentTarget && setShowCreateList(false)}>
         <div style={{ ...s.modal, width:'min(360px, calc(100vw - 32px))' }}>
           <div style={s.modalHeader}>
-            <span style={s.modalTitle}>Nueva lista</span>
+            <span style={s.modalTitle}>{t('study.newList')}</span>
             <button style={s.modalClose} onClick={() => setShowCreateList(false)}>✕</button>
           </div>
           <div style={{ padding:'20px 22px 10px' }}>
@@ -554,7 +556,7 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
               style={{ ...s.fieldInput, width:'100%', padding:'10px 14px', fontSize:14, boxSizing:'border-box' }}
               type="text"
               maxLength={100}
-              placeholder="Nombre de la lista"
+              placeholder={t('study.listName')}
               value={newListNameDash}
               onChange={e => setNewListNameDash(e.target.value)}
               onKeyDown={e => {
@@ -564,12 +566,12 @@ export default function StudyModal({ onClose, user, initialFilters, onSearchResu
             />
           </div>
           <div style={s.modalFooter}>
-            <button style={s.clearBtn} onClick={() => setShowCreateList(false)} disabled={creatingList}>Cancelar</button>
+            <button style={s.clearBtn} onClick={() => setShowCreateList(false)} disabled={creatingList}>{t('common.cancel')}</button>
             <button
               style={{ ...s.studySearchBtn, opacity: !newListNameDash.trim() || creatingList ? 0.5 : 1 }}
               onClick={handleCreateListDash}
               disabled={!newListNameDash.trim() || creatingList}>
-              {creatingList ? 'Creando...' : 'Crear lista'}
+              {creatingList ? t('common.creating') : t('study.createList')}
             </button>
           </div>
         </div>

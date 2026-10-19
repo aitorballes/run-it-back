@@ -1,20 +1,19 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { validatePassword, COUNTRIES, MIN_AGE, ALIAS_MAX, maxBirthDate, resizeAvatar } from '../lib/account'
+import { validatePassword, MIN_AGE, ALIAS_MAX, maxBirthDate, resizeAvatar } from '../lib/account'
+import { useI18n, LANGUAGES } from '../i18n/core'
 import { uploadAvatar, removeAvatar } from '../lib/db'
 import Avatar from '../components/Avatar'
+import Logo from '../components/Logo'
 
-const PASSWORD_ERRORS = {
-  invalid_credentials:     'La contraseña actual no es correcta.',
-  same_password:           'La nueva contraseña debe ser distinta de la actual.',
-  weak_password:           'La contraseña es demasiado débil.',
-  reauthentication_needed: 'Por seguridad, cierra sesión y vuelve a entrar antes de cambiar la contraseña.',
-}
+// Supabase error codes we translate; anything else shows Supabase's own message
+const PASSWORD_ERRORS = ['invalid_credentials', 'same_password', 'weak_password', 'reauthentication_needed']
 
 export default function Profile() {
   const { user, signIn, signOut, updatePassword, updateUserData } = useAuth()
   const navigate = useNavigate()
+  const { t, lang, locale } = useI18n()
   const meta = user?.user_metadata ?? {}
 
   // Datos personales
@@ -22,7 +21,7 @@ export default function Profile() {
   const [lastName, setLastName]   = useState(meta.last_name ?? '')
   const [alias, setAlias]         = useState(meta.alias ?? '')
   const [birthDate, setBirthDate] = useState(meta.birth_date ?? '')
-  const [country, setCountry]     = useState(meta.country ?? '')
+  const [language, setLanguage]   = useState(lang)
   const [dataError, setDataError]     = useState('')
   const [dataMessage, setDataMessage] = useState('')
   const [savingData, setSavingData]   = useState(false)
@@ -44,8 +43,8 @@ export default function Profile() {
   async function handleAvatarFile(file) {
     if (!file) return
     setAvatarError('')
-    if (!file.type.startsWith('image/')) { setAvatarError('El archivo debe ser una imagen.'); return }
-    if (file.size > 10 * 1024 * 1024)    { setAvatarError('La imagen no puede superar los 10 MB.'); return }
+    if (!file.type.startsWith('image/')) { setAvatarError(t('profile.avatar.notImage')); return }
+    if (file.size > 10 * 1024 * 1024)    { setAvatarError(t('profile.avatar.tooBig', { mb: 10 })); return }
     setAvatarBusy(true)
     try {
       const blob = await resizeAvatar(file)
@@ -53,7 +52,7 @@ export default function Profile() {
       const { error } = await updateUserData({ avatar_url: url })
       if (error) throw error
     } catch (e) {
-      setAvatarError(e.message === 'decode' ? 'No se pudo leer la imagen. Prueba con JPG o PNG.' : 'No se pudo subir la foto.')
+      setAvatarError(t(e.message === 'decode' ? 'profile.avatar.decodeError' : 'profile.avatar.uploadError'))
     } finally {
       setAvatarBusy(false)
     }
@@ -67,7 +66,7 @@ export default function Profile() {
       const { error } = await updateUserData({ avatar_url: null })
       if (error) throw error
     } catch {
-      setAvatarError('No se pudo quitar la foto.')
+      setAvatarError(t('profile.avatar.removeError'))
     } finally {
       setAvatarBusy(false)
     }
@@ -78,20 +77,19 @@ export default function Profile() {
     lastName.trim()  !== (meta.last_name ?? '') ||
     alias.trim()     !== (meta.alias ?? '') ||
     birthDate        !== (meta.birth_date ?? '') ||
-    country          !== (meta.country ?? '')
+    language         !== lang
 
   const pwRules   = validatePassword(password)
   const pwValid   = pwRules.every(r => r.ok)
   const createdAt = user?.created_at
-    ? new Date(user.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+    ? new Date(user.created_at).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' })
     : null
 
   async function handleSaveData(e) {
     e.preventDefault()
     setDataError(''); setDataMessage('')
-    if (!firstName.trim() || !lastName.trim()) { setDataError('Introduce tu nombre y apellidos.'); return }
-    if (!birthDate || birthDate > maxBirthDate()) { setDataError(`Debes tener al menos ${MIN_AGE} años.`); return }
-    if (!country) { setDataError('Selecciona tu país de residencia.'); return }
+    if (!firstName.trim() || !lastName.trim()) { setDataError(t('account.errors.nameRequired')); return }
+    if (!birthDate || birthDate > maxBirthDate()) { setDataError(t('account.errors.minAge', { age: MIN_AGE })); return }
 
     setSavingData(true)
     const { error } = await updateUserData({
@@ -99,34 +97,34 @@ export default function Profile() {
       last_name:  lastName.trim(),
       alias:      alias.trim(),
       birth_date: birthDate,
-      country,
+      language,
     })
     setSavingData(false)
     if (error) setDataError(error.message)
-    else setDataMessage('Datos actualizados.')
+    else setDataMessage('profile.saved') // key, so it shows in the newly saved language
   }
 
   async function handleChangePassword(e) {
     e.preventDefault()
     setPwError(''); setPwMessage('')
-    if (!pwValid)            { setPwError('La nueva contraseña no cumple los requisitos.'); return }
-    if (password !== confirm) { setPwError('Las contraseñas no coinciden.'); return }
-    if (password === current) { setPwError(PASSWORD_ERRORS.same_password); return }
+    if (!pwValid)            { setPwError(t('password.errors.rulesNew')); return }
+    if (password !== confirm) { setPwError(t('password.errors.mismatch')); return }
+    if (password === current) { setPwError(t('password.errors.same_password')); return }
 
     setSavingPw(true)
     // Supabase no pide la contraseña actual: la comprobamos volviendo a iniciar sesión
     const { error: authError } = await signIn(user.email, current)
     if (authError) {
       setSavingPw(false)
-      setPwError(PASSWORD_ERRORS.invalid_credentials)
+      setPwError(t('password.errors.invalid_credentials'))
       return
     }
     const { error } = await updatePassword(password)
     setSavingPw(false)
-    if (error) setPwError(PASSWORD_ERRORS[error.code] ?? error.message)
+    if (error) setPwError(PASSWORD_ERRORS.includes(error.code) ? t(`password.errors.${error.code}`) : error.message)
     else {
       setCurrent(''); setPassword(''); setConfirm('')
-      setPwMessage('Contraseña actualizada.')
+      setPwMessage(t('password.updated'))
     }
   }
 
@@ -137,16 +135,11 @@ export default function Profile() {
 
       {/* HEADER */}
       <div style={s.header}>
-        <button style={s.logo} onClick={() => navigate('/')}>
-          <span style={s.logoSpade}>♠</span>
-          <span style={s.logoText}>RunItBack</span>
-        </button>
-        <button style={s.signOutBtn} onClick={signOut}>Salir</button>
+        <Logo onClick={() => navigate('/')} title={t('nav.goHome')} />
+        <button style={s.signOutBtn} onClick={signOut}>{t('nav.signOut')}</button>
       </div>
 
       <div style={s.content}>
-        <button style={s.backBtn} onClick={() => navigate('/')}>← Volver a mis torneos</button>
-
         <div style={s.titleRow}>
           <div style={s.avatarCol}>
             <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden
@@ -158,23 +151,23 @@ export default function Profile() {
               onMouseEnter={() => setAvatarHover(true)}
               onMouseLeave={() => setAvatarHover(false)}
               disabled={avatarBusy}
-              title="Cambiar foto"
+              title={t('profile.avatar.change')}
             >
               <Avatar url={meta.avatar_url} name={meta.first_name || user?.email} size={72} />
               {(avatarHover || avatarBusy) && (
-                <span style={s.avatarOverlay}>{avatarBusy ? '...' : 'Cambiar'}</span>
+                <span style={s.avatarOverlay}>{avatarBusy ? '...' : t('profile.avatar.changeShort')}</span>
               )}
             </button>
             {meta.avatar_url && !avatarBusy && (
-              <button type="button" style={s.avatarRemove} onClick={handleRemoveAvatar}>Quitar foto</button>
+              <button type="button" style={s.avatarRemove} onClick={handleRemoveAvatar}>{t('profile.avatar.remove')}</button>
             )}
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={s.title}>
-              {meta.first_name ? `${meta.first_name} ${meta.last_name ?? ''}` : 'Perfil'}
+              {meta.first_name ? `${meta.first_name} ${meta.last_name ?? ''}` : t('nav.profile')}
             </div>
             <div style={s.subtitle}>
-              {user?.email}{createdAt && ` · Miembro desde el ${createdAt}`}
+              {user?.email}{createdAt && ` · ${t('profile.memberSince', { date: createdAt })}`}
             </div>
           </div>
         </div>
@@ -183,23 +176,23 @@ export default function Profile() {
 
         {/* DATOS PERSONALES */}
         <form style={s.card} onSubmit={handleSaveData}>
-          <div style={s.cardTitle}>Datos personales</div>
+          <div style={s.cardTitle}>{t('profile.personalData')}</div>
 
           <div style={s.row}>
             <div style={{ ...s.field, ...s.half }}>
-              <label style={s.label}>Nombre</label>
+              <label style={s.label}>{t('account.firstName')}</label>
               <input style={s.input} type="text" autoComplete="given-name"
                 value={firstName} onChange={e => setFirstName(e.target.value)} required />
             </div>
             <div style={{ ...s.field, ...s.half }}>
-              <label style={s.label}>Apellidos</label>
+              <label style={s.label}>{t('account.lastName')}</label>
               <input style={s.input} type="text" autoComplete="family-name"
                 value={lastName} onChange={e => setLastName(e.target.value)} required />
             </div>
           </div>
 
           <div style={s.field}>
-            <label style={s.label}>Alias</label>
+            <label style={s.label}>{t('profile.alias')}</label>
             <input
               style={s.input}
               type="text"
@@ -210,13 +203,13 @@ export default function Profile() {
               onChange={e => setAlias(e.target.value)}
             />
             <div style={s.fieldHint}>
-              Se mostrará en lugar de «Hero» al revisar tus manos en el visualizador. Opcional.
+              {t('profile.aliasHint')}
             </div>
           </div>
 
           <div style={s.row}>
             <div style={{ ...s.field, ...s.half }}>
-              <label style={s.label}>Fecha de nacimiento</label>
+              <label style={s.label}>{t('account.birthDate')}</label>
               <input
                 style={{ ...s.input, colorScheme: 'dark', cursor: 'pointer' }}
                 type="date"
@@ -229,27 +222,25 @@ export default function Profile() {
               />
             </div>
             <div style={{ ...s.field, ...s.half }}>
-              <label style={s.label}>País de residencia</label>
+              <label style={s.label}>{t('profile.language')}</label>
+              {/* Saved with the rest of the form; the site switches language once saved */}
               <select
-                style={{ ...s.input, ...s.select, color: country ? '#c8d4e8' : '#5a6a80' }}
-                autoComplete="country"
-                value={country}
-                onChange={e => setCountry(e.target.value)}
-                required
+                style={{ ...s.input, ...s.select }}
+                value={language}
+                onChange={e => setLanguage(e.target.value)}
               >
-                <option value="" disabled>Selecciona…</option>
-                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
               </select>
             </div>
           </div>
 
           <div style={s.field}>
-            <label style={s.label}>Email</label>
+            <label style={s.label}>{t('account.email')}</label>
             <input style={{ ...s.input, ...s.inputReadOnly }} type="email" value={user?.email ?? ''} readOnly />
           </div>
 
           {dataError   && <div style={s.error}>{dataError}</div>}
-          {dataMessage && <div style={s.success}>{dataMessage}</div>}
+          {dataMessage && <div style={s.success}>{t(dataMessage)}</div>}
 
           <div style={s.actions}>
             <button
@@ -257,31 +248,31 @@ export default function Profile() {
               type="submit"
               disabled={!dataDirty || savingData}
             >
-              {savingData ? 'Guardando...' : 'Guardar cambios'}
+              {savingData ? t('common.saving') : t('profile.saveChanges')}
             </button>
           </div>
         </form>
 
         {/* CONTRASEÑA */}
         <form style={s.card} onSubmit={handleChangePassword}>
-          <div style={s.cardTitle}>Cambiar contraseña</div>
+          <div style={s.cardTitle}>{t('password.changeTitle')}</div>
 
           <input type="email" autoComplete="username" value={user?.email ?? ''} readOnly hidden />
 
           <div style={s.field}>
-            <label style={s.label}>Contraseña actual</label>
+            <label style={s.label}>{t('password.current')}</label>
             <input style={s.input} type="password" placeholder="••••••••" autoComplete="current-password"
               value={current} onChange={e => setCurrent(e.target.value)} required />
           </div>
 
           <div style={s.row}>
             <div style={{ ...s.field, ...s.half }}>
-              <label style={s.label}>Nueva contraseña</label>
+              <label style={s.label}>{t('password.new')}</label>
               <input style={s.input} type="password" placeholder="••••••••" autoComplete="new-password"
                 value={password} onChange={e => setPassword(e.target.value)} required />
             </div>
             <div style={{ ...s.field, ...s.half }}>
-              <label style={s.label}>Confirmar nueva contraseña</label>
+              <label style={s.label}>{t('password.confirmNew')}</label>
               <input
                 style={{ ...s.input, borderColor: confirm && confirm !== password ? '#8b3030' : '#1e2e42' }}
                 type="password" placeholder="••••••••" autoComplete="new-password"
@@ -293,12 +284,12 @@ export default function Profile() {
           {password && (
             <div style={s.rules}>
               {pwRules.map(r => (
-                <div key={r.text} style={{ ...s.rule, color: r.ok ? '#50d080' : '#e07070' }}>
-                  {r.ok ? '✓' : '✗'} {r.text}
+                <div key={r.key} style={{ ...s.rule, color: r.ok ? '#50d080' : '#e07070' }}>
+                  {r.ok ? '✓' : '✗'} {t(r.key)}
                 </div>
               ))}
               {confirm && confirm !== password && (
-                <div style={{ ...s.rule, color: '#e07070' }}>✗ Las contraseñas no coinciden</div>
+                <div style={{ ...s.rule, color: '#e07070' }}>✗ {t('password.mismatchShort')}</div>
               )}
             </div>
           )}
@@ -308,7 +299,7 @@ export default function Profile() {
 
           <div style={s.actions}>
             <button style={{ ...s.btn, opacity: savingPw ? 0.7 : 1 }} type="submit" disabled={savingPw}>
-              {savingPw ? 'Guardando...' : 'Cambiar contraseña'}
+              {savingPw ? t('common.saving') : t('password.changeButton')}
             </button>
           </div>
         </form>
@@ -335,12 +326,6 @@ const s = {
     background: 'rgba(10,15,25,0.92)', borderBottom: '1px solid #0e1828', backdropFilter: 'blur(12px)',
     padding: '11px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
   },
-  logo: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-  },
-  logoSpade: { fontSize: 22, color: '#60b0ff', textShadow: '0 0 20px rgba(60,140,255,0.6)', lineHeight: 1 },
-  logoText:  { fontSize: 18, fontWeight: 900, color: '#e8f0ff', letterSpacing: '-0.3px' },
   signOutBtn: {
     background: 'none', border: '1px solid #1a3048', borderRadius: 6, color: '#3a6080',
     padding: '5px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 600,
@@ -349,10 +334,6 @@ const s = {
     position: 'relative', zIndex: 1,
     maxWidth: 600, margin: '0 auto', padding: '24px 16px 48px',
     display: 'flex', flexDirection: 'column', gap: 18,
-  },
-  backBtn: {
-    alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0,
-    color: '#3a7ab8', fontSize: 12, fontWeight: 600, cursor: 'pointer',
   },
   titleRow: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 4 },
   avatarCol: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 },

@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { validatePassword } from '../lib/account'
+import { useI18n } from '../i18n/core'
 
 export default function ResetPassword() {
   const { updatePassword } = useAuth()
   const navigate = useNavigate()
+  const { t } = useI18n()
 
   const [password, setPassword]   = useState('')
   const [confirm, setConfirm]     = useState('')
@@ -18,8 +20,8 @@ export default function ResetPassword() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
-    if (!pwValid)             { setError('La contraseña no cumple los requisitos.'); return }
-    if (password !== confirm) { setError('Las contraseñas no coinciden.'); return }
+    if (!pwValid)             { setError(t('password.errors.rules')); return }
+    if (password !== confirm) { setError(t('password.errors.mismatch')); return }
     setLoading(true)
     const { error } = await updatePassword(password)
     setLoading(false)
@@ -39,19 +41,19 @@ export default function ResetPassword() {
           <div style={s.logoSuit}>♠</div>
           <div>
             <div style={s.logoName}>RunItBack</div>
-            <div style={s.logoSub}>Tu historial de torneos</div>
+            <div style={s.logoSub}>{t('auth.tagline')}</div>
           </div>
         </div>
 
         <div style={s.card}>
           <div style={s.header}>
-            <div style={s.title}>Nueva contraseña</div>
-            <div style={s.sub}>Elige una contraseña segura</div>
+            <div style={s.title}>{t('password.newTitle')}</div>
+            <div style={s.sub}>{t('password.newSubtitle')}</div>
           </div>
 
           <form onSubmit={handleSubmit} style={s.form}>
             <div style={s.field}>
-              <label style={s.label}>Nueva contraseña</label>
+              <label style={s.label}>{t('password.new')}</label>
               <input
                 style={s.input}
                 type="password"
@@ -64,14 +66,14 @@ export default function ResetPassword() {
             {password && (
               <div style={s.rules}>
                 {pwRules.map(r => (
-                  <div key={r.text} style={{ ...s.rule, color: r.ok ? '#50d080' : '#e07070' }}>
-                    {r.ok ? '✓' : '✗'} {r.text}
+                  <div key={r.key} style={{ ...s.rule, color: r.ok ? '#50d080' : '#e07070' }}>
+                    {r.ok ? '✓' : '✗'} {t(r.key)}
                   </div>
                 ))}
               </div>
             )}
             <div style={s.field}>
-              <label style={s.label}>Confirmar contraseña</label>
+              <label style={s.label}>{t('password.confirm')}</label>
               <input
                 style={s.input}
                 type="password"
@@ -85,7 +87,7 @@ export default function ResetPassword() {
             {error && <div style={s.error}>{error}</div>}
 
             <button style={{ ...s.btn, opacity: loading ? 0.7 : 1 }} type="submit" disabled={loading}>
-              {loading ? 'Guardando...' : 'Guardar contraseña'}
+              {loading ? t('common.saving') : t('password.save')}
             </button>
           </form>
         </div>

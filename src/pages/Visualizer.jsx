@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
+import Logo from '../components/Logo'
+import { useI18n, fmtNumber } from '../i18n/core'
 import { supabase } from '../lib/supabase'
 import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList, setTournamentReviewed } from '../lib/db'
 import { calculateEquity } from '../lib/equityCalculator'
@@ -117,7 +119,7 @@ function seatEdge(px, py, gap) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
-const fmtChips = n => (n ?? 0).toLocaleString('es-ES')
+const fmtChips = n => fmtNumber(n)
 const makeFmt  = (displayBB, bb) => n => {
   if (displayBB && bb > 0) {
     const bbs = n / bb
@@ -374,6 +376,7 @@ export default function Visualizer() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
+  const { t } = useI18n()
 
   const [tournament, setTournament] = useState(null)
   const [hands,      setHands]      = useState([])
@@ -429,7 +432,7 @@ export default function Visualizer() {
     setReviewSaving(true)
     try {
       await setTournamentReviewed(tournament.id, next)
-      setTournament(t => ({ ...t, reviewed: next }))
+      setTournament(prev => ({ ...prev, reviewed: next }))
     } catch(e) { console.error(e) }
     finally { setReviewSaving(false) }
   }
@@ -468,10 +471,7 @@ export default function Visualizer() {
     }
     return (combos / TOTAL_COMBOS) * 100
   }, [rangeMap, rangeFilter])
-  const rangePctLabel = rangeFilter === 'raise' ? 'del rango subido'
-                       : rangeFilter === 'fold'  ? 'del rango foldeado'
-                       : rangeFilter === 'call'  ? 'del rango pagado'
-                       : 'del rango jugado'
+  const rangePctLabel = t(`visualizer.range.pct.${rangeFilter ?? 'played'}`)
 
   // ── Load ──
   useEffect(() => {
@@ -479,7 +479,7 @@ export default function Visualizer() {
       try {
         if (location.state?.studyHands) {
           const rows = location.state.studyHands
-          setTournament({ name: 'Búsqueda', isStudy: true })
+          setTournament({ name: t('visualizer.searchTitle'), isStudy: true })
           setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
           if (user) {
             fetchUserReviewLists(user.id).then(setUserLists)
@@ -497,7 +497,7 @@ export default function Visualizer() {
         if (listToken) {
           const handIds = await fetchSharedList(listToken)
           const rows = await fetchHandsByIds(handIds)
-          setTournament({ name: 'Lista compartida', isSharedList: true })
+          setTournament({ name: t('visualizer.sharedList'), isSharedList: true })
           const mapped = rows.map(r => ({ ...r.raw, _dbId: r.id, _tournamentName: r.tournamentName }))
           setHands(mapped)
           if (user) {
@@ -514,8 +514,8 @@ export default function Visualizer() {
         }
         if (handToken) {
           const row = await fetchHandByShareToken(handToken)
-          const { data: t } = await supabase.from('tournaments').select('*').eq('id', row.tournament_id).single()
-          setTournament(t)
+          const { data: tourData } = await supabase.from('tournaments').select('*').eq('id', row.tournament_id).single()
+          setTournament(tourData)
           setHands([{ ...row.raw, _dbId: row.id }])
           if (user) {
             fetchUserReviewLists(user.id).then(setUserLists)
@@ -528,17 +528,17 @@ export default function Visualizer() {
           }
           return
         }
-        let t, tournamentId
+        let tourData, tournamentId
         if (token) {
           const { data } = await supabase.from('tournaments').select('*').eq('share_token', token).single()
-          t = data
+          tourData = data
           tournamentId = data?.id
         } else {
           const { data } = await supabase.from('tournaments').select('*').eq('id', id).single()
-          t = data
+          tourData = data
           tournamentId = id
         }
-        setTournament(t)
+        setTournament(tourData)
         if (!tournamentId) return
         const { data: rows } = await supabase
           .from('hands').select('id, raw').eq('tournament_id', tournamentId).order('id', { ascending: true })
@@ -646,7 +646,7 @@ export default function Visualizer() {
   }, [showListPopover])
 
   async function applyStudyHands(rows, filters) {
-    setTournament({ name: 'Búsqueda', isStudy: true })
+    setTournament({ name: t('visualizer.searchTitle'), isStudy: true })
     setHands(rows.map(row => ({ ...row.raw, _dbId: row.id, _tournamentName: row.tournamentName })))
     setCurIdx(0); setCurStep(0)
     if (user) {
@@ -673,7 +673,7 @@ export default function Visualizer() {
     const cards  = h.holeCards?.Hero ?? []
     const net    = heroNet(h)
     const resCls = h.heroResult === 'won' ? '#30a860' : h.heroResult === 'folded' ? '#556070' : '#d04040'
-    const resTxt = h.heroResult === 'won' ? 'Ganó' : h.heroResult === 'folded' ? 'Fold' : 'Perdió'
+    const resTxt = h.heroResult === 'won' ? t('visualizer.result.won') : h.heroResult === 'folded' ? 'Fold' : t('visualizer.result.lost')
     const netCol = net > 0 ? '#30a860' : net < 0 ? '#d04040' : '#506070'
     return (
       <div key={i} data-idx={i}
@@ -766,8 +766,8 @@ export default function Visualizer() {
     const dbId = hands[curIdx]?._dbId
     if (!dbId) return
     try {
-      const t = await generateHandShareToken(dbId)
-      await navigator.clipboard.writeText(`${window.location.origin}/hand-share/${t}`)
+      const shareToken = await generateHandShareToken(dbId)
+      await navigator.clipboard.writeText(`${window.location.origin}/hand-share/${shareToken}`)
       setHandCopied(true)
       setTimeout(() => setHandCopied(false), 2500)
     } catch(e) { console.error(e) }
@@ -777,8 +777,8 @@ export default function Visualizer() {
     const ids = displayHandsWithIdx.map(({ h }) => h._dbId).filter(Boolean)
     if (!ids.length || !user) return
     try {
-      const t = await createSharedList(ids, user.id)
-      await navigator.clipboard.writeText(`${window.location.origin}/list-share/${t}`)
+      const shareToken = await createSharedList(ids, user.id)
+      await navigator.clipboard.writeText(`${window.location.origin}/list-share/${shareToken}`)
       setListCopied(true)
       setTimeout(() => setListCopied(false), 2500)
     } catch(e) { console.error(e) }
@@ -925,14 +925,14 @@ export default function Visualizer() {
     mobileHandsVirtual.scrollToTop(idx)
   }, [curIdx, displayHandsWithIdx, desktopHandsVirtual.scrollToTop, mobileHandsVirtual.scrollToTop])
 
-  if (loading) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Cargando...</div>
+  if (loading) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>{t('common.loading')}</div>
   // El alias del perfil sustituye a «Hero» solo cuando las manos son del usuario que está mirando
   const viewerIsHero = !!user && (tournament?.isStudy || tournament?.user_id === user.id)
   const heroLabel = (viewerIsHero && user.user_metadata?.alias) || 'Hero'
   const heroAvatar = viewerIsHero ? user.user_metadata?.avatar_url : null
 
-  if (!tournament && (token || handToken)) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Contenido no encontrado o enlace inválido.</div>
-  if (!hands.length) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Sin manos.</div>
+  if (!tournament && (token || handToken)) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>{t('visualizer.notFound')}</div>
+  if (!hands.length) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>{t('visualizer.noHands')}</div>
 
   const hasFilters = filterPlayed || filterCards.length > 0 || filterPositions.length > 0
   const dispIdx = displayHandsWithIdx.findIndex(({ i }) => i === curIdx)
@@ -985,10 +985,10 @@ export default function Visualizer() {
 
       {/* ── HEADER ── */}
       <div style={hdr.root}>
-        {!token && !handToken && !listToken && !isComboStudy && <button style={hdr.back} onClick={() => navigate('/')}>{isMobile ? '←' : '← Torneos'}</button>}
+        <Logo onClick={() => navigate(user ? '/' : '/login')} compact={isMobile} title={t('nav.goHome')} />
         {!token && !handToken && !listToken && !isComboStudy && tournament?.isStudy && (
           <button style={hdr.studyBtn} onClick={() => setShowStudyModal(true)}>
-            {isMobile ? '🎓' : '🎓 Estudia tu juego'}
+            {isMobile ? '🎓' : `🎓 ${t('study.title')}`}
           </button>
         )}
         {isComboStudy && (
@@ -999,13 +999,7 @@ export default function Visualizer() {
             setCurIdx(0)
             setCurStep(0)
             setShowRangeModal(true)
-          }}>{isMobile ? '←' : '← Rango'}</button>
-        )}
-        {(token || handToken || listToken) && (
-          <a href="#" style={hdr.logo} onClick={e => { e.preventDefault(); navigate(user ? '/' : '/login') }}>
-            <span style={hdr.logoSpade}>♠</span>
-            <span style={hdr.logoText}>RunItBack</span>
-          </a>
+          }}>{isMobile ? '←' : `← ${t('visualizer.range.short')}`}</button>
         )}
         <div style={hdr.center}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -1016,8 +1010,8 @@ export default function Visualizer() {
             />
             <span style={hdr.name}>{hand._tournamentName ?? tournament?.name}</span>
           </div>
-          <span style={hdr.level}>Nivel {hand.level} · {fmtChips(hand.sb)}/{fmtChips(hand.bb)}</span>
-          <span style={hdr.meta}>Mesa {hand.tableNum} · {hand.datetime}</span>
+          <span style={hdr.level}>{t('visualizer.level')} {hand.level} · {fmtChips(hand.sb)}/{fmtChips(hand.bb)}</span>
+          <span style={hdr.meta}>{t('visualizer.table')} {hand.tableNum} · {hand.datetime}</span>
         </div>
         {!handToken && isMobile && (
           <button style={hdr.handsBtn} onClick={() => setShowMobileHands(true)}>
@@ -1031,27 +1025,27 @@ export default function Visualizer() {
                 <circle cx="11" cy="11" r="7"/>
                 <line x1="16.5" y1="16.5" x2="22" y2="22"/>
               </svg>
-              {!isMobile && 'Filtrar'}
+              {!isMobile && t('common.filter')}
               {hasFilters && <span style={hdr.filterDot} />}
             </button>
           )}
           {!handToken && tournament?.isStudy && (
             <button style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5 }}
               onClick={() => setShowRangeModal(true)}
-              title="Ver rango de manos">
+              title={t('visualizer.range.show')}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3"  y="3"  width="7" height="7" rx="1"/>
                 <rect x="14" y="3"  width="7" height="7" rx="1"/>
                 <rect x="3"  y="14" width="7" height="7" rx="1"/>
                 <rect x="14" y="14" width="7" height="7" rx="1"/>
               </svg>
-              {!isMobile && 'Rango'}
+              {!isMobile && t('visualizer.range.short')}
             </button>
           )}
           {!token && !handToken && (
             <button style={{ ...hdr.filterBtn, display: 'flex', alignItems: 'center', gap: 5 }} onClick={shareCurrentHand}>
               {handCopied ? (
-                <>{!isMobile ? '✓ Copiado' : '✓'}</>
+                <>{!isMobile ? `✓ ${t('common.copied')}` : '✓'}</>
               ) : (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -1059,7 +1053,7 @@ export default function Visualizer() {
                     <line x1="12" y1="2" x2="12" y2="15"/>
                     <path d="M4 15v6h16v-6"/>
                   </svg>
-                  {!isMobile && 'Compartir'}
+                  {!isMobile && t('common.share')}
                 </>
               )}
             </button>
@@ -1072,20 +1066,20 @@ export default function Visualizer() {
                   style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5,
                     ...(marked ? { border:'1px solid #8a6200', color:'#c89a10' } : {}) }}
                   onClick={openListPopover}
-                  title={marked ? 'Mano en una lista de revisión — gestionar listas' : 'Añadir esta mano a una lista de revisión'}
+                  title={marked ? t('visualizer.lists.markedTitle') : t('visualizer.lists.addTitle')}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                     <circle cx="12" cy="12" r="3"/>
                   </svg>
-                  {!isMobile && (marked ? 'En lista' : 'Añadir a lista')}
+                  {!isMobile && (marked ? t('visualizer.lists.inList') : t('visualizer.lists.add'))}
                 </button>
                 {showListPopover && (
                   <div style={listPopover.root}>
-                    <div style={listPopover.header}>LISTAS DE REVISIÓN</div>
-                    {popoverLoading ? <div style={listPopover.loading}>Cargando...</div> : <>
+                    <div style={listPopover.header}>{t('visualizer.lists.header')}</div>
+                    {popoverLoading ? <div style={listPopover.loading}>{t('common.loading')}</div> : <>
                       {userLists.length === 0 && !showNewListForm &&
-                        <div style={listPopover.empty}>Todavía no tienes listas.<br/>Crea tu primera lista abajo.</div>}
+                        <div style={listPopover.empty}>{t('visualizer.lists.empty')}<br/>{t('visualizer.lists.emptyHint')}</div>}
                       {userLists.map(list => (
                         <label key={list.id} style={listPopover.item}>
                           <input type="checkbox" checked={popoverDraft.has(list.id)}
@@ -1100,7 +1094,7 @@ export default function Visualizer() {
                           <div style={listPopover.newForm}>
                             <input autoFocus style={listPopover.newInput} type="text"
                               maxLength={100}
-                              placeholder="Nombre de la lista" value={newListName}
+                              placeholder={t('study.listName')} value={newListName}
                               onChange={e => setNewListName(e.target.value)}
                               onKeyDown={e => {
                                 if (e.key === 'Enter') handleCreateList()
@@ -1108,22 +1102,22 @@ export default function Visualizer() {
                               }} />
                             <button style={{ ...listPopover.createBtn, opacity: !newListName.trim() || newListSaving ? 0.5 : 1 }}
                               onClick={handleCreateList} disabled={!newListName.trim() || newListSaving}>
-                              {newListSaving ? '...' : 'Crear'}
+                              {newListSaving ? '...' : t('common.create')}
                             </button>
                           </div>
                           <button
                             style={{ display:'block', width:'100%', background:'none', border:'none',
                               padding:'6px 14px 10px', color:'#3a5060', fontSize:11, cursor:'pointer', textAlign:'center' }}
                             onClick={() => { setShowNewListForm(false); setNewListName('') }}>
-                            Cancelar
+                            {t('common.cancel')}
                           </button>
                         </div>
                       ) : (
                         <div style={listPopover.footer}>
-                          <button style={listPopover.addBtn} onClick={() => setShowNewListForm(true)}>+ Crear lista</button>
+                          <button style={listPopover.addBtn} onClick={() => setShowNewListForm(true)}>+ {t('study.createList')}</button>
                           <button style={{ ...listPopover.saveBtn, opacity: listSaving ? 0.6 : 1 }}
                             onClick={saveListChanges} disabled={listSaving}>
-                            {listSaving ? '...' : 'Guardar'}
+                            {listSaving ? '...' : t('common.save')}
                           </button>
                         </div>
                       )}
@@ -1138,12 +1132,12 @@ export default function Visualizer() {
               style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5, opacity: reviewSaving ? 0.6 : 1,
                 ...(tournament?.reviewed ? { border:'1px solid #2a7a4a', color:'#40c070' } : {}) }}
               onClick={toggleTournamentReviewed} disabled={reviewSaving}
-              title={tournament?.reviewed ? 'Quitar marca de revisado' : 'Marcar este torneo como revisado'}
+              title={tournament?.reviewed ? t('visualizer.reviewed.unmarkTitle') : t('visualizer.reviewed.markTitle')}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              {!isMobile && (tournament?.reviewed ? 'Revisado' : 'Marcar como revisado')}
+              {!isMobile && (tournament?.reviewed ? t('visualizer.reviewed.done') : t('visualizer.reviewed.mark'))}
             </button>
           )}
           {!handToken && (
@@ -1188,12 +1182,12 @@ export default function Visualizer() {
               )}
               {isShowdown && (curStep === seq.length - 1 || allInRunout) && equity?.tie > 0.5 && (
                 <div style={{ fontSize:10, color:'#8899aa', marginTop:4, letterSpacing:'0.3px' }}>
-                  Empate: {equity.tie.toFixed(1)}%
+                  {t('visualizer.tie')}: {equity.tie.toFixed(1)}%
                 </div>
               )}
               {runningPot > 0 && (
                 <div style={ta.pot}>
-                  <span style={{ fontSize:10, color:'rgba(255,200,0,0.5)', fontWeight:600, letterSpacing:1, textTransform:'uppercase' }}>Bote total</span>
+                  <span style={{ fontSize:10, color:'rgba(255,200,0,0.5)', fontWeight:600, letterSpacing:1, textTransform:'uppercase' }}>{t('visualizer.totalPot')}</span>
                   <span style={{ fontSize:16, color:'#ffd060', fontWeight:900, textShadow:'0 0 20px rgba(255,200,0,0.5)', letterSpacing:'0.5px' }}>
                     {fmt(runningPot)}
                   </span>
@@ -1405,9 +1399,9 @@ export default function Visualizer() {
           {user && !loading && hand && (
             <div style={{ ...noteStyle.root, ...(isMobile ? { paddingBottom: 36 } : {}) }}>
               <div style={noteStyle.header}>
-                <span style={noteStyle.label}>NOTAS</span>
+                <span style={noteStyle.label}>{t('visualizer.notes')}</span>
                 <span style={noteStyle.indicator}>
-                  {noteSaved ? '' : 'Guardando...'}
+                  {noteSaved ? '' : t('common.saving')}
                 </span>
               </div>
               <textarea
@@ -1416,7 +1410,7 @@ export default function Visualizer() {
                 ref={textareaRef}
                 rows={4}
                 maxLength={10000}
-                placeholder="Añade notas sobre esta mano..."
+                placeholder={t('visualizer.notesPlaceholder')}
                 defaultValue=""
                 onChange={handleNoteChange}
               />
@@ -1429,10 +1423,10 @@ export default function Visualizer() {
 
           {/* Header */}
           <div style={{ ...rp.handsHeader, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span>MANOS ({displayHandsWithIdx.length}{hasFilters ? ` / ${hands.length}` : ''})</span>
+            <span>{t('visualizer.handsHeader')} ({displayHandsWithIdx.length}{hasFilters ? ` / ${hands.length}` : ''})</span>
             {user && !handToken && (
               <button style={rp.shareBtn} onClick={shareHandList}
-                title="Compartir esta lista de manos">
+                title={t('visualizer.shareList')}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                   strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="8 6 12 2 16 6"/>
@@ -1466,7 +1460,7 @@ export default function Visualizer() {
             <div style={{ padding:'12px 16px', fontSize:10, fontWeight:800, letterSpacing:1,
               color:'#3a5060', borderBottom:'1px solid #1e2a3a', background:'#0a1018',
               display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
-              <span>MANOS ({displayHandsWithIdx.length}{hasFilters ? ` / ${hands.length}` : ''})</span>
+              <span>{t('visualizer.handsHeader')} ({displayHandsWithIdx.length}{hasFilters ? ` / ${hands.length}` : ''})</span>
               <button style={{ background:'none', border:'none', color:'#3a5060', cursor:'pointer',
                 fontSize:18, lineHeight:1 }} onClick={() => setShowMobileHands(false)}>✕</button>
             </div>
@@ -1486,25 +1480,25 @@ export default function Visualizer() {
         <div style={modal.backdrop} onClick={e => e.target === e.currentTarget && setShowFilter(false)}>
           <div style={modal.root}>
             <div style={modal.header}>
-              <span style={modal.title}>Filtrar manos</span>
+              <span style={modal.title}>{t('visualizer.filter.title')}</span>
               <button style={modal.close} onClick={() => setShowFilter(false)}>✕</button>
             </div>
 
             <div style={modal.body}>
               {/* Manos jugadas */}
               <div style={modal.field}>
-                <label style={modal.fieldLabel}>Manos jugadas</label>
+                <label style={modal.fieldLabel}>{t('visualizer.filter.played')}</label>
                 <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
                   <input type="checkbox" checked={draftPlayed}
                     onChange={e => setDraftPlayed(e.target.checked)}
                     style={{ accentColor:'#3a7abf', width:14, height:14, cursor:'pointer' }} />
-                  <span style={{ fontSize:13, color:'#c8d4e8' }}>Solo manos no foldeadas preflop</span>
+                  <span style={{ fontSize:13, color:'#c8d4e8' }}>{t('visualizer.filter.playedHint')}</span>
                 </label>
               </div>
 
               {/* Posición del Hero */}
               <div style={modal.field}>
-                <label style={modal.fieldLabel}>Posición del Hero</label>
+                <label style={modal.fieldLabel}>{t('study.heroPosition')}</label>
                 <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
                   {['BTN','CO','HJ','LJ','MP','MP+1','UTG','UTG+1','SB','BB'].map(pos => {
                     const sel = draftPositions.includes(pos)
@@ -1563,14 +1557,14 @@ export default function Visualizer() {
                 </div>
                 {draftCards.length > 0 && (
                   <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10 }}>
-                    <span style={{ fontSize:11, color:'#4a6880' }}>Seleccionadas:</span>
+                    <span style={{ fontSize:11, color:'#4a6880' }}>{t('visualizer.filter.selected')}:</span>
                     <div style={{ display:'flex', gap:4 }}>
                       {draftCards.map(c => <Card key={c} code={c} size="sm" />)}
                     </div>
                     <button onClick={() => setDraftCards([])} style={{
                       marginLeft:'auto', fontSize:11, background:'#2a1a1a', color:'#d06060',
                       border:'1px solid #4a2020', borderRadius:6, padding:'4px 9px', cursor:'pointer' }}>
-                      ✕ Borrar
+                      ✕ {t('common.clear')}
                     </button>
                   </div>
                 )}
@@ -1578,8 +1572,8 @@ export default function Visualizer() {
             </div>
 
             <div style={modal.footer}>
-              <button style={modal.clearBtn} onClick={clearFilter}>Limpiar</button>
-              <button style={modal.applyBtn} onClick={applyFilter}>Aplicar filtros</button>
+              <button style={modal.clearBtn} onClick={clearFilter}>{t('common.reset')}</button>
+              <button style={modal.applyBtn} onClick={applyFilter}>{t('common.applyFilters')}</button>
             </div>
           </div>
         </div>
@@ -1591,7 +1585,7 @@ export default function Visualizer() {
           background:'#0e2a1a', border:'1px solid #2a6a3a', color:'#50d080',
           padding:'10px 26px', borderRadius:10, fontSize:13, fontWeight:700,
           zIndex:200, boxShadow:'0 4px 20px rgba(0,0,0,0.7)' }}>
-          ¡Enlace copiado!
+          {t('common.linkCopied')}
         </div>
       )}
 
@@ -1600,13 +1594,13 @@ export default function Visualizer() {
         <div style={modal.backdrop} onClick={e => { if (e.target === e.currentTarget) { setShowRangeModal(false); setRangeFilter(null) } }}>
           <div style={{ ...modal.root, width:'min(820px, calc(100vw - 24px))', maxHeight:'92vh', display:'flex', flexDirection:'column' }}>
             <div style={modal.header}>
-              <span style={modal.title}>Rango de manos</span>
+              <span style={modal.title}>{t('visualizer.range.title')}</span>
               <button style={modal.close} onClick={() => { setShowRangeModal(false); setRangeFilter(null) }}>✕</button>
             </div>
 
             {/* Legend */}
             <div style={{ display:'flex', gap:8, padding:'8px 22px 0', flexShrink:0, flexWrap:'wrap' }}>
-              {[['raise','#b02828','Subió'],['fold','#2a4898','Foldeó'],['call','#1a7a3a','CC']].map(([key, bg, label]) => {
+              {[['raise','#b02828',t('visualizer.range.raised')],['fold','#2a4898',t('visualizer.range.folded')],['call','#1a7a3a','CC']].map(([key, bg, label]) => {
                 const active = rangeFilter === key
                 return (
                   <button key={key}
@@ -1626,7 +1620,7 @@ export default function Visualizer() {
               })}
               <div style={{ display:'flex', alignItems:'center', gap:5, padding:'3px 8px 3px 5px' }}>
                 <div style={{ width:12, height:12, borderRadius:2, background:'#141e2e', border:'1px solid rgba(255,255,255,0.12)', flexShrink:0 }}/>
-                <span style={{ fontSize:11, color:'#4a7090', fontWeight:600 }}>No jugada</span>
+                <span style={{ fontSize:11, color:'#4a7090', fontWeight:600 }}>{t('visualizer.range.notPlayed')}</span>
               </div>
             </div>
 
@@ -1703,7 +1697,7 @@ export default function Visualizer() {
                           setShowRangeModal(false)
                         }}
                         title={data
-                          ? `${label} — Subió: ${data.raise}  Foldeó: ${data.fold}  CC: ${data.call}`
+                          ? `${label} — ${t('visualizer.range.raised')}: ${data.raise}  ${t('visualizer.range.folded')}: ${data.fold}  CC: ${data.call}`
                           : label}
                         style={{
                           aspectRatio:'1', background:bg, borderRadius:3,
@@ -1765,9 +1759,6 @@ const page = { height:'100vh', background:'radial-gradient(ellipse at 30% 20%,#1
 const hdr = {
   root:    { background:'#1a1e2a', borderBottom:'1px solid #2a3040', padding:'8px 16px',
              display:'flex', alignItems:'center', gap:16, flexShrink:0, flexWrap:'wrap' },
-  logo:    { display:'flex', alignItems:'center', gap:6, textDecoration:'none', flexShrink:0 },
-  logoSpade: { fontSize:20, color:'#60b0ff', textShadow:'0 0 16px rgba(60,140,255,0.6)', lineHeight:1 },
-  logoText:  { fontSize:14, fontWeight:800, color:'#e8f0ff', letterSpacing:'0.5px' },
   back:    { background:'#1a2838', color:'#5080a8', border:'1px solid #2a3a50', padding:'5px 12px',
              borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:700, whiteSpace:'nowrap' },
   studyBtn: { background:'linear-gradient(135deg, #1a3a20, #0c2014)', border:'1px solid #2a6a3a',
