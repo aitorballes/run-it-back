@@ -984,7 +984,10 @@ export default function Dashboard() {
           <div style={s.empty}>
             <div style={s.emptySpade}>♠</div>
             <div style={s.emptyTitle}>No hay torneos todavía</div>
-            <div style={s.hint}>Sube archivos .txt de GGPoker para empezar</div>
+            <div style={s.hint}>
+              Sube los historiales de manos de cualquier sala o vincula sus carpetas
+              desde <b>Importar torneos</b> para sincronizarlos con un clic
+            </div>
             <button style={s.emptyBtn} onClick={() => fileInputRef.current.click()}>
               Cargar torneos
             </button>
@@ -1834,6 +1837,8 @@ const s = {
     color: '#2a3a50',
     marginTop: 60,
     textAlign: 'center',
+    maxWidth: 420,
+    lineHeight: 1.6,
   },
   emptyBtn: {
     marginTop: 8,
