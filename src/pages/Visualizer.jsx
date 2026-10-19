@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import Avatar from '../components/Avatar'
 import { supabase } from '../lib/supabase'
 import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList, setTournamentReviewed } from '../lib/db'
 import { calculateEquity } from '../lib/equityCalculator'
@@ -925,6 +926,11 @@ export default function Visualizer() {
   }, [curIdx, displayHandsWithIdx, desktopHandsVirtual.scrollToTop, mobileHandsVirtual.scrollToTop])
 
   if (loading) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Cargando...</div>
+  // El alias del perfil sustituye a «Hero» solo cuando las manos son del usuario que está mirando
+  const viewerIsHero = !!user && (tournament?.isStudy || tournament?.user_id === user.id)
+  const heroLabel = (viewerIsHero && user.user_metadata?.alias) || 'Hero'
+  const heroAvatar = viewerIsHero ? user.user_metadata?.avatar_url : null
+
   if (!tournament && (token || handToken)) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Contenido no encontrado o enlace inválido.</div>
   if (!hands.length) return <div style={{...page, alignItems:'center', justifyContent:'center', color:'#4a6080'}}>Sin manos.</div>
 
@@ -1231,6 +1237,15 @@ export default function Visualizer() {
                       : [0,1].map(ci => <CardBack key={ci} size="lg" />)}
                   </div>
 
+                  {/* Hero avatar — overlaps the bottom of the cards */}
+                  {isHero && heroAvatar && (
+                    <Avatar url={heroAvatar} size={56} style={{
+                      marginTop: -26, zIndex: 1,
+                      border: `2px solid ${isWinner ? '#ffe566' : '#c8a800'}`,
+                      boxShadow: '0 2px 10px rgba(0,0,0,0.7)',
+                    }} />
+                  )}
+
                   {/* Position badge */}
                   {badgeTxt && (
                     <div style={{ fontSize:9, fontWeight:800, letterSpacing:1, padding:'1px 7px', borderRadius:3, ...badgeStyle }}>
@@ -1248,7 +1263,7 @@ export default function Visualizer() {
                     boxShadow: isWinner ? '0 0 14px rgba(200,168,0,0.4)' : isActive ? '0 0 10px rgba(60,130,220,0.35)' : '0 2px 8px rgba(0,0,0,0.6)' }}>
                     <div style={{ fontSize:11, fontWeight:800, color: isHero ? '#ffe566' : '#c8d4e8',
                       whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:96 }}>
-                      {isHero ? '★ Hero' : seat.player.slice(0,10)}
+                      {isHero ? `★ ${heroLabel}` : seat.player.slice(0,10)}
                     </div>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:5, marginTop:2 }}>
                       <span style={{ fontSize:13, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700 }}>

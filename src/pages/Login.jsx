@@ -1,45 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-
-function validatePassword(pw) {
-  const rules = [
-    { ok: pw.length >= 8,          text: 'Mínimo 8 caracteres' },
-    { ok: /[0-9]/.test(pw),        text: 'Al menos un número' },
-    { ok: /[^a-zA-Z0-9]/.test(pw), text: 'Al menos un carácter especial' },
-  ]
-  return rules
-}
-
-const COUNTRY_CODES = [
-  'AD','AE','AF','AG','AL','AM','AO','AR','AT','AU','AZ','BA','BB','BD','BE','BF','BG','BH','BI','BJ',
-  'BN','BO','BR','BS','BT','BW','BY','BZ','CA','CD','CF','CG','CH','CI','CL','CM','CN','CO','CR','CU',
-  'CV','CY','CZ','DE','DJ','DK','DM','DO','DZ','EC','EE','EG','ER','ES','ET','FI','FJ','FM','FR','GA',
-  'GB','GD','GE','GH','GM','GN','GQ','GR','GT','GW','GY','HN','HR','HT','HU','ID','IE','IL','IN','IQ',
-  'IR','IS','IT','JM','JO','JP','KE','KG','KH','KI','KM','KN','KP','KR','KW','KZ','LA','LB','LC','LI',
-  'LK','LR','LS','LT','LU','LV','LY','MA','MC','MD','ME','MG','MH','MK','ML','MM','MN','MR','MT','MU',
-  'MV','MW','MX','MY','MZ','NA','NE','NG','NI','NL','NO','NP','NR','NZ','OM','PA','PE','PG','PH','PK',
-  'PL','PR','PS','PT','PW','PY','QA','RO','RS','RU','RW','SA','SB','SC','SD','SE','SG','SI','SK','SL',
-  'SM','SN','SO','SR','SS','ST','SV','SY','SZ','TD','TG','TH','TJ','TL','TM','TN','TO','TR','TT','TV',
-  'TW','TZ','UA','UG','US','UY','UZ','VA','VC','VE','VN','VU','WS','XK','YE','ZA','ZM','ZW',
-]
-
-const regionNames = new Intl.DisplayNames(['es'], { type: 'region' })
-const COUNTRIES = COUNTRY_CODES
-  .map(code => ({ code, name: regionNames.of(code) }))
-  .sort((a, b) => a.name.localeCompare(b.name, 'es'))
-
-const MIN_AGE = 18
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-const isValidEmail = e => EMAIL_RE.test(e.trim())
-const sameEmail = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase()
-
-function maxBirthDate() {
-  const d = new Date()
-  d.setFullYear(d.getFullYear() - MIN_AGE)
-  return d.toISOString().slice(0, 10)
-}
+import { validatePassword, COUNTRIES, MIN_AGE, isValidEmail, sameEmail, maxBirthDate } from '../lib/account'
 
 export default function Login() {
   const { signIn, signUp, resetPassword } = useAuth()

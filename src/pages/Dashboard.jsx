@@ -15,6 +15,7 @@ import { supportsFolderAccess, listLinkedFolders, saveLinkedFolder, removeLinked
 import { saveTournament, refreshTournamentHands, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
 import StudyModal from '../components/StudyModal'
 import OnboardingTour from '../components/OnboardingTour'
+import Avatar from '../components/Avatar'
 
 const TOUR_STEPS = [
   { target: 'import',      title: 'Importar torneos',
@@ -31,6 +32,8 @@ const TOUR_STEPS = [
     body: 'Los días que jugaste aparecen resaltados. Pulsa uno para saltar a esa sesión en la lista.' },
   { target: 'tournament',  title: 'Tus torneos',
     body: 'Pulsa un torneo para revisarlo mano a mano. Con el menú ⋯ puedes compartirlo o eliminarlo.' },
+  { target: 'profile',     title: 'Perfil',
+    body: 'Desde aquí entras en tu perfil para revisar tus datos o cambiar la contraseña, y cierras sesión.' },
   { target: 'help',        title: '¿Necesitas ayuda?',
     body: 'Puedes volver a ver esta guía cuando quieras desde este botón.' },
 ]
@@ -274,6 +277,7 @@ export default function Dashboard() {
   const [toast,            setToast]            = useState(null)
   const [showImport,       setShowImport]       = useState(false)
   const [showTour,         setShowTour]         = useState(false)
+  const [showUserMenu,     setShowUserMenu]     = useState(false)
   const [dragOver,         setDragOver]         = useState(false)
   const [linkedFolders,    setLinkedFolders]    = useState([])
   const [showFolderHelp,   setShowFolderHelp]   = useState(false)
@@ -534,6 +538,13 @@ export default function Dashboard() {
     document.addEventListener('click', handleClick)
     return () => document.removeEventListener('click', handleClick)
   }, [showListMenu])
+
+  useEffect(() => {
+    if (!showUserMenu) return
+    function handleClick() { setShowUserMenu(false) }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [showUserMenu])
 
   useEffect(() => {
     if (!openSessionMenu) return
@@ -974,9 +985,38 @@ export default function Dashboard() {
             <button style={s.studyBtn} data-tour="study" onClick={() => { setStudyInitialFilters(null); setShowStudy(true) }}>
               🎓 Estudia tu juego
             </button>
-            {!isMobile && <span style={s.email}>{user?.email}</span>}
-            <button style={s.helpBtn} data-tour="help" onClick={() => setShowTour(true)} title="Ver guía">?</button>
-            <button style={s.signOutBtn} onClick={signOut}>Salir</button>
+            {!loading && !hasTournaments && (
+              <button style={s.helpBtn} data-tour="help" onClick={() => setShowTour(true)} title="Ver guía">?</button>
+            )}
+            <div style={{ position: 'relative' }}>
+              <button
+                style={s.profileBtn}
+                data-tour="profile"
+                onClick={e => { e.stopPropagation(); setShowUserMenu(v => !v) }}
+                title="Perfil"
+              >
+                <Avatar url={user?.user_metadata?.avatar_url} name={user?.user_metadata?.first_name || user?.email} />
+                {!isMobile && <span style={s.email}>Perfil</span>}
+              </button>
+              {showUserMenu && (
+                <div style={{ ...s.listMenuDropdown, minWidth: 200 }} onClick={e => e.stopPropagation()}>
+                  <div style={s.userMenuHeader}>
+                    {user?.user_metadata?.first_name && (
+                      <div style={s.userMenuName}>
+                        {user.user_metadata.first_name} {user.user_metadata.last_name ?? ''}
+                      </div>
+                    )}
+                    <div style={s.userMenuEmail}>{user?.email}</div>
+                  </div>
+                  <button style={s.dropdownItem} onClick={() => { setShowUserMenu(false); navigate('/profile') }}>
+                    Perfil
+                  </button>
+                  <button style={{ ...s.dropdownItem, color: '#e07070', borderBottom: 'none' }} onClick={signOut}>
+                    Salir
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1799,6 +1839,22 @@ const s = {
     position: 'relative',
     zIndex: 1,
   },
+  profileBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+  },
+  userMenuHeader: {
+    padding: '10px 16px',
+    borderBottom: '1px solid #1a2a3a',
+    background: 'rgba(0,0,0,0.2)',
+  },
+  userMenuName: { fontSize: 13, fontWeight: 800, color: '#e0ecff' },
+  userMenuEmail: { fontSize: 11, color: '#3a5a7a', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   helpBtn: {
     background: 'none',
     border: '1px solid #1a3048',
@@ -1811,16 +1867,6 @@ const s = {
     fontSize: 13,
     fontWeight: 800,
     flexShrink: 0,
-  },
-  signOutBtn: {
-    background: 'none',
-    border: '1px solid #1a3048',
-    borderRadius: 6,
-    color: '#3a6080',
-    padding: '5px 12px',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontWeight: 600,
   },
   filterDot: {
     position: 'absolute',

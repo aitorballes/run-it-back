@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { validatePassword } from '../lib/account'
 
 export default function ResetPassword() {
   const { updatePassword } = useAuth()
@@ -11,11 +12,14 @@ export default function ResetPassword() {
   const [error, setError]         = useState('')
   const [loading, setLoading]     = useState(false)
 
+  const pwRules = validatePassword(password)
+  const pwValid = pwRules.every(r => r.ok)
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    if (!pwValid)             { setError('La contraseña no cumple los requisitos.'); return }
     if (password !== confirm) { setError('Las contraseñas no coinciden.'); return }
-    if (password.length < 6)  { setError('Mínimo 6 caracteres.'); return }
     setLoading(true)
     const { error } = await updatePassword(password)
     setLoading(false)
@@ -57,6 +61,15 @@ export default function ResetPassword() {
                 required
               />
             </div>
+            {password && (
+              <div style={s.rules}>
+                {pwRules.map(r => (
+                  <div key={r.text} style={{ ...s.rule, color: r.ok ? '#50d080' : '#e07070' }}>
+                    {r.ok ? '✓' : '✗'} {r.text}
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={s.field}>
               <label style={s.label}>Confirmar contraseña</label>
               <input
@@ -168,6 +181,16 @@ const s = {
     letterSpacing: '0.5px',
     boxShadow: '0 4px 24px rgba(20,60,160,0.45)',
   },
+  rules: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 3,
+    padding: '8px 12px',
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: 8,
+    border: '1px solid #1a2a3a',
+  },
+  rule: { fontSize: 11, fontWeight: 600 },
   error: {
     color: '#e07070', fontSize: 12, textAlign: 'center',
     padding: '7px 12px', background: 'rgba(160,30,30,0.12)',

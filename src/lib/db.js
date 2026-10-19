@@ -790,3 +790,22 @@ export async function fetchHeroStats(userId) {
   return data
 }
 
+
+// ── Avatars (Storage bucket "avatars", see scripts/migrate-avatars.sql) ──
+
+const avatarPath = userId => `${userId}/avatar.jpg`
+
+// Uploads (or replaces) the user's avatar and returns a cache-busted public URL
+export async function uploadAvatar(userId, blob) {
+  const path = avatarPath(userId)
+  const { error } = await supabase.storage.from('avatars')
+    .upload(path, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '3600' })
+  if (error) throw error
+  const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+  return `${data.publicUrl}?v=${Date.now()}`
+}
+
+export async function removeAvatar(userId) {
+  const { error } = await supabase.storage.from('avatars').remove([avatarPath(userId)])
+  if (error) throw error
+}
