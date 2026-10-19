@@ -3,8 +3,10 @@ import es from './es'
 import en from './en'
 import fr from './fr'
 import de from './de'
+import it from './it'
+import pt from './pt'
 
-const DICTS = { es, en, fr, de }
+const DICTS = { es, en, fr, de, it, pt }
 
 // Names shown in the language picker, each in its own language
 export const LANGUAGES = [
@@ -12,16 +14,20 @@ export const LANGUAGES = [
   { code: 'en', name: 'English' },
   { code: 'fr', name: 'Français' },
   { code: 'de', name: 'Deutsch' },
+  { code: 'it', name: 'Italiano' },
+  { code: 'pt', name: 'Português (Brasil)' },
 ]
 
 export const DEFAULT_LANG = 'en'
 
-export const LOCALES = { es: 'es-ES', en: 'en-GB', fr: 'fr-FR', de: 'de-DE' }
+export const LOCALES = { es: 'es-ES', en: 'en-GB', fr: 'fr-FR', de: 'de-DE', it: 'it-IT', pt: 'pt-BR' }
 
 const COUNTRY_LANG = {
   es: ['ES', 'MX', 'AR', 'CO', 'CL', 'PE', 'VE', 'EC', 'GT', 'CU', 'BO', 'DO', 'HN', 'PY', 'SV', 'NI', 'CR', 'PA', 'UY', 'PR', 'GQ'],
   fr: ['FR', 'BE', 'LU', 'MC', 'SN', 'CI', 'ML', 'BF', 'NE', 'TG', 'BJ', 'GA', 'CG', 'CD', 'CM', 'MG', 'HT', 'DJ', 'KM', 'TD', 'CF', 'GN', 'BI'],
   de: ['DE', 'AT', 'CH', 'LI'],
+  it: ['IT', 'SM', 'VA'],
+  pt: ['BR', 'PT', 'AO', 'MZ', 'CV', 'GW', 'ST', 'TL'],
 }
 
 export const isSupported = code => Object.hasOwn(DICTS, code ?? '')
