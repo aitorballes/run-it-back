@@ -140,3 +140,7 @@ vite.config.ts.timestamp-*
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Copias de src/lib para las Edge Functions (las genera scripts/deploy-functions.sh)
+supabase/functions/_shared/
+supabase/.temp/

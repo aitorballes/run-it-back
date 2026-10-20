@@ -1,149 +1,13 @@
 import { supabase } from './supabase'
-import { calcHeroNet } from './parser'
-import { computeHandStats, computeStudyFilterColumns } from './handUtils'
+import { computeHandStats } from './handUtils'
+import * as importer from './importer.js'
 
-const HAND_BATCH   = 200
-const ACTION_BATCH = 1000
-
-export async function fetchExistingTournamentIds(userId, tournamentIds) {
-  const CHUNK = 50
-  const result = new Set()
-  for (let i = 0; i < tournamentIds.length; i += CHUNK) {
-    const { data } = await supabase
-      .from('tournaments')
-      .select('tournament_id')
-      .eq('user_id', userId)
-      .in('tournament_id', tournamentIds.slice(i, i + CHUNK))
-    data?.forEach(r => result.add(r.tournament_id))
-  }
-  return result
-}
-
-function buildHandRow(h, tournamentDbId) {
-  return {
-    tournament_id: tournamentDbId,
-    hand_id:       h.id,
-    hero_result:   h.heroResult,
-    net:           calcHeroNet(h),
-    bb:            h.bb,
-    sb:            h.sb,
-    total_pot:     h.totalPot,
-    board:         h.board,
-    hole_cards:    h.holeCards,
-    sequence:      { sequence: h.sequence, streetStartStep: h.streetStartStep },
-    hand_datetime: h.datetime ? h.datetime.replace(/\//g, '-') : null,
-    raw:           h,
-    ...computeHandStats(h),
-    ...computeStudyFilterColumns(h),
-  }
-}
-
-// Re-import of an existing tournament: rewrite its hands in place (same DB ids) so notes,
-// review marks and share tokens survive. Hands not already in the DB are left out.
-export async function refreshTournamentHands(tournament, userId) {
-  const { data: tourRows, error: tourErr } = await supabase
-    .from('tournaments')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('tournament_id', tournament.id)
-    .limit(1)
-  if (tourErr) throw tourErr
-  const tourDbId = tourRows?.[0]?.id
-  if (!tourDbId) return 0
-
-  const PAGE = 1000
-  const dbIdByHandId = new Map()
-  for (let page = 0; ; page++) {
-    const { data, error } = await supabase
-      .from('hands')
-      .select('id, hand_id')
-      .eq('tournament_id', tourDbId)
-      .range(page * PAGE, (page + 1) * PAGE - 1)
-    if (error) throw error
-    data.forEach(r => dbIdByHandId.set(r.hand_id, r.id))
-    if (data.length < PAGE) break
-  }
-
-  const rows = tournament.hands
-    .filter(h => dbIdByHandId.has(h.id))
-    .map(h => ({ id: dbIdByHandId.get(h.id), ...buildHandRow(h, tourDbId) }))
-  for (let i = 0; i < rows.length; i += HAND_BATCH) {
-    const { error } = await supabase
-      .from('hands')
-      .upsert(rows.slice(i, i + HAND_BATCH), { onConflict: 'id' })
-    if (error) throw error
-  }
-  return rows.length
-}
-
-export async function saveTournament(tournament, userId) {
-  // Hora de la última mano del torneo
-  const lastHandDatetime = tournament.hands
-    .map(h => h.datetime).filter(Boolean).sort().pop() || null
-
-  // Insertar torneo
-  const { data: tourRow, error: tourErr } = await supabase
-    .from('tournaments')
-    .insert({
-      user_id:       userId,
-      tournament_id: tournament.id,
-      name:          tournament.name,
-      date:          tournament.datetime,
-      end_time:      lastHandDatetime,
-      hands_count:   tournament.hands.length,
-      platform:      tournament.platform || null,
-      entries:       tournament.entries || 1,
-    })
-    .select('id')
-    .single()
-
-  if (tourErr) throw tourErr
-
-  // Insertar manos en lotes
-  const handsToInsert = tournament.hands.map(h => buildHandRow(h, tourRow.id))
-
-  const insertedHands = []
-  for (let i = 0; i < handsToInsert.length; i += HAND_BATCH) {
-    const { data, error } = await supabase
-      .from('hands')
-      .insert(handsToInsert.slice(i, i + HAND_BATCH))
-      .select('id, hand_id')
-    if (error) throw error
-    insertedHands.push(...data)
-  }
-
-  // Mapear hand_id → db id para construir acciones
-  const handIdMap = new Map(insertedHands.map(h => [h.hand_id, h.id]))
-  const streets = ['preflop', 'flop', 'turn', 'river']
-  const actionsToInsert = []
-
-  for (const hand of tournament.hands) {
-    const dbHandId = handIdMap.get(hand.id)
-    if (!dbHandId) continue
-    for (const street of streets) {
-      for (const act of (hand.actions[street] || [])) {
-        actionsToInsert.push({
-          hand_id: dbHandId,
-          street,
-          player:  act.player,
-          type:    act.type,
-          amount:  act.amount,
-          is_hero: act.player === 'Hero',
-        })
-      }
-    }
-  }
-
-  // Insertar acciones en lotes
-  for (let i = 0; i < actionsToInsert.length; i += ACTION_BATCH) {
-    const { error } = await supabase
-      .from('actions')
-      .insert(actionsToInsert.slice(i, i + ACTION_BATCH))
-    if (error) throw error
-  }
-
-  return { id: tourRow.id }
-}
+// La importación vive en importer.js (compartida con la Edge Function); aquí se usa con el cliente de la web.
+export const fetchExistingTournamentIds = (userId, tournamentIds) => importer.fetchExistingTournamentIds(supabase, userId, tournamentIds)
+export const refreshTournamentHands = (tournament, userId) => importer.refreshTournamentHands(supabase, tournament, userId)
+export const saveTournament = (tournament, userId) => importer.saveTournament(supabase, tournament, userId)
+export const updateTournamentSummary = (tournamentId, userId, data) => importer.updateTournamentSummary(supabase, tournamentId, userId, data)
+export const importHandHistories = (userId, texts, options) => importer.importHandHistories(supabase, userId, texts, options)
 
 export async function fetchTournaments(userId) {
   const PAGE = 1000
@@ -261,24 +125,6 @@ export async function deleteTournament(tournamentDbId, userId) {
   let q = supabase.from('tournaments').delete().eq('id', tournamentDbId)
   if (userId) q = q.eq('user_id', userId)
   const { error } = await q
-  if (error) throw error
-}
-
-export async function updateTournamentSummary(tournamentId, userId, data) {
-  const { error } = await supabase
-    .from('tournaments')
-    .update({
-      buyin:           data.buyin           ?? null,
-      buyin_rake:      data.buyinRake        ?? null,
-      players:         data.players          ?? null,
-      prize_pool:      data.prizePool        ?? null,
-      finish_position: data.finishPosition   ?? null,
-      prize_won:       data.prizeWon         ?? null,
-      bounty_won:      data.bountyWon        ?? null,
-      duration:        data.duration         ?? null,
-    })
-    .eq('tournament_id', tournamentId)
-    .eq('user_id', userId)
   if (error) throw error
 }
 

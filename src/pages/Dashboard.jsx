@@ -10,9 +10,9 @@ import ipokerIcon from '../assets/ipoker.png'
 import psIcon from '../assets/pokerstars.png'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { parseFile, groupByTournament, parseSummaryFile } from '../lib/parser'
+import { parseFile } from '../lib/parser'
 import { supportsFolderAccess, listLinkedFolders, saveLinkedFolder, removeLinkedFolder, pickFolder, ensurePermission, collectTxtFiles } from '../lib/folderSync'
-import { saveTournament, refreshTournamentHands, fetchTournaments, deleteTournament, updateTournamentSummary, generateShareToken, fetchExistingTournamentIds, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
+import { importHandHistories, fetchTournaments, deleteTournament, generateShareToken, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
 import StudyModal from '../components/StudyModal'
 import OnboardingTour from '../components/OnboardingTour'
 import Avatar from '../components/Avatar'
@@ -637,66 +637,9 @@ export default function Dashboard() {
     setProgress(null)
     try {
       const texts = await Promise.all(files.map(f => f.text()))
-
-      const isSummary = text => {
-        const tr = text.trimStart()
-        return tr.startsWith('Winamax Poker - Tournament summary')
-          || tr.startsWith('Tournament #')
-          || tr.startsWith('PokerTracker 4 Tournament Summary')
-      }
-      const summaryTexts = texts.filter(isSummary)
-      const handTexts    = texts.filter(text => !isSummary(text))
-
-      let saved = 0, skipped = 0, summariesUpdated = 0
-      let platform = null
-
-      if (handTexts.length > 0) {
-        const parsedPerFile = handTexts.map(text => parseFile(text))
-        const entriesMap = new Map()
-        for (const fileHands of parsedPerFile) {
-          const tids = new Set(fileHands.map(h => h.tournamentId).filter(Boolean))
-          for (const tid of tids) entriesMap.set(tid, (entriesMap.get(tid) || 0) + 1)
-        }
-        const allHands = parsedPerFile.flat()
-        // Sala mayoritaria de las manos importadas
-        const platformCounts = {}
-        for (const h of allHands) if (h.platform) platformCounts[h.platform] = (platformCounts[h.platform] || 0) + 1
-        platform = Object.keys(platformCounts).sort((a, b) => platformCounts[b] - platformCounts[a])[0] ?? null
-        const grouped  = groupByTournament(allHands)
-        for (const tour of grouped) tour.entries = entriesMap.get(tour.id) || 1
-
-        // Dedup en batch: una sola query para todos los torneos
-        const existingIds = await fetchExistingTournamentIds(user.id, grouped.map(tour => tour.id))
-        const toSave    = grouped.filter(tour => !existingIds.has(tour.id))
-        const toRefresh = grouped.filter(tour => existingIds.has(tour.id))
-        saved   = toSave.length
-        skipped = toRefresh.length
-
-        setProgress({ current: 0, total: grouped.length })
-
-        // Saves en paralelo (3 a la vez); los torneos ya existentes se reescriben conservando notas y marcas
-        const CONCURRENCY = 3
-        const jobs = [
-          ...toSave.map(tour => () => saveTournament(tour, user.id)),
-          ...toRefresh.map(tour => () => refreshTournamentHands(tour, user.id)),
-        ]
-        for (let i = 0; i < jobs.length; i += CONCURRENCY) {
-          await Promise.all(
-            jobs.slice(i, i + CONCURRENCY).map(async job => {
-              await job()
-              setProgress(p => ({ ...p, current: p.current + 1 }))
-            })
-          )
-        }
-      }
-
-      for (const text of summaryTexts) {
-        const summary = parseSummaryFile(text)
-        if (summary?.tournamentId) {
-          await updateTournamentSummary(summary.tournamentId, user.id, summary)
-          summariesUpdated++
-        }
-      }
+      const { saved, updated: skipped, summariesUpdated, platform } = await importHandHistories(user.id, texts, {
+        onProgress: setProgress,
+      })
 
       const parts = []
       if (saved             > 0) parts.push(t('dashboard.import.saved', { n: saved }))
