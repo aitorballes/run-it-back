@@ -619,6 +619,9 @@ export default function Visualizer() {
   useEffect(() => {
     function onKey(e) {
       if (['SELECT','INPUT','TEXTAREA'].includes(e.target.tagName)) return
+      // Computed here: the render-scope dispIdx is declared after the early returns, so it's uninitialized
+      // if this handler was registered during a loading render
+      const dispIdx = displayHandsWithIdx.findIndex(({ i }) => i === curIdx)
       if (e.key === ' ') { e.preventDefault(); setPlaying(p => !p) }
       if (e.shiftKey) {
         if (e.key === 'ArrowLeft')  goHand(displayHandsWithIdx[dispIdx - 1]?.i)
