@@ -325,6 +325,7 @@ export default {
     level: 'Niveau',
     table: 'Table',
     tie: 'Égalité',
+    handRanks: ['Hauteur', 'Paire', 'Double paire', 'Brelan', 'Quinte', 'Couleur', 'Full', 'Carré', 'Quinte flush', 'Quinte flush royale'],
     totalPot: 'Pot total',
     notes: 'NOTES',
     notesPlaceholder: 'Ajoutez des notes sur cette main...',

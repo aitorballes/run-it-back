@@ -325,6 +325,7 @@ export default {
     level: 'Level',
     table: 'Table',
     tie: 'Tie',
+    handRanks: ['High card', 'One pair', 'Two pair', 'Three of a kind', 'Straight', 'Flush', 'Full house', 'Four of a kind', 'Straight flush', 'Royal flush'],
     totalPot: 'Total pot',
     notes: 'NOTES',
     notesPlaceholder: 'Add notes about this hand...',

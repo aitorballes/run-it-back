@@ -6,7 +6,7 @@ import Logo from '../components/Logo'
 import { useI18n, fmtNumber } from '../i18n/core'
 import { supabase } from '../lib/supabase'
 import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList, setTournamentReviewed } from '../lib/db'
-import { calculateEquity } from '../lib/equityCalculator'
+import { calculateEquity, evaluateShowdown } from '../lib/equityCalculator'
 import StudyModal from '../components/StudyModal'
 import ggIcon from '../assets/ggpoker.png'
 import wmIcon from '../assets/winamax.png'
@@ -309,6 +309,18 @@ function heroNet(hand) {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────
+// Large card that, during the showdown reveal, rises if it's part of the winning hand and sinks/dims if not.
+function RevealCard({ code, revealing, used }) {
+  const style = !revealing ? {}
+    : used ? { transform:'translateY(-12px)', filter:'drop-shadow(0 0 8px rgba(255,220,90,0.75))' }
+    : { transform:'translateY(8px)', opacity:0.4 }
+  return (
+    <div style={{ transition:'transform .25s, opacity .25s, filter .25s', ...style }}>
+      <Card code={code} size="lg" />
+    </div>
+  )
+}
+
 function Card({ code, size = 'sm' }) {
   if (!code) return null
   const img = getCardImage(code)
@@ -384,6 +396,7 @@ export default function Visualizer() {
   const [curIdx,     setCurIdx]     = useState(0)
   const [curStep,    setCurStep]    = useState(0)
   const [playing,    setPlaying]    = useState(false)
+  const [showWinner, setShowWinner] = useState(false)
   const [scale,      setScale]      = useState(1)
   const [displayBB,  setDisplayBB]  = useState(true)
   const [showFilter,      setShowFilter]      = useState(false)
@@ -599,6 +612,7 @@ export default function Visualizer() {
         if (!hand) return prev
         if (prev < hand.sequence.length - 1) return prev + 1
         setPlaying(false)
+        if (canRevealWinner) setShowWinner(true)
         return prev
       })
     }, 750)
@@ -615,6 +629,9 @@ export default function Visualizer() {
 
   useEffect(() => () => clearTimeout(noteDebounceRef.current), [])
 
+  // Any hand or step change hides the showdown reveal
+  useEffect(() => { setShowWinner(false) }, [curIdx, curStep])
+
   // ── Keyboard ──
   useEffect(() => {
     function onKey(e) {
@@ -627,9 +644,13 @@ export default function Visualizer() {
         if (e.key === 'ArrowLeft')  goHand(displayHandsWithIdx[dispIdx - 1]?.i)
         if (e.key === 'ArrowRight') goHand(displayHandsWithIdx[dispIdx + 1]?.i)
       } else {
-        if (e.key === 'ArrowLeft')  { setPlaying(false); setCurStep(s => Math.max(0, s - 1)) }
+        if (e.key === 'ArrowLeft')  { setPlaying(false); if (showWinner) setShowWinner(false); else setCurStep(s => Math.max(0, s - 1)) }
         if (e.key === 'ArrowRight') { setPlaying(false); setCurStep(s => {
-          const h = hands[curIdx]; return h ? Math.min(h.sequence.length - 1, s + 1) : s
+          const h = hands[curIdx]
+          if (!h) return s
+          // One extra step past the last action reveals the winning hand on the board
+          if (s >= h.sequence.length - 1 && canRevealWinner) setShowWinner(true)
+          return Math.min(h.sequence.length - 1, s + 1)
         })}
         if (e.key === 'ArrowUp')   { e.preventDefault(); goHand(displayHandsWithIdx[dispIdx - 1]?.i) }
         if (e.key === 'ArrowDown') { e.preventDefault(); goHand(displayHandsWithIdx[dispIdx + 1]?.i) }
@@ -637,7 +658,7 @@ export default function Visualizer() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [curIdx, hands, filterPlayed, filterCards, filterPositions])
+  }, [curIdx, hands, filterPlayed, filterCards, filterPositions, showWinner])
 
   useEffect(() => {
     if (!showListPopover) return
@@ -906,6 +927,14 @@ export default function Visualizer() {
     )
   }, [hands, curIdx])
   const isShowdown = Object.keys(showdownCards).length >= 2
+  const canRevealWinner = isShowdown && hands[curIdx]?.board?.river != null
+
+  // Winning hand on a complete board, for the reveal step after the river
+  const showdownResult = useMemo(() => {
+    if (!canRevealWinner) return null
+    const { flop, turn, river } = hands[curIdx].board
+    return evaluateShowdown(showdownCards, [...flop, turn, river])
+  }, [canRevealWinner, showdownCards, hands, curIdx])
 
   const equity = useMemo(() => {
     if (!isShowdown) return null
@@ -947,6 +976,7 @@ export default function Visualizer() {
   const street  = step?.street ?? 'preflop'
   const vi      = streetIdx(street)
 
+  const revealing = showWinner && showdownResult != null && curStep === seq.length - 1
   const foldedPlayers = getFoldedByStep(hand, curStep)
   const allinPlayers  = getAllinByStep(hand, curStep)
   const winnerPlayers = curStep === seq.length - 1
@@ -1177,10 +1207,15 @@ export default function Visualizer() {
             </div>
 
             {/* Board */}
-            <div style={ta.boardWrap}>
+            <div style={{ ...ta.boardWrap, ...(revealing ? { zIndex:3 } : {}) }}>
               {boardCards.length > 0 && (
                 <div style={{ display:'flex', gap:7 }}>
-                  {boardCards.map((c,i) => <Card key={i} code={c} size="lg" />)}
+                  {boardCards.map((c,i) => <RevealCard key={i} code={c} revealing={revealing} used={showdownResult?.usedCards.has(c)} />)}
+                </div>
+              )}
+              {revealing && (
+                <div style={ta.handRank}>
+                  {showdownResult.winners.length > 1 && `${t('visualizer.tie')} · `}{t(`visualizer.handRanks.${showdownResult.category}`)}
                 </div>
               )}
               {isShowdown && (curStep === seq.length - 1 || allInRunout) && equity?.tie > 0.5 && (
@@ -1208,6 +1243,7 @@ export default function Visualizer() {
               const isWinner = winnerPlayers.has(seat.player)
               const isActive = seat.player === activePlayer
               const cards    = hand.holeCards[seat.player]
+              const isShowdownLoser = revealing && seat.player in showdownCards && !showdownResult.winners.includes(seat.player)
 
               const posLabel   = getPositionLabel(seat.num, hand.seats, hand.buttonSeat)
               const badgeTxt   = posLabel
@@ -1225,12 +1261,13 @@ export default function Visualizer() {
                   position:'absolute', left:pos.x, top:pos.y,
                   transform:'translate(-50%,-50%)',
                   display:'flex', flexDirection:'column', alignItems:'center',
-                  gap:2, width:114, opacity: isFolded ? 0.35 : 1, pointerEvents:'none', zIndex:2 }}>
+                  gap:2, width:114, opacity: isFolded || isShowdownLoser ? 0.35 : 1, pointerEvents:'none', zIndex:2,
+                  filter: isShowdownLoser ? 'grayscale(0.8)' : 'none', transition:'opacity .25s, filter .25s' }}>
 
                   {/* Cards — opponents revealed at showdown or when all active players are all-in */}
                   <div style={{ display:'flex', gap:3 }}>
                     {cards && (isHero || curStep === seq.length - 1 || allInRunout)
-                      ? cards.map((c,ci) => <Card key={ci} code={c} size="lg" />)
+                      ? cards.map((c,ci) => <RevealCard key={ci} code={c} revealing={revealing && !isShowdownLoser} used={showdownResult?.usedCards.has(c)} />)
                       : [0,1].map(ci => <CardBack key={ci} size="lg" />)}
                   </div>
 
@@ -1315,8 +1352,8 @@ export default function Visualizer() {
               )
             })()}
 
-            {/* Chip bets */}
-            {Array.from(bets.entries()).map(([player, amount]) => {
+            {/* Chip bets — collected into the pot during the showdown reveal */}
+            {!revealing && Array.from(bets.entries()).map(([player, amount]) => {
               const si = ordered.findIndex(s => s.player === player)
               if (si < 0) return null
               const pos = positions[si]
@@ -1375,7 +1412,7 @@ export default function Visualizer() {
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               {[
                 { id:'prev',     icon:'⏮\uFE0E', disabled: dispIdx <= 0 || displayHandsWithIdx.length <= 1,            action: () => goHand(displayHandsWithIdx[dispIdx-1]?.i) },
-                { id:'stepPrev', icon:'⏪\uFE0E', disabled: curStep <= 0,            action: () => { setPlaying(false); setCurStep(s => Math.max(0, s-1)) } },
+                { id:'stepPrev', icon:'⏪\uFE0E', disabled: curStep <= 0 && !revealing, action: () => { setPlaying(false); if (revealing) setShowWinner(false); else setCurStep(s => Math.max(0, s-1)) } },
               ].map(b => <button key={b.id} style={{ ...ctrlBtn, ...(b.disabled ? ctrlBtnDisabled : {}) }} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
 
               <button style={{ ...ctrlBtn, ...(playing ? ctrlBtnPlaying : {}) }}
@@ -1384,7 +1421,10 @@ export default function Visualizer() {
               </button>
 
               {[
-                { id:'stepNext', icon:'⏩\uFE0E', disabled: curStep >= seq.length-1, action: () => { setPlaying(false); setCurStep(s => Math.min(seq.length-1, s+1)) } },
+                { id:'stepNext', icon:'⏩\uFE0E', disabled: curStep >= seq.length-1 && (!canRevealWinner || revealing), action: () => {
+                  setPlaying(false)
+                  if (curStep >= seq.length-1) setShowWinner(true); else setCurStep(s => Math.min(seq.length-1, s+1))
+                } },
                 { id:'next',     icon:'⏭\uFE0E', disabled: dispIdx >= displayHandsWithIdx.length-1 || displayHandsWithIdx.length <= 1, action: () => goHand(displayHandsWithIdx[dispIdx+1]?.i) },
               ].map(b => <button key={b.id} style={{ ...ctrlBtn, ...(b.disabled ? ctrlBtnDisabled : {}) }} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
 
@@ -1801,6 +1841,8 @@ const ta = {
                filter:'grayscale(0.3)', pointerEvents:'none', userSelect:'none' },
   boardWrap: { position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-56%)',
                display:'flex', flexDirection:'column', alignItems:'center', gap:8 },
+  handRank:  { fontSize:11, fontWeight:800, color:'#ffe566', letterSpacing:1, textTransform:'uppercase',
+               background:'rgba(0,0,0,0.6)', border:'1px solid rgba(255,220,90,0.35)', borderRadius:5, padding:'3px 12px' },
   pot:       { background:'rgba(0,0,0,0.75)', border:'1px solid rgba(200,160,0,0.25)', borderRadius:8,
                padding:'5px 22px', display:'flex', flexDirection:'column', alignItems:'center', gap:1,
                backdropFilter:'blur(4px)' },

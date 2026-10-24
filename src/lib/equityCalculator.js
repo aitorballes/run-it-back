@@ -64,6 +64,38 @@ function evaluate7(cards) {
   return best
 }
 
+// Like evaluate7 but also returns the 5 cards that make the best hand.
+function best5of7(cards) {
+  let best = { score: -1, five: [] }
+  for (let i = 0; i < 7; i++) {
+    for (let j = i + 1; j < 7; j++) {
+      const five = cards.filter((_, k) => k !== i && k !== j)
+      const score = evaluate5(five)
+      if (score > best.score) best = { score, five }
+    }
+  }
+  return best
+}
+
+/**
+ * Resolve a showdown on a complete 5-card board.
+ *
+ * @param {Object} playerCards - { [playerName]: ['Ah', 'Kd'] }
+ * @param {string[]} board     - exactly 5 community cards
+ * @returns {{ winners: string[], category: number, usedCards: Set<string> }}
+ *   category: 0 = high card … 8 = straight flush, 9 = royal flush.
+ *   usedCards: the cards forming the winning hand(s), board and hole cards.
+ */
+export function evaluateShowdown(playerCards, board) {
+  const names   = Object.keys(playerCards)
+  const results = Object.fromEntries(names.map(n => [n, best5of7([...playerCards[n], ...board])]))
+  const max     = Math.max(...names.map(n => results[n].score))
+  const winners = names.filter(n => results[n].score === max)
+  let category  = Math.floor(max / 1e8)
+  if (category === 8 && max % 1e8 === 14) category = 9
+  return { winners, category, usedCards: new Set(winners.flatMap(n => results[n].five)) }
+}
+
 // Generator: all k-combinations of arr.
 function* combinations(arr, k) {
   if (k === 0) { yield []; return }

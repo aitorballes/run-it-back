@@ -325,6 +325,7 @@ export default {
     level: 'Livello',
     table: 'Tavolo',
     tie: 'Pareggio',
+    handRanks: ['Carta alta', 'Coppia', 'Doppia coppia', 'Tris', 'Scala', 'Colore', 'Full', 'Poker', 'Scala colore', 'Scala reale'],
     totalPot: 'Piatto totale',
     notes: 'NOTE',
     notesPlaceholder: 'Aggiungi note su questa mano...',
