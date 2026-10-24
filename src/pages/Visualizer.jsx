@@ -370,6 +370,7 @@ function badgeInfo(action, fmt = fmtChips, t) {
     'post-sb':['#102038','#50b0e0','#1e4060',`SB${amt}`],
     'post-bb':['#103018','#50d060','#205030',`BB${amt}`],
     won:     ['#282200','#ffe040','#504400', `★ ${t('visualizer.wonBadge')}${amt}`],
+    uncalled:['#1e2838','#8aa0b4','#3a4a55', `↩ +${fmt(action.amount)}`],
   }
   if (map[action.type]) {
     const [bg,color,border,label] = map[action.type]
