@@ -325,6 +325,7 @@ export default {
     level: 'Niveau',
     table: 'Table',
     tie: 'Égalité',
+    wonBadge: 'GAGNÉ',
     handRanks: ['Hauteur', 'Paire', 'Double paire', 'Brelan', 'Quinte', 'Couleur', 'Full', 'Carré', 'Quinte flush', 'Quinte flush royale'],
     totalPot: 'Pot total',
     notes: 'NOTES',

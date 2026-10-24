@@ -325,6 +325,7 @@ export default {
     level: 'Livello',
     table: 'Tavolo',
     tie: 'Pareggio',
+    wonBadge: 'VINTO',
     handRanks: ['Carta alta', 'Coppia', 'Doppia coppia', 'Tris', 'Scala', 'Colore', 'Full', 'Poker', 'Scala colore', 'Scala reale'],
     totalPot: 'Piatto totale',
     notes: 'NOTE',

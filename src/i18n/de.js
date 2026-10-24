@@ -325,6 +325,7 @@ export default {
     level: 'Level',
     table: 'Tisch',
     tie: 'Unentschieden',
+    wonBadge: 'GEWONNEN',
     handRanks: ['High Card', 'Paar', 'Zwei Paare', 'Drilling', 'Straße', 'Flush', 'Full House', 'Vierling', 'Straight Flush', 'Royal Flush'],
     totalPot: 'Gesamtpot',
     notes: 'NOTIZEN',

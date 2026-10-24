@@ -362,14 +362,14 @@ function CardBack({ size = 'sm' }) {
   )
 }
 
-function badgeInfo(action, fmt = fmtChips) {
+function badgeInfo(action, fmt = fmtChips, t) {
   const amt = action.amount > 0 ? ` ${fmt(action.amount)}` : ''
   const map = {
     fold:    ['#232b38','#6a7a90','#3a4555', '✗ FOLD'],
     check:   ['#142040','#60a0e0','#2a4070', '✓ CHECK'],
     'post-sb':['#102038','#50b0e0','#1e4060',`SB${amt}`],
     'post-bb':['#103018','#50d060','#205030',`BB${amt}`],
-    won:     ['#282200','#ffe040','#504400', `★ WON${amt}`],
+    won:     ['#282200','#ffe040','#504400', `★ ${t('visualizer.wonBadge')}${amt}`],
   }
   if (map[action.type]) {
     const [bg,color,border,label] = map[action.type]
@@ -1254,7 +1254,7 @@ export default function Visualizer() {
                 : posLabel === 'HJ'  ? { background:'#102040', color:'#6090d0' }
                 : { background:'#101828', color:'#4a6878' }
 
-              const ab = isActive && activeAction ? badgeInfo(activeAction, fmt) : null
+              const ab = isActive && activeAction ? badgeInfo(activeAction, fmt, t) : null
 
               return (
                 <div key={seat.num} style={{

@@ -326,6 +326,7 @@ export default {
     level: 'Nivel',
     table: 'Mesa',
     tie: 'Empate',
+    wonBadge: 'GANÓ',
     handRanks: ['Carta alta', 'Pareja', 'Doble pareja', 'Trío', 'Escalera', 'Color', 'Full', 'Póquer', 'Escalera de color', 'Escalera real'],
     totalPot: 'Bote total',
     notes: 'NOTAS',

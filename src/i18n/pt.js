@@ -325,6 +325,7 @@ export default {
     level: 'Nível',
     table: 'Mesa',
     tie: 'Empate',
+    wonBadge: 'GANHOU',
     handRanks: ['Carta alta', 'Par', 'Dois pares', 'Trinca', 'Sequência', 'Flush', 'Full house', 'Quadra', 'Straight flush', 'Royal flush'],
     totalPot: 'Pote total',
     notes: 'NOTAS',
