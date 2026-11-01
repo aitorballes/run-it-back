@@ -11,6 +11,7 @@ import psIcon from '../assets/pokerstars.png'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseFile } from '../lib/parser'
+import { isUploadable, expandUploads, filesFromDrop } from '../lib/uploadFiles'
 import { supportsFolderAccess, listLinkedFolders, saveLinkedFolder, removeLinkedFolder, pickFolder, ensurePermission, collectTxtFiles } from '../lib/folderSync'
 import { importHandHistories, fetchTournaments, deleteTournament, generateShareToken, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
 import StudyModal from '../components/StudyModal'
@@ -621,15 +622,30 @@ export default function Dashboard() {
   }
 
   async function handleFiles(fileList) {
-    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
-    const files = Array.from(fileList).filter(f => {
-      if (f.size > MAX_FILE_SIZE) {
-        setUploadStatus({ ok: false, message: t('dashboard.import.fileTooBig', { name: f.name, mb: 10 }) })
-        setTimeout(() => setUploadStatus(null), 4000)
-        return false
-      }
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB por .txt
+    const MAX_ZIP_SIZE  = 50 * 1024 * 1024 // 50 MB por .zip
+    const tooBig = (f, max) => {
+      if (f.size <= max) return false
+      setUploadStatus({ ok: false, message: t('dashboard.import.fileTooBig', { name: f.name, mb: max / 1024 / 1024 }) })
+      setTimeout(() => setUploadStatus(null), 4000)
       return true
-    })
+    }
+    const uploads = Array.from(fileList).filter(isUploadable)
+    if (fileList.length && !uploads.length) {
+      setUploadStatus({ ok: false, message: t('dashboard.import.noValidFiles') })
+      setTimeout(() => setUploadStatus(null), 4000)
+      return null
+    }
+    let files
+    try {
+      files = (await expandUploads(uploads.filter(f => !tooBig(f, MAX_ZIP_SIZE))))
+        .filter(f => !tooBig(f, MAX_FILE_SIZE))
+    } catch (err) {
+      console.error(err)
+      setUploadStatus({ ok: false, message: t('dashboard.import.zipError') })
+      setTimeout(() => setUploadStatus(null), 4000)
+      return null
+    }
     if (!files.length) return null
     setShowImport(false)
     setUploading(true)
@@ -729,10 +745,10 @@ export default function Dashboard() {
     setLinkedFolders(prev => prev.filter(f => f.id !== folder.id))
   }
 
-  function handleDrop(e) {
+  async function handleDrop(e) {
     e.preventDefault()
     setDragOver(false)
-    const files = e.dataTransfer.files
+    const files = await filesFromDrop(e.dataTransfer)
     if (files.length) handleFiles(files)
   }
 
@@ -903,7 +919,7 @@ export default function Dashboard() {
       {/* HEADER */}
       <div style={s.header}>
         <div style={s.headerInner}>
-          <input ref={fileInputRef} type="file" accept=".txt" multiple style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
+          <input ref={fileInputRef} type="file" accept=".txt,.zip" multiple style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
           <input ref={folderInputRef} type="file" webkitdirectory="" style={{ display: 'none' }}
             onChange={e => { handleFiles(Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.txt'))); e.target.value = '' }} />
           <div style={s.headerLeft}>
@@ -1403,6 +1419,7 @@ export default function Dashboard() {
                 </svg>
                 <span style={{ fontSize: 14, fontWeight: 700 }}>{t('dashboard.import.dropHere')}</span>
                 <span style={{ fontSize: 12, color: '#2a5070' }}>{t('dashboard.import.dropHint')}</span>
+                <span style={{ fontSize: 12, color: '#2a5070' }}>{t('dashboard.import.dropZipHint')}</span>
               </div>
 
               {/* Separador */}

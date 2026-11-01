@@ -212,6 +212,7 @@ export default {
       title: 'Import tournaments',
       dropHere: 'Drop your files here',
       dropHint: '.txt from GGPoker, Winamax, PokerStars, 888poker…',
+      dropZipHint: 'Also .zip files (like PokerCraft downloads) and whole folders',
       browse: 'Browse my computer',
       progress: '{current}/{total} tournaments',
       fileTooBig: 'The file "{name}" exceeds the {mb} MB limit.',
@@ -220,6 +221,8 @@ export default {
       summaries: ({ n }) => `${plural(n, 'summary', 'summaries')} applied`,
       noChanges: 'No changes',
       processError: 'Error processing the files.',
+      noValidFiles: 'Only .txt or .zip files are supported.',
+      zipError: 'Could not read the ZIP file.',
     },
     folders: {
       title: 'Poker room folders',

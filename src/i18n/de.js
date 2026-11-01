@@ -212,6 +212,7 @@ export default {
       title: 'Turniere importieren',
       dropHere: 'Dateien hierher ziehen',
       dropHint: '.txt von GGPoker, Winamax, PokerStars, 888poker…',
+      dropZipHint: 'Auch .zip-Dateien (z. B. PokerCraft-Downloads) und ganze Ordner',
       browse: 'Auf meinem Computer suchen',
       progress: '{current}/{total} Turniere',
       fileTooBig: 'Die Datei „{name}“ überschreitet das Limit von {mb} MB.',
@@ -220,6 +221,8 @@ export default {
       summaries: ({ n }) => `${plural(n, 'Zusammenfassung', 'Zusammenfassungen')} übernommen`,
       noChanges: 'Keine Änderungen',
       processError: 'Fehler beim Verarbeiten der Dateien.',
+      noValidFiles: 'Nur .txt- oder .zip-Dateien werden unterstützt.',
+      zipError: 'Die ZIP-Datei konnte nicht gelesen werden.',
     },
     folders: {
       title: 'Pokerraum-Ordner',

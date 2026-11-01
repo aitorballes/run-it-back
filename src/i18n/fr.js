@@ -212,6 +212,7 @@ export default {
       title: 'Importer des tournois',
       dropHere: 'Déposez vos fichiers ici',
       dropHint: '.txt de GGPoker, Winamax, PokerStars, 888poker…',
+      dropZipHint: 'Aussi des .zip (comme ceux de PokerCraft) et des dossiers entiers',
       browse: 'Parcourir mon ordinateur',
       progress: '{current}/{total} tournois',
       fileTooBig: 'Le fichier « {name} » dépasse la limite de {mb} Mo.',
@@ -220,6 +221,8 @@ export default {
       summaries: ({ n }) => `${n} ${n > 1 ? 'résumés appliqués' : 'résumé appliqué'}`,
       noChanges: 'Aucun changement',
       processError: 'Erreur lors du traitement des fichiers.',
+      noValidFiles: 'Seuls les fichiers .txt ou .zip sont acceptés.',
+      zipError: 'Impossible de lire le fichier ZIP.',
     },
     folders: {
       title: 'Dossiers des salles',
