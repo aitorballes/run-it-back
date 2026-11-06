@@ -1263,7 +1263,7 @@ export default function Visualizer() {
                     </div>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:5, marginTop:2 }}>
                       <span style={{ fontSize:13, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700 }}>
-                        {seat.stackUnknown && !seat.allin ? '?' : fmt(stacks.get(seat.player) ?? seat.chips)}
+                        {seat.stackUnknown && !seat.allin ? '' : fmt(stacks.get(seat.player) ?? seat.chips)}
                       </span>
                       {seat.bounty != null && (
                         <span style={bountyStyle} title="Bounty">{fmtBounty(seat.bounty, hand.bountyCurrency)}</span>
