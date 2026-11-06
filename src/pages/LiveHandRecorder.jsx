@@ -15,6 +15,7 @@ import LiveTable from '../components/table/LiveTable'
 import CardPicker from '../components/table/CardPicker'
 import { Card, CardBack } from '../components/table/Cards'
 import { base } from '../components/liveStyles'
+import { useVisualViewport } from '../components/useVisualViewport'
 
 const TABLE_SIZES = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 const STREET_KEYS = { flop: 'live.hand.flop', turn: 'live.hand.turn', river: 'live.hand.river' }
@@ -567,9 +568,17 @@ function SeatSheet({ i, setup, layout, t, notes, noteFor, storeNote, onChange, o
     onClose()
   }
 
+  // Keep the sheet inside the part of the screen the keyboard leaves visible, and the focused field in view
+  const vv = useVisualViewport()
+  const fit = vv ? { inset: 'auto', left: 0, right: 0, top: vv.top, height: vv.height } : null
+  function reveal(e) {
+    const el = e.target
+    if (el.matches('input:not([type=checkbox]), textarea')) setTimeout(() => el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 300)
+  }
+
   return (
-    <div style={s.backdrop} onClick={close}>
-      <div style={s.sheet} onClick={e => e.stopPropagation()}>
+    <div style={{ ...s.backdrop, ...fit }} onClick={close}>
+      <div style={s.sheet} onClick={e => e.stopPropagation()} onFocus={reveal}>
         <div style={base.cardTitle}>{isHero ? t('live.hand.me') : t('live.hand.seatTitle', { pos: layout.labels[i] })}</div>
         {!isHero && (
           <Field label={t('live.hand.rivalName')}>
@@ -679,5 +688,6 @@ const s = {
   sheet: {
     ...base.card, width: '100%', maxWidth: 560, borderRadius: '16px 16px 0 0',
     padding: '18px 16px calc(18px + env(safe-area-inset-bottom))',
+    maxHeight: '100%', overflowY: 'auto', overscrollBehavior: 'contain', boxSizing: 'border-box',
   },
 }
