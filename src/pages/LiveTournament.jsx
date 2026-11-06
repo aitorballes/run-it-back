@@ -26,6 +26,7 @@ export default function LiveTournament() {
   const [tour, setTour]   = useState(null)
   const [status, setStatus] = useState('loading') // loading | ready | notFound | error
   const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [now, setNow]     = useState(() => Date.now())
 
   // Update form
@@ -239,7 +240,7 @@ export default function LiveTournament() {
   }
 
   async function handleDelete() {
-    if (!window.confirm(t('live.deleteConfirm'))) return
+    setConfirmDelete(false)
     try {
       // Its tournaments row goes too, with the recorded hands
       if (tour.tournament_db_id) await deleteTournament(tour.tournament_db_id, tour.user_id)
@@ -484,18 +485,18 @@ export default function LiveTournament() {
         {running && (
           <form style={base.card} onSubmit={addBreak}>
             <div style={base.cardTitle}>☕ {t('live.structure.addBreak')}</div>
-            <div style={base.row}>
-              <label style={{ ...base.field, flex: '1 1 80px', minWidth: 0 }}>
+            <div style={s.breakGrid}>
+              <label style={{ ...base.field, minWidth: 0 }}>
                 <span style={base.label}>{t('live.structure.afterLevel')}</span>
                 <input style={base.input} inputMode="numeric" value={brk.after} placeholder={String(levelNo)}
                   onChange={e => setBrk(b => ({ ...b, after: e.target.value }))} />
               </label>
-              <label style={{ ...base.field, flex: '1 1 80px', minWidth: 0 }}>
+              <label style={{ ...base.field, minWidth: 0 }}>
                 <span style={base.label}>{t('live.structure.breakMinutes')}</span>
                 <input style={base.input} inputMode="numeric" value={brk.minutes}
                   onChange={e => setBrk(b => ({ ...b, minutes: e.target.value }))} />
               </label>
-              <label style={{ ...base.field, flex: '1 1 80px', minWidth: 0 }}>
+              <label style={{ ...base.field, minWidth: 0, gridColumn: '1 / -1' }}>
                 <span style={base.label}>{t('live.structure.every')}</span>
                 <input style={base.input} inputMode="numeric" value={brk.every} placeholder={t('live.structure.optional')}
                   onChange={e => setBrk(b => ({ ...b, every: e.target.value }))} />
@@ -677,11 +678,22 @@ export default function LiveTournament() {
           </form>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <button style={{ ...base.ghostBtn, color: '#e07070', border: '1px solid rgba(160,30,30,0.35)' }} onClick={handleDelete}>
-            {t('live.delete')}
-          </button>
-        </div>
+        {/* In-app confirmation: mobile browsers can silence window.confirm */}
+        {confirmDelete ? (
+          <div style={s.confirmBox}>
+            <div style={s.confirmText}>{t('live.deleteConfirm')}</div>
+            <div style={{ ...base.actions, justifyContent: 'center' }}>
+              <button style={base.ghostBtn} onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</button>
+              <button style={s.confirmDeleteBtn} onClick={handleDelete}>{t('live.delete')}</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <button style={{ ...base.ghostBtn, color: '#e07070', border: '1px solid rgba(160,30,30,0.35)' }} onClick={() => setConfirmDelete(true)}>
+              {t('live.delete')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -836,4 +848,14 @@ const s = {
   },
   resultMain: { fontSize: 22, fontWeight: 900, color: '#50d080' },
   resultPrize: { fontSize: 14, fontWeight: 700, color: '#c8e8d0' },
+  breakGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, alignItems: 'end' },
+  confirmBox: {
+    display: 'flex', flexDirection: 'column', gap: 12, padding: '14px 16px', borderRadius: 12,
+    background: 'rgba(160,30,30,0.12)', border: '1px solid rgba(160,30,30,0.4)',
+  },
+  confirmText: { fontSize: 14, fontWeight: 700, color: '#f0b0b0', textAlign: 'center', lineHeight: 1.4 },
+  confirmDeleteBtn: {
+    background: 'linear-gradient(135deg, #a02828 0%, #701818 100%)', border: '1px solid #c04040', borderRadius: 9,
+    padding: '10px 18px', color: '#ffe0e0', fontSize: 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap',
+  },
 }
