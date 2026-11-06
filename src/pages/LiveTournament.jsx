@@ -27,6 +27,7 @@ export default function LiveTournament() {
   const [status, setStatus] = useState('loading') // loading | ready | notFound | error
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmNextDay, setConfirmNextDay] = useState(false)
   const [now, setNow]     = useState(() => Date.now())
 
   // Update form
@@ -144,7 +145,7 @@ export default function LiveTournament() {
 
   // A new day starts with the clock paused, keeping the time left in the level
   function nextDay() {
-    if (!window.confirm(t('live.nextDayConfirm', { n: day + 1 }))) return
+    setConfirmNextDay(false)
     patch({ day: day + 1, paused_remaining: remaining, level_ends_at: null })
   }
 
@@ -669,12 +670,22 @@ export default function LiveTournament() {
                 <input style={base.input} inputMode="decimal" value={finishPrize} onChange={e => setFinishPrize(e.target.value)} placeholder="0" />
               </label>
             </div>
-            <div style={{ ...base.actions, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-              <button type="button" style={base.ghostBtn} onClick={nextDay} title={t('live.nextDayTitle', { n: day + 1 })}>
-                🌙 {t('live.nextDay')}
-              </button>
-              <button style={base.btn} type="submit">{t('live.finish.button')}</button>
-            </div>
+            {confirmNextDay ? (
+              <div style={s.dayConfirmBox}>
+                <div style={s.dayConfirmText}>{t('live.nextDayConfirm', { n: day + 1 })}</div>
+                <div style={{ ...base.actions, justifyContent: 'center' }}>
+                  <button type="button" style={base.ghostBtn} onClick={() => setConfirmNextDay(false)}>{t('common.cancel')}</button>
+                  <button type="button" style={base.btn} onClick={nextDay}>🌙 {t('live.nextDayTitle', { n: day + 1 })}</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ ...base.actions, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                <button type="button" style={base.ghostBtn} onClick={() => setConfirmNextDay(true)} title={t('live.nextDayTitle', { n: day + 1 })}>
+                  🌙 {t('live.nextDay')}
+                </button>
+                <button style={base.btn} type="submit">{t('live.finish.button')}</button>
+              </div>
+            )}
           </form>
         )}
 
@@ -858,4 +869,9 @@ const s = {
     background: 'linear-gradient(135deg, #a02828 0%, #701818 100%)', border: '1px solid #c04040', borderRadius: 9,
     padding: '10px 18px', color: '#ffe0e0', fontSize: 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap',
   },
+  dayConfirmBox: {
+    display: 'flex', flexDirection: 'column', gap: 12, padding: '14px 16px', borderRadius: 12,
+    background: 'rgba(30,92,173,0.12)', border: '1px solid #2a4a80',
+  },
+  dayConfirmText: { fontSize: 14, fontWeight: 700, color: '#c8d8f0', textAlign: 'center', lineHeight: 1.4 },
 }
