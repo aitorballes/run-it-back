@@ -7,6 +7,10 @@ import Tournament from './pages/Tournament'
 import Visualizer from './pages/Visualizer'
 import ResetPassword from './pages/ResetPassword'
 import Profile from './pages/Profile'
+import LiveTournaments from './pages/LiveTournaments'
+import LiveTournament from './pages/LiveTournament'
+import LiveHandRecorder from './pages/LiveHandRecorder'
+import PlayerNotes from './pages/PlayerNotes'
 
 function PrivateRoute({ children }) {
   const { user } = useAuth()
@@ -25,6 +29,11 @@ function AppRoutes() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
       <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
+      <Route path="/live" element={<PrivateRoute><LiveTournaments /></PrivateRoute>} />
+      <Route path="/live/players" element={<PrivateRoute><PlayerNotes /></PrivateRoute>} />
+      <Route path="/live/:id" element={<PrivateRoute><LiveTournament /></PrivateRoute>} />
+      <Route path="/live/:id/hand/new" element={<PrivateRoute><LiveHandRecorder /></PrivateRoute>} />
+      <Route path="/live/:id/hand/:handDbId" element={<PrivateRoute><LiveHandRecorder /></PrivateRoute>} />
       <Route path="/tournament/:id" element={<PrivateRoute><Visualizer /></PrivateRoute>} />
       <Route path="/share/:token" element={<Visualizer />} />
       <Route path="/hand-share/:handToken" element={<Visualizer />} />

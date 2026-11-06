@@ -8,6 +8,8 @@ export const refreshTournamentHands = (tournament, userId) => importer.refreshTo
 export const saveTournament = (tournament, userId) => importer.saveTournament(supabase, tournament, userId)
 export const updateTournamentSummary = (tournamentId, userId, data) => importer.updateTournamentSummary(supabase, tournamentId, userId, data)
 export const importHandHistories = (userId, texts, options) => importer.importHandHistories(supabase, userId, texts, options)
+export const insertLiveHand = (hand, tournamentDbId) => importer.insertLiveHand(supabase, hand, tournamentDbId)
+export const updateLiveHand = (hand, handDbId, tournamentDbId) => importer.updateLiveHand(supabase, hand, handDbId, tournamentDbId)
 
 export async function fetchTournaments(userId) {
   const PAGE = 1000
@@ -653,5 +655,186 @@ export async function uploadAvatar(userId, blob) {
 
 export async function removeAvatar(userId) {
   const { error } = await supabase.storage.from('avatars').remove([avatarPath(userId)])
+  if (error) throw error
+}
+
+
+// ── Live tournaments (table "live_tournaments", see scripts/migrate-live-tournaments.sql) ──
+
+export async function fetchLiveTournaments(userId) {
+  const { data, error } = await supabase
+    .from('live_tournaments')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchLiveTournament(id) {
+  const { data, error } = await supabase.from('live_tournaments').select('*').eq('id', id).maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function createLiveTournament(userId, fields) {
+  const { data, error } = await supabase
+    .from('live_tournaments')
+    .insert({ ...fields, user_id: userId })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateLiveTournament(id, patch) {
+  const { error } = await supabase
+    .from('live_tournaments')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteLiveTournament(id) {
+  const { error } = await supabase.from('live_tournaments').delete().eq('id', id)
+  if (error) throw error
+}
+
+// Each live tournament gets a row in "tournaments" (platform 'live') so its hands live in "hands"
+// like any imported tournament. Needs scripts/migrate-live-hands.sql; errors are swallowed so the
+// live tracker keeps working if the migration hasn't been run yet.
+function liveTournamentFields(live) {
+  return {
+    name: `${live.name} · ${live.venue}`,
+    buyin: live.buyin,
+    players: live.entries,
+    finish_position: live.finish_position ?? null,
+    prize_won: live.prize_won ?? null,
+  }
+}
+
+export async function ensureLiveTournamentRow(live) {
+  if (!live) return null
+  if (live.tournament_db_id) return live.tournament_db_id
+  try {
+    const tournamentId = `live-${live.id}`
+    // Reuse a row left by an earlier attempt (or a double-mounted effect) before inserting
+    const { data: existing } = await supabase
+      .from('tournaments').select('id')
+      .eq('user_id', live.user_id).eq('tournament_id', tournamentId)
+      .maybeSingle()
+    let dbId = existing?.id
+    if (!dbId) {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .insert({
+          user_id: live.user_id,
+          tournament_id: tournamentId,
+          date: live.created_at,
+          platform: 'live',
+          entries: 1,
+          hands_count: 0,
+          ...liveTournamentFields(live),
+        })
+        .select('id')
+        .single()
+      if (error) throw error
+      dbId = data.id
+    }
+    const { error: linkError } = await supabase
+      .from('live_tournaments').update({ tournament_db_id: dbId }).eq('id', live.id)
+    if (linkError) throw linkError
+    return dbId
+  } catch (e) {
+    console.warn('ensureLiveTournamentRow:', e?.message ?? e)
+    return null
+  }
+}
+
+export async function syncLiveTournamentRow(live) {
+  if (!live?.tournament_db_id) return
+  try {
+    const { error } = await supabase
+      .from('tournaments').update(liveTournamentFields(live)).eq('id', live.tournament_db_id)
+    if (error) throw error
+  } catch (e) {
+    console.warn('syncLiveTournamentRow:', e?.message ?? e)
+  }
+}
+
+// Map tournaments.id → { id, status } of the live tournament linked to it
+export async function fetchLiveIdsByTournamentDbId(userId) {
+  const map = new Map()
+  try {
+    const { data, error } = await supabase
+      .from('live_tournaments')
+      .select('id, status, tournament_db_id')
+      .eq('user_id', userId)
+      .not('tournament_db_id', 'is', null)
+    if (error) throw error
+    for (const row of data ?? []) map.set(row.tournament_db_id, { id: row.id, status: row.status })
+  } catch (e) {
+    console.warn('fetchLiveIdsByTournamentDbId:', e?.message ?? e)
+  }
+  return map
+}
+
+
+// ── Live hands (rows in `hands` under the live tournament's `tournaments` row) ──
+
+export async function fetchLiveHands(tournamentDbId) {
+  const { data, error } = await supabase
+    .from('hands').select('id, raw, hand_datetime')
+    .eq('tournament_id', tournamentDbId)
+    .order('hand_datetime', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchLiveHand(handDbId) {
+  const { data, error } = await supabase.from('hands').select('id, raw, tournament_id').eq('id', handDbId).single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteLiveHand(handDbId, tournamentDbId) {
+  const deps = await Promise.all([
+    supabase.from('hand_reviews').delete().eq('hand_id', handDbId),
+    supabase.from('hand_notes').delete().eq('hand_id', handDbId),
+    supabase.from('review_list_hands').delete().eq('hand_id', handDbId),
+  ])
+  for (const r of deps) if (r.error) throw r.error
+  const { error } = await supabase.from('hands').delete().eq('id', handDbId)
+  if (error) throw error
+  await importer.refreshTournamentCounts(supabase, tournamentDbId)
+}
+
+// ── Notes on live players (table "player_notes", one per user and name, see scripts/migrate-live-hands.sql) ──
+
+export const playerNameKey = name => name.trim().toLowerCase().replace(/\s+/g, ' ')
+
+export async function fetchPlayerNotes(userId) {
+  const { data, error } = await supabase
+    .from('player_notes').select('id, name, name_key, note, last_venue, updated_at')
+    .eq('user_id', userId).order('updated_at', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+// Creates or updates the note for `name` (an empty note still keeps the player in the list)
+export async function savePlayerNote(userId, name, note, venue) {
+  const { data, error } = await supabase
+    .from('player_notes')
+    .upsert({
+      user_id: userId, name: name.trim(), name_key: playerNameKey(name), note,
+      ...(venue ? { last_venue: venue } : null), updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,name_key' })
+    .select('id, name, name_key, note, last_venue, updated_at').single()
+  if (error) throw error
+  return data
+}
+
+export async function deletePlayerNote(id) {
+  const { error } = await supabase.from('player_notes').delete().eq('id', id)
   if (error) throw error
 }

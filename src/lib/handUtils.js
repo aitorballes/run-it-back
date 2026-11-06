@@ -25,7 +25,7 @@ export function heroFoldedPreflop(hand) {
 export function heroNet(hand) {
   const heroSeat = hand.seats?.find(s => s.player === 'Hero')
   if (!heroSeat) return null
-  let inv = hand.ante || 0
+  let inv = hand.anteType === 'bb' ? (heroSeat.pos === 'BB' ? hand.ante || 0 : 0) : hand.ante || 0
   if (heroSeat.pos === 'SB') inv += hand.sb
   if (heroSeat.pos === 'BB') inv += hand.bb
   const all = [...(hand.actions?.preflop??[]), ...(hand.actions?.flop??[]),

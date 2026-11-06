@@ -76,7 +76,7 @@ function parseWinamaxAction(line) {
   return null
 }
 
-function buildSequence(hand) {
+export function buildSequence(hand) {
   const seq = []
   const streets = ['preflop', 'flop', 'turn', 'river']
 
@@ -1317,7 +1317,8 @@ export function groupByTournament(allHands) {
 export function calcHeroNet(hand) {
   const heroSeat = hand.seats.find(s => s.player === 'Hero')
   if (!heroSeat) return 0
-  let invested = hand.ante
+  // Live hands with a big blind ante: only the BB pays it
+  let invested = hand.anteType === 'bb' ? (heroSeat.pos === 'BB' ? hand.ante : 0) : hand.ante
   if (heroSeat.pos === 'SB') invested += hand.sb
   if (heroSeat.pos === 'BB') invested += hand.bb
   const allActs = [...hand.actions.preflop, ...hand.actions.flop, ...hand.actions.turn, ...hand.actions.river]
