@@ -3,6 +3,7 @@ import { strToU8, zipSync } from 'fflate'
 import { serializeTournament, serializeSummary } from '../lib/serializer'
 import { fetchTournamentsInRange, fetchHandsBatch } from '../lib/db'
 import ggIcon from '../assets/ggpoker.png'
+import liveIcon from '../assets/live.svg'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
 import coinIcon from '../assets/coinpoker.png'
@@ -13,7 +14,7 @@ import { useAuth } from '../context/AuthContext'
 import { parseFile } from '../lib/parser'
 import { isUploadable, expandUploads, filesFromDrop } from '../lib/uploadFiles'
 import { supportsFolderAccess, listLinkedFolders, saveLinkedFolder, removeLinkedFolder, pickFolder, ensurePermission, collectTxtFiles } from '../lib/folderSync'
-import { importHandHistories, fetchTournaments, deleteTournament, generateShareToken, fetchHandsByIds, fetchAllUserListHandIds } from '../lib/db'
+import { importHandHistories, fetchTournaments, deleteTournament, generateShareToken, fetchHandsByIds, fetchAllUserListHandIds, fetchLiveIdsByTournamentDbId } from '../lib/db'
 import StudyModal from '../components/StudyModal'
 import OnboardingTour from '../components/OnboardingTour'
 import Avatar from '../components/Avatar'
@@ -243,8 +244,8 @@ function CalendarWidget({ sessionGroups, onDayClick, selectedDay, monthOffset, o
 
 const formatMoney = n => n.toLocaleString(getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }
-const PLATFORM_NAMES = { ggpoker: 'GGPoker', winamax: 'Winamax', '888poker': '888poker', coinpoker: 'CoinPoker', ipoker: 'iPoker', pokerstars: 'PokerStars' }
+const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon, live: liveIcon }
+const PLATFORM_NAMES = { ggpoker: 'GGPoker', winamax: 'Winamax', '888poker': '888poker', coinpoker: 'CoinPoker', ipoker: 'iPoker', pokerstars: 'PokerStars', live: 'Live' }
 
 export default function Dashboard() {
   const { user, signOut, updateUserData } = useAuth()
@@ -257,6 +258,7 @@ export default function Dashboard() {
   const isAutoScrolling = useRef(false)
 
   const [tournaments,   setTournaments]   = useState([])
+  const [liveLinks,     setLiveLinks]     = useState(() => new Map()) // tournaments.id → { id, status } of its live tournament
   const [loading,       setLoading]       = useState(true)
   const [uploading,     setUploading]     = useState(false)
   const [uploadStatus,  setUploadStatus]  = useState(null)
@@ -612,8 +614,9 @@ export default function Dashboard() {
 
   async function loadTournaments() {
     try {
-      const data = await fetchTournaments(user.id)
+      const [data, links] = await Promise.all([fetchTournaments(user.id), fetchLiveIdsByTournamentDbId(user.id)])
       setTournaments(data)
+      setLiveLinks(links)
     } catch (e) {
       console.error(e)
     } finally {
@@ -936,6 +939,9 @@ export default function Dashboard() {
             ))}
           </div>
           <div style={s.headerRight}>
+            <button style={s.liveBtn} onClick={() => navigate('/live')} title={t('live.title')}>
+              <span style={s.liveDot} />{!isMobile && t('live.navButton')}
+            </button>
             <button style={s.studyBtn} data-tour="study" onClick={() => { setStudyInitialFilters(null); setShowStudy(true) }}>
               🎓 {t('study.title')}
             </button>
@@ -1146,7 +1152,10 @@ export default function Dashboard() {
                     {isExpanded && (
                       <div style={s.sessionRows}>
                         {items.map(tour => (
-                          <div key={tour.id} style={s.row} data-tour="tournament" onClick={() => navigate(`/tournament/${tour.id}`)}>
+                          <div key={tour.id} style={s.row} data-tour="tournament" onClick={() => {
+                            const live = tour.platform === 'live' ? liveLinks.get(tour.id) : null
+                            navigate(live?.status === 'running' ? `/live/${live.id}` : `/tournament/${tour.id}`)
+                          }}>
                             <img
                               src={PLATFORM_ICONS[tour.platform] ?? ggIcon}
                               alt={tour.platform || 'ggpoker'}
@@ -2388,6 +2397,29 @@ const s = {
   folderHint: { fontSize: 11, color: '#2a5070', lineHeight: 1.5, wordBreak: 'break-word' },
   dropZoneActive: {
     borderColor: '#60b0ff', background: 'rgba(20,60,140,0.12)', color: '#7ab0d8',
+  },
+  liveBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    background: 'linear-gradient(135deg, #3a1a1a, #200c0c)',
+    border: '1px solid #6a2a2a',
+    borderRadius: 8,
+    padding: '7px 14px',
+    color: '#f07070',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 2px 12px rgba(160,30,30,0.25)',
+    whiteSpace: 'nowrap',
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    background: '#ff4a4a',
+    boxShadow: '0 0 6px #ff4a4a',
+    flexShrink: 0,
   },
   studyBtn: {
     background: 'linear-gradient(135deg, #1a3a20, #0c2014)',

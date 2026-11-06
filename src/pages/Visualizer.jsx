@@ -5,24 +5,19 @@ import Avatar from '../components/Avatar'
 import Logo from '../components/Logo'
 import { useI18n, fmtNumber } from '../i18n/core'
 import { supabase } from '../lib/supabase'
-import { generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList, setTournamentReviewed } from '../lib/db'
+import { fetchPlayerNotes, playerNameKey, generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList, setTournamentReviewed } from '../lib/db'
 import { calculateEquity, evaluateShowdown } from '../lib/equityCalculator'
 import StudyModal from '../components/StudyModal'
+import { Card, CardBack } from '../components/table/Cards'
+import { getCardImage, SUITS, COLORS, RANKS, SUIT_BG } from '../components/table/cardAssets'
+import { seatPositions, feltStyle, CX, CY, RX, RY } from '../components/table/geometry'
 import ggIcon from '../assets/ggpoker.png'
+import liveIcon from '../assets/live.svg'
 import wmIcon from '../assets/winamax.png'
 import icon888 from '../assets/888poker.png'
 import coinIcon from '../assets/coinpoker.png'
 import ipokerIcon from '../assets/ipoker.png'
 import psIcon from '../assets/pokerstars.png'
-
-// ── Card image assets ──────────────────────────────────────────────────
-const cardImages = import.meta.glob('../assets/card_deck/*.png', { eager: true })
-function getCardImage(code) {
-  if (!code) return null
-  const rank = code.slice(0, -1)
-  const suit = code.slice(-1).toLowerCase()
-  return cardImages[`../assets/card_deck/${rank}${suit}.png`]?.default ?? null
-}
 
 // ── Constants ─────────────────────────────────────────────────────────
 function fmtBounty(amount, currency = '€') {
@@ -30,17 +25,12 @@ function fmtBounty(amount, currency = '€') {
   return currency === '€' ? `${n}€` : `${currency}${n}`
 }
 
-const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon }
+const PLATFORM_ICONS = { ggpoker: ggIcon, winamax: wmIcon, '888poker': icon888, coinpoker: coinIcon, ipoker: ipokerIcon, pokerstars: psIcon, live: liveIcon }
 
-const SUITS       = { h: '♥', d: '♦', s: '♠', c: '♣' }
-const COLORS      = { h: 'hearts', d: 'diamonds', s: 'spades', c: 'clubs' }
-const RANKS       = { T: '10', J: 'J', Q: 'Q', K: 'K', A: 'A' }
-const SUIT_BG     = { hearts: '#c0202a', diamonds: '#1a50c8', spades: '#222230', clubs: '#1a8a2a' }
 const STREET_ORDER = ['preflop', 'flop', 'turn', 'river']
 const STREET_LABEL = { preflop: 'Preflop', flop: 'Flop', turn: 'Turn', river: 'River' }
 const DECK_RANKS   = ['A','K','Q','J','T','9','8','7','6','5','4','3','2']
 const DECK_SUITS   = ['s','h','d','c']
-const CX = 400, CY = 270, RX = 368, RY = 228
 
 // ── Range grid ────────────────────────────────────────────────────────
 const GRID_RANKS = ['A','K','Q','J','T','9','8','7','6','5','4','3','2']
@@ -162,13 +152,6 @@ function useVirtualList(itemCount, rowHeight, overscan = 8) {
   return { containerRef, onScroll, startIndex, endIndex, totalHeight: itemCount * rowHeight, scrollToTop }
 }
 
-function seatPositions(n) {
-  return Array.from({ length: n }, (_, i) => {
-    const rad = (180 + 360 * i / n) * Math.PI / 180
-    return { x: CX + RX * Math.sin(rad), y: CY - RY * Math.cos(rad) }
-  })
-}
-
 function getFoldedByStep(hand, upTo) {
   const s = new Set()
   for (let i = 0; i < upTo; i++) {
@@ -226,8 +209,8 @@ function getPotByStep(hand, stepIdx) {
     }
   }
 
-  // Antes are not in the sequence — approximate with ante × seats
-  if (hand.ante > 0) pot += hand.ante * hand.seats.length
+  // Antes are not in the sequence — ante × seats, or a single big blind ante (live hands)
+  if (hand.ante > 0) pot += hand.anteType === 'bb' ? hand.ante : hand.ante * hand.seats.length
 
   return pot
 }
@@ -235,7 +218,8 @@ function getPotByStep(hand, stepIdx) {
 function getStacksByStep(hand, stepIdx) {
   const stacks = new Map()
   for (const seat of hand.seats) {
-    stacks.set(seat.player, seat.chips - (hand.ante > 0 ? hand.ante : 0))
+    const ante = hand.ante > 0 && (hand.anteType !== 'bb' || seat.pos === 'BB') ? hand.ante : 0
+    stacks.set(seat.player, seat.chips - ante)
   }
   if (!hand.sequence.length || stepIdx < 0) return stacks
 
@@ -295,7 +279,7 @@ function heroFoldedPreflop(hand) {
 function heroNet(hand) {
   const heroSeat = hand.seats.find(s => s.player === 'Hero')
   if (!heroSeat) return null
-  let inv = hand.ante
+  let inv = hand.anteType === 'bb' ? (heroSeat.pos === 'BB' ? hand.ante : 0) : hand.ante
   if (heroSeat.pos === 'SB') inv += hand.sb
   if (heroSeat.pos === 'BB') inv += hand.bb
   const all = [...hand.actions.preflop, ...hand.actions.flop, ...hand.actions.turn, ...hand.actions.river]
@@ -317,47 +301,6 @@ function RevealCard({ code, revealing, used }) {
   return (
     <div style={{ transition:'transform .25s, opacity .25s, filter .25s', ...style }}>
       <Card code={code} size="lg" />
-    </div>
-  )
-}
-
-function Card({ code, size = 'sm' }) {
-  if (!code) return null
-  const img = getCardImage(code)
-  const d = { sm: [44,62], md: [58,82], lg: [70,98] }[size]
-  if (img) {
-    return (
-      <img src={img} alt={code} width={d[0]} height={d[1]}
-        style={{ borderRadius:7, boxShadow:'0 2px 6px rgba(0,0,0,0.6)', flexShrink:0, display:'block' }} />
-    )
-  }
-  // Fallback: render CSS card if image not found
-  const rank = code.slice(0, -1)
-  const suit = code.slice(-1).toLowerCase()
-  const r  = RANKS[rank] || rank
-  const s  = SUITS[suit] || suit
-  const bg = SUIT_BG[COLORS[suit]] || '#222'
-  const fd = { sm: [44,62,26,13,4], md: [58,82,36,16,5], lg: [70,98,44,19,6] }[size]
-  return (
-    <div style={{ width:fd[0], height:fd[1], background:bg, borderRadius:7, border:'1px solid rgba(0,0,0,0.3)',
-      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-      fontWeight:900, lineHeight:1, boxShadow:'0 2px 6px rgba(0,0,0,0.6)', userSelect:'none',
-      position:'relative', color:'#fff', flexShrink:0 }}>
-      <div style={{ position:'absolute', top:fd[4], left:fd[4]+1, fontSize:fd[3], fontWeight:900, lineHeight:1 }}>{r}</div>
-      <span style={{ fontSize:fd[2], lineHeight:1 }}>{s}</span>
-    </div>
-  )
-}
-
-function CardBack({ size = 'sm' }) {
-  const d = { sm:[44,62], md:[58,82], lg:[70,98] }[size]
-  return (
-    <div style={{ width:d[0], height:d[1], flexShrink:0, borderRadius:7, position:'relative', overflow:'hidden',
-      background:'linear-gradient(145deg, #a01818 0%, #6a0c0c 50%, #460808 100%)',
-      border:'2px solid #801010',
-      boxShadow:'0 2px 8px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,80,80,.15)' }}>
-      <div style={{ position:'absolute', inset:4, border:'1px solid rgba(200,60,60,0.25)', borderRadius:3 }} />
-      <div style={{ position:'absolute', inset:7, border:'1px solid rgba(200,60,60,0.15)', borderRadius:2 }} />
     </div>
   )
 }
@@ -417,6 +360,9 @@ export default function Visualizer() {
   const noteDebounceRef = useRef()
 
   const [handNotes,   setHandNotes]   = useState({})
+  // Live hands: the viewer's notes on the players at the table (player_notes), shown when tapping a seat
+  const [playerNotes, setPlayerNotes] = useState(() => new Map())
+  const [openNote,    setOpenNote]    = useState(null)
   const [noteSaved,   setNoteSaved]   = useState(true)
   const textareaRef = useRef()
 
@@ -560,6 +506,9 @@ export default function Visualizer() {
           .map(r => ({ ...r.raw, _dbId: r.id }))
           .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''))
         setHands(sorted)
+        // Opened from a live tournament's hand list: start on that hand
+        const startIdx = location.state?.handDbId ? sorted.findIndex(h => h._dbId === location.state.handDbId) : -1
+        if (startIdx > 0) setCurIdx(startIdx)
         if (user && sorted.length > 0) {
           fetchUserReviewLists(user.id).then(setUserLists)
           const ids = sorted.map(h => h._dbId)
@@ -575,6 +524,14 @@ export default function Visualizer() {
     }
     load()
   }, [id, token, handToken])
+
+  const hasLiveHands = hands.some(h => h.platform === 'live')
+  useEffect(() => {
+    if (!user || !hasLiveHands) return
+    fetchPlayerNotes(user.id)
+      .then(rows => setPlayerNotes(new Map(rows.filter(r => r.note).map(r => [r.name_key, r]))))
+      .catch(() => {}) // table missing until the migration runs
+  }, [user, hasLiveHands])
 
   // ── Rescale ──
   useEffect(() => {
@@ -1267,7 +1224,7 @@ export default function Visualizer() {
 
                   {/* Cards — opponents revealed at showdown or when all active players are all-in */}
                   <div style={{ display:'flex', gap:3 }}>
-                    {cards && (isHero || curStep === seq.length - 1 || allInRunout)
+                    {cards && (isHero || hand.revealHoleCards || curStep === seq.length - 1 || allInRunout)
                       ? cards.map((c,ci) => <RevealCard key={ci} code={c} revealing={revealing && !isShowdownLoser} used={showdownResult?.usedCards.has(c)} />)
                       : [0,1].map(ci => <CardBack key={ci} size="lg" />)}
                   </div>
@@ -1298,17 +1255,30 @@ export default function Visualizer() {
                     boxShadow: isWinner ? '0 0 14px rgba(200,168,0,0.4)' : isActive ? '0 0 10px rgba(60,130,220,0.35)' : '0 2px 8px rgba(0,0,0,0.6)' }}>
                     <div style={{ fontSize:11, fontWeight:800, color: isHero ? '#ffe566' : '#c8d4e8',
                       whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:96 }}>
+                      {!isHero && hand.platform === 'live' && playerNotes.has(playerNameKey(seat.player)) && (
+                        <span style={{ color:'#f0c070', cursor:'pointer' }} title={playerNotes.get(playerNameKey(seat.player)).note}
+                          onClick={() => setOpenNote(n => (n === seat.player ? null : seat.player))}>✎ </span>
+                      )}
                       {isHero ? `★ ${heroLabel}` : seat.player.slice(0,10)}
                     </div>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:5, marginTop:2 }}>
                       <span style={{ fontSize:13, color: isAllin ? '#ff7070' : '#50e080', fontWeight:700 }}>
-                        {fmt(stacks.get(seat.player) ?? seat.chips)}
+                        {seat.stackUnknown && !seat.allin ? '?' : fmt(stacks.get(seat.player) ?? seat.chips)}
                       </span>
                       {seat.bounty != null && (
                         <span style={bountyStyle} title="Bounty">{fmtBounty(seat.bounty, hand.bountyCurrency)}</span>
                       )}
                     </div>
                   </div>
+
+                  {/* Note on this live player (tap ✎) */}
+                  {openNote === seat.player && playerNotes.has(playerNameKey(seat.player)) && (
+                    <div onClick={() => setOpenNote(null)} style={{ position:'absolute', top:'100%', zIndex:6, marginTop:4, width:180,
+                      background:'rgba(20,16,6,0.96)', border:'1px solid rgba(240,192,112,0.5)', borderRadius:8, padding:'7px 9px',
+                      fontSize:11, color:'#f0e0c0', lineHeight:1.4, whiteSpace:'pre-wrap', textAlign:'left', cursor:'pointer' }}>
+                      {playerNotes.get(playerNameKey(seat.player)).note}
+                    </div>
+                  )}
 
                   {/* Action badge */}
                   {ab && (
@@ -1833,10 +1803,7 @@ const ta = {
   info:      { display:'flex', flexDirection:'column', alignItems:'center', gap:3, flexShrink:0 },
   infoName:  { fontSize:15, fontWeight:800, color:'#90b8e0' },
   infoLevel: { fontSize:12, fontWeight:600, color:'#4a6a88' },
-  felt:      { position:'absolute', top:62, left:56, right:56, bottom:62,
-               background:'radial-gradient(ellipse at 50% 38%, #1e4070 0%, #102348 55%, #070f28 100%)',
-               borderRadius:'50%', border:'26px solid #080808',
-               boxShadow:'0 0 0 3px #1a1a1a, 0 0 0 4px #0a0a0a, 0 0 0 6px rgba(150,120,40,0.18), 0 20px 80px rgba(0,0,0,.98), inset 0 0 90px rgba(0,0,0,.35)' },
+  felt:      feltStyle,
   roomWatermark: { position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
                width:150, height:150, objectFit:'contain', borderRadius:28, opacity:0.1,
                filter:'grayscale(0.3)', pointerEvents:'none', userSelect:'none' },

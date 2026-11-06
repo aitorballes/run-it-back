@@ -159,6 +159,58 @@ async function insertHands(supabase, hands, tournamentDbId) {
   }
 }
 
+function actionRows(hand, dbHandId) {
+  const rows = []
+  for (const street of STREETS) {
+    for (const act of (hand.actions[street] || [])) {
+      rows.push({ hand_id: dbHandId, street, player: act.player, type: act.type, amount: act.amount, is_hero: act.player === 'Hero' })
+    }
+  }
+  return rows
+}
+
+// Live hands (recorded by hand at a live table, see liveHand.js): one hand at a time, into the
+// tournament's `tournaments` row. Returns the new hand's DB id.
+export async function insertLiveHand(supabase, hand, tournamentDbId) {
+  const { data, error } = await supabase
+    .from('hands').insert(buildHandRow(hand, tournamentDbId)).select('id').single()
+  if (error) throw error
+  const acts = actionRows(hand, data.id)
+  if (acts.length) {
+    const { error: actErr } = await supabase.from('actions').insert(acts)
+    if (actErr) throw actErr
+  }
+  await refreshTournamentCounts(supabase, tournamentDbId)
+  return data.id
+}
+
+// Rewrites an edited live hand in place (same DB id, so notes, review marks and share links survive)
+export async function updateLiveHand(supabase, hand, handDbId, tournamentDbId) {
+  const { tournament_id: _t, ...row } = buildHandRow(hand, tournamentDbId)
+  const { error } = await supabase.from('hands').update(row).eq('id', handDbId)
+  if (error) throw error
+  const { error: delErr } = await supabase.from('actions').delete().eq('hand_id', handDbId)
+  if (delErr) throw delErr
+  const acts = actionRows(hand, handDbId)
+  if (acts.length) {
+    const { error: actErr } = await supabase.from('actions').insert(acts)
+    if (actErr) throw actErr
+  }
+  await refreshTournamentCounts(supabase, tournamentDbId)
+}
+
+// hands_count / end_time of a tournament from its hands
+export async function refreshTournamentCounts(supabase, tournamentDbId) {
+  const { data, count, error } = await supabase
+    .from('hands').select('hand_datetime', { count: 'exact' })
+    .eq('tournament_id', tournamentDbId).order('hand_datetime', { ascending: false }).limit(1)
+  if (error) throw error
+  const { error: upErr } = await supabase.from('tournaments')
+    .update({ hands_count: count ?? 0, end_time: data?.[0]?.hand_datetime ?? null })
+    .eq('id', tournamentDbId)
+  if (upErr) throw upErr
+}
+
 // Re-import of an existing tournament: rewrite its hands in place (same DB ids) so notes,
 // review marks and share tokens survive, and add the hands that weren't imported yet (a
 // later re-entry, or an import made before the tournament ended). Returns the tournament DB id.
