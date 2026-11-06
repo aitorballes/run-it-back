@@ -85,7 +85,7 @@ export default function LiveTable({ seats, dealer, board, pot, potLabel, onSeatC
                   <div style={st.meta}>
                     <span style={st.pos}>{s.pos}</span>
                     <span style={{ color: s.allin ? '#ff7070' : '#50e080', fontWeight: 700 }}>
-                      {s.stackUnknown ? '?' : s.allin ? 'AI' : fmtNumber(s.stack ?? 0)}
+                      {s.allin ? 'AI' : s.stackUnknown ? '' : fmtNumber(s.stack ?? 0)}
                     </span>
                   </div>
                 </div>
