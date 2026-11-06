@@ -25,7 +25,8 @@ export async function fetchTournaments(userId) {
       .range(page * PAGE, (page + 1) * PAGE - 1)
     if (error) throw error
     if (!data?.length) break
-    results.push(...data)
+    // Live tournaments created before the date fix were saved as ISO dates
+    results.push(...data.map(t => (t.platform === 'live' && /^\d{4}-\d{2}-\d{2}T/.test(t.date ?? '') ? { ...t, date: toTournamentDate(t.date) } : t)))
     if (data.length < PAGE) break
     page++
   }
@@ -703,8 +704,17 @@ export async function deleteLiveTournament(id) {
 // Each live tournament gets a row in "tournaments" (platform 'live') so its hands live in "hands"
 // like any imported tournament. Needs scripts/migrate-live-hands.sql; errors are swallowed so the
 // live tracker keeps working if the migration hasn't been run yet.
+// Tournament dates are stored like the imported ones: local "YYYY/MM/DD HH:MM:SS" (the Dashboard groups by it)
+function toTournamentDate(value) {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
 function liveTournamentFields(live) {
   return {
+    date: toTournamentDate(live.created_at),
     name: `${live.name} · ${live.venue}`,
     buyin: live.buyin,
     players: live.entries,
@@ -730,7 +740,6 @@ export async function ensureLiveTournamentRow(live) {
         .insert({
           user_id: live.user_id,
           tournament_id: tournamentId,
-          date: live.created_at,
           platform: 'live',
           entries: 1,
           hands_count: 0,
