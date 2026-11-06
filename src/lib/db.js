@@ -38,6 +38,10 @@ export async function deleteAllTournaments(userId) {
   const TOUR_BATCH = 20
   const DEP_CHUNK  = 200
 
+  // Live tournaments go too (their FK to tournaments only sets the link to null)
+  const { error: liveError } = await supabase.from('live_tournaments').delete().eq('user_id', userId)
+  if (liveError) throw liveError
+
   const { data: tours, error: toursErr } = await supabase
     .from('tournaments')
     .select('id')
@@ -124,6 +128,12 @@ export async function deleteTournament(tournamentDbId, userId) {
     const { error } = await supabase.from('hands').delete().in('id', allHandIds.slice(i, i + HAND_BATCH))
     if (error) throw error
   }
+
+  // A live tournament linked to this row goes with it (its FK only sets the link to null)
+  let live = supabase.from('live_tournaments').delete().eq('tournament_db_id', tournamentDbId)
+  if (userId) live = live.eq('user_id', userId)
+  const { error: liveError } = await live
+  if (liveError) throw liveError
 
   let q = supabase.from('tournaments').delete().eq('id', tournamentDbId)
   if (userId) q = q.eq('user_id', userId)
