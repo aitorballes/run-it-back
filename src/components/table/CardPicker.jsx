@@ -22,26 +22,31 @@ export default function CardPicker({ title, count, initial = [], used, onDone, o
           <span style={st.title}>{title}</span>
           <span style={st.count}>{sel.length}/{count}</span>
         </div>
-        <div style={st.grid}>
-          {SUIT_ORDER.map(su => RANK_ORDER.map(r => {
-            const code = r + su
-            const on = sel.includes(code)
-            const disabled = used?.has(code) && !initial.includes(code)
-            return (
-              <button key={code} type="button" disabled={disabled} onClick={() => toggle(code)}
-                style={{
-                  ...st.card,
-                  background: disabled ? '#1a1f2a' : SUIT_COLOR[su],
-                  color: disabled ? '#3a4558' : '#fff',
-                  outline: on ? '2px solid #ffe566' : 'none',
-                  transform: on ? 'scale(1.06)' : 'none',
-                  cursor: disabled ? 'default' : 'pointer',
-                }}>
-                <span style={{ fontWeight: 900 }}>{r === 'T' ? '10' : r}</span>
-                <span style={{ fontSize: 10 }}>{SUITS[su]}</span>
-              </button>
-            )
-          }))}
+        {/* Each suit takes two rows of 7 (A–8, 7–2): cards big enough to tap on a phone */}
+        <div style={st.suits}>
+          {SUIT_ORDER.map(su => (
+            <div key={su} style={st.grid}>
+              {RANK_ORDER.map(r => {
+                const code = r + su
+                const on = sel.includes(code)
+                const disabled = used?.has(code) && !initial.includes(code)
+                return (
+                  <button key={code} type="button" disabled={disabled} onClick={() => toggle(code)}
+                    style={{
+                      ...st.card,
+                      background: disabled ? '#1a1f2a' : SUIT_COLOR[su],
+                      color: disabled ? '#3a4558' : '#fff',
+                      outline: on ? '3px solid #ffe566' : 'none',
+                      transform: on ? 'scale(1.06)' : 'none',
+                      cursor: disabled ? 'default' : 'pointer',
+                    }}>
+                    <span style={st.rank}>{r === 'T' ? '10' : r}</span>
+                    <span style={st.suit}>{SUITS[su]}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
         </div>
         <div style={st.actions}>
           {allowEmpty && <button type="button" style={st.ghost} onClick={() => onDone([])}>{clearLabel}</button>}
@@ -65,22 +70,27 @@ const st = {
     width: '100%', maxWidth: 560, background: '#111828', borderTop: '1px solid #2a3a52',
     borderRadius: '16px 16px 0 0', padding: '14px 12px calc(14px + env(safe-area-inset-bottom))',
     display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 -10px 40px rgba(0,0,0,0.6)',
+    maxHeight: '92dvh', boxSizing: 'border-box',
   },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontSize: 14, fontWeight: 800, color: '#c8d8f0' },
   count: { fontSize: 12, fontWeight: 700, color: '#5a8ab0' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(13, minmax(0, 1fr))', gap: 3 },
+  suits: { display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', minHeight: 0, padding: 4, margin: -4 },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 5 },
   card: {
-    border: 'none', borderRadius: 5, padding: '6px 0', fontSize: 12, fontFamily: 'inherit',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.1, minWidth: 0, transition: 'transform .1s',
+    border: 'none', borderRadius: 7, minHeight: 46, padding: '4px 0', fontFamily: 'inherit',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    lineHeight: 1.05, minWidth: 0, transition: 'transform .1s', touchAction: 'manipulation',
   },
+  rank: { fontSize: 18, fontWeight: 900 },
+  suit: { fontSize: 14 },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 8 },
   ghost: {
     background: 'none', border: '1px solid #1a3048', borderRadius: 8, color: '#5a8ab0',
-    padding: '8px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 700,
+    padding: '11px 16px', cursor: 'pointer', fontSize: 14, fontWeight: 700,
   },
   done: {
     background: 'linear-gradient(135deg, #1e5cad 0%, #0c3080 100%)', border: '1px solid #2a4a80', borderRadius: 8,
-    color: '#d0e8ff', padding: '8px 18px', cursor: 'pointer', fontSize: 13, fontWeight: 800,
+    color: '#d0e8ff', padding: '11px 22px', cursor: 'pointer', fontSize: 14, fontWeight: 800,
   },
 }
