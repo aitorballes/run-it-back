@@ -507,6 +507,9 @@ export default {
       seat: 'Siège',
     },
     myTable: {
+      leftTable: 'A quitté la table',
+      leftHint: 'S’il est parti (éliminé ou changé de table), la note est gardée et le siège libéré. S’il réapparaît, tapez son nom et la note le suivra.',
+      gone: 'Ne sont plus à cette table',
       title: 'Ma table',
       now: 'actuelle',
       newTable: 'Nouvelle table',

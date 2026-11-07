@@ -576,6 +576,9 @@ export default {
       seat: 'Seat',
     },
     myTable: {
+      leftTable: 'Left the table',
+      leftHint: 'If they\'re gone (busted or moved), the note is kept and the seat is freed. If they show up again, type their name and the note follows them.',
+      gone: 'No longer at this table',
       title: 'My table',
       now: 'now',
       newTable: 'New table',

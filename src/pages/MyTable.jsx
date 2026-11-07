@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useI18n } from '../i18n/core'
 import { fetchLiveTournament, updateLiveTournament, fetchPlayerNotes, updatePlayerNote, deletePlayerNote, playerNameKey } from '../lib/db'
-import { TABLE_SIZES, currentTable, findTable, physicalSeat, noteAtSeat, saveSeatNote, applySaved } from '../lib/liveTable'
+import { TABLE_SIZES, currentTable, findTable, physicalSeat, noteAtSeat, saveSeatNote, leaveSeat, applySaved } from '../lib/liveTable'
 import Logo from '../components/Logo'
 import LiveTable from '../components/table/LiveTable'
 import { base } from '../components/liveStyles'
@@ -106,8 +106,22 @@ export default function MyTable() {
   async function saveSeat(e) {
     e.preventDefault()
     try {
-      const res = await saveSeatNote({ userId: user.id, tourId: tour.id, notes: allNotes, tableNo: table.no, seat, name, note: text.trim() })
+      const res = await saveSeatNote({
+        userId: user.id, tourId: tour.id, notes: allNotes, tableNo: table.no, seat, name, note: text.trim(),
+        leftName: t('live.notes.seatN', { n: seat }),
+      })
       setNotes(ns => applySaved(ns, res))
+      closeSeat()
+    } catch {
+      setError(t('live.notes.saveError'))
+    }
+  }
+
+  // Busted or moved: keep the note, free the seat
+  async function leave(n) {
+    try {
+      const left = await leaveSeat(n, t('live.notes.seatN', { n: n.seat }))
+      setNotes(ns => ns.map(x => (x.id === left.id ? left : x)))
       closeSeat()
     } catch {
       setError(t('live.notes.saveError'))
@@ -152,9 +166,45 @@ export default function MyTable() {
   const otherNamed = name.trim() ? allNotes.find(n => n.name && n.name_key === playerNameKey(name) && n.id !== seatNote?.id) : null
 
   const q = playerNameKey(query)
+  const matches = n => n.name_key.includes(q) || n.name.toLowerCase().includes(q) || n.note.toLowerCase().includes(q)
   const listed = q
-    ? allNotes.filter(n => n.name_key.includes(q) || n.note.toLowerCase().includes(q))
-    : allNotes.filter(n => n.table_no === viewNo).sort((a, b) => (a.seat ?? 99) - (b.seat ?? 99))
+    ? allNotes.filter(matches)
+    : allNotes.filter(n => n.table_no === viewNo && n.seat != null).sort((a, b) => a.seat - b.seat)
+  const gone = q ? [] : allNotes.filter(n => n.table_no === viewNo && n.seat == null)
+
+  const renderNote = n => (
+          <div key={n.id} style={st.item}>
+            <div style={st.head}>
+              <div style={{ minWidth: 0 }}>
+                <div style={st.name}>{displayName(n)}</div>
+                <div style={st.meta}>
+                  {[
+                    n.table_no != null && (q || n.table_no !== viewNo) && t('live.notes.tableN', { n: n.table_no }),
+                    n.seat != null && n.name && t('live.notes.seatN', { n: n.seat }),
+                    new Date(n.updated_at).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+                  ].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+              {editing !== n.id && (
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button style={st.iconBtn} title={t('live.notes.edit')} onClick={() => { setEditing(n.id); setDraft(n.note) }}>✎</button>
+                  <button style={{ ...st.iconBtn, color: '#e07070' }} title={t('common.delete')} onClick={() => remove(n.id)}>✕</button>
+                </div>
+              )}
+            </div>
+            {editing === n.id ? (
+              <>
+                <textarea style={{ ...base.input, minHeight: 80, resize: 'vertical' }} value={draft} autoFocus onChange={e => setDraft(e.target.value)} />
+                <div style={base.actions}>
+                  <button style={base.ghostBtn} onClick={() => setEditing(null)}>{t('common.cancel')}</button>
+                  <button style={base.btn} onClick={() => saveEdit(n)}>{t('common.save')}</button>
+                </div>
+              </>
+            ) : (
+              <div style={st.note}>{n.note || <span style={{ color: '#4a6a8a' }}>{t('live.notes.noNote')}</span>}</div>
+            )}
+          </div>
+  )
 
   return (
     <div style={base.page}>
@@ -254,8 +304,12 @@ export default function MyTable() {
                   : t('live.notes.willReplace', { name: otherNamed.name })}
               </div>
             )}
-            <div style={{ ...base.actions, justifyContent: 'space-between' }}>
-              <div>{seatNote && <button style={{ ...base.ghostBtn, color: '#e07070' }} type="button" onClick={() => remove(seatNote.id)}>{t('common.delete')}</button>}</div>
+            {seatNote && <div style={base.hint}>{t('live.myTable.leftHint')}</div>}
+            <div style={{ ...base.actions, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {seatNote && <button style={base.ghostBtn} type="button" onClick={() => leave(seatNote)}>🚪 {t('live.myTable.leftTable')}</button>}
+                {seatNote && <button style={{ ...base.ghostBtn, color: '#e07070' }} type="button" onClick={() => remove(seatNote.id)}>{t('common.delete')}</button>}
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button style={base.ghostBtn} type="button" onClick={closeSeat}>{t('common.cancel')}</button>
                 <button style={base.btn} type="submit">{t('common.save')}</button>
@@ -274,39 +328,10 @@ export default function MyTable() {
         {notes === null && <div style={base.muted}>{t('common.loading')}</div>}
         {notes !== null && listed.length === 0 && table && !q && <div style={base.muted}>{t('live.myTable.noPlayers')}</div>}
 
-        {listed.map(n => (
-          <div key={n.id} style={st.item}>
-            <div style={st.head}>
-              <div style={{ minWidth: 0 }}>
-                <div style={st.name}>{displayName(n)}</div>
-                <div style={st.meta}>
-                  {[
-                    n.table_no != null && (q || n.table_no !== viewNo) && t('live.notes.tableN', { n: n.table_no }),
-                    n.seat != null && n.name && t('live.notes.seatN', { n: n.seat }),
-                    new Date(n.updated_at).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
-                  ].filter(Boolean).join(' · ')}
-                </div>
-              </div>
-              {editing !== n.id && (
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button style={st.iconBtn} title={t('live.notes.edit')} onClick={() => { setEditing(n.id); setDraft(n.note) }}>✎</button>
-                  <button style={{ ...st.iconBtn, color: '#e07070' }} title={t('common.delete')} onClick={() => remove(n.id)}>✕</button>
-                </div>
-              )}
-            </div>
-            {editing === n.id ? (
-              <>
-                <textarea style={{ ...base.input, minHeight: 80, resize: 'vertical' }} value={draft} autoFocus onChange={e => setDraft(e.target.value)} />
-                <div style={base.actions}>
-                  <button style={base.ghostBtn} onClick={() => setEditing(null)}>{t('common.cancel')}</button>
-                  <button style={base.btn} onClick={() => saveEdit(n)}>{t('common.save')}</button>
-                </div>
-              </>
-            ) : (
-              <div style={st.note}>{n.note || <span style={{ color: '#4a6a8a' }}>{t('live.notes.noNote')}</span>}</div>
-            )}
-          </div>
-        ))}
+        {listed.map(renderNote)}
+
+        {gone.length > 0 && <div style={base.sectionTitle}>{t('live.myTable.gone')}</div>}
+        {gone.map(renderNote)}
       </div>
     </div>
   )

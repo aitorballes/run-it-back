@@ -117,7 +117,10 @@ export default function LiveHandRecorder() {
   async function storeNote(p, note) {
     try {
       if (setup.tableNo != null && p.seat) {
-        const res = await saveSeatNote({ userId: tour.user_id, tourId: tour.id, notes, tableNo: setup.tableNo, seat: p.seat, name: p.name, note })
+        const res = await saveSeatNote({
+          userId: tour.user_id, tourId: tour.id, notes, tableNo: setup.tableNo, seat: p.seat, name: p.name, note,
+          leftName: t('live.notes.seatN', { n: p.seat }),
+        })
         setNotes(ns => applySaved(ns, res))
       } else {
         const saved = await savePlayerNote(tour.user_id, tour.id, p.name, note)

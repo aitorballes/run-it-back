@@ -577,6 +577,9 @@ export default {
       seat: 'Asiento',
     },
     myTable: {
+      leftTable: 'Ha salido de la mesa',
+      leftHint: 'Si se ha ido (eliminado o cambiado de mesa), la nota se guarda y el asiento queda libre. Si vuelve a aparecer, escribe su nombre y la nota le seguirá.',
+      gone: 'Ya no están en la mesa',
       title: 'Mi mesa',
       now: 'ahora',
       newTable: 'Nueva mesa',

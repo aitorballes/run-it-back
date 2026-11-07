@@ -507,6 +507,9 @@ export default {
       seat: 'Posto',
     },
     myTable: {
+      leftTable: 'Ha lasciato il tavolo',
+      leftHint: 'Se se n’è andato (eliminato o spostato), la nota resta e il posto si libera. Se ricompare, scrivi il suo nome e la nota lo seguirà.',
+      gone: 'Non più a questo tavolo',
       title: 'Il mio tavolo',
       now: 'attuale',
       newTable: 'Nuovo tavolo',
