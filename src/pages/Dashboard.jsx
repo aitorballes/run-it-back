@@ -942,8 +942,10 @@ export default function Dashboard() {
             <button style={s.liveBtn} onClick={() => navigate('/live')} title={t('live.title')}>
               <span style={s.liveDot} />{!isMobile && t('live.navButton')}
             </button>
-            <button style={s.studyBtn} data-tour="study" onClick={() => { setStudyInitialFilters(null); setShowStudy(true) }}>
-              🎓 {t('study.title')}
+            <button style={{ ...s.studyBtn, ...(isMobile ? { padding: 0, width: 34, justifyContent: 'center', fontSize: 15 } : null) }}
+              data-tour="study" title={t('study.title')} aria-label={t('study.title')}
+              onClick={() => { setStudyInitialFilters(null); setShowStudy(true) }}>
+              🎓{!isMobile && ` ${t('study.title')}`}
             </button>
             {!loading && !hasTournaments && (
               <button style={s.helpBtn} data-tour="help" onClick={() => setShowTour(true)} title={t('tour.show')}>?</button>
