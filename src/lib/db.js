@@ -871,7 +871,7 @@ export async function savePlayerNote(userId, liveTournamentId, name, note, place
   return data
 }
 
-// Updates an existing note by id. `patch` may hold name, note, tableNo, seat
+// Updates an existing note by id. `patch` may hold name, note, tableNo, seat, nameKey (overrides the computed key)
 export async function updatePlayerNote(id, patch) {
   const row = { updated_at: new Date().toISOString() }
   if ('note' in patch) row.note = patch.note
@@ -881,6 +881,7 @@ export async function updatePlayerNote(id, patch) {
     row.name = (patch.name ?? '').trim()
     row.name_key = playerNoteKey(patch.name, patch.tableNo, patch.seat)
   }
+  if ('nameKey' in patch) row.name_key = patch.nameKey
   const { data, error } = await supabase.from('player_notes').update(row).eq('id', id).select(PLAYER_NOTE_COLS).single()
   if (error) throw error
   return data

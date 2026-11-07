@@ -507,6 +507,9 @@ export default {
       seat: 'Platz',
     },
     myTable: {
+      leftTable: 'Hat den Tisch verlassen',
+      leftHint: 'Ist er weg (ausgeschieden oder umgesetzt), bleibt die Notiz erhalten und der Platz wird frei. Taucht er wieder auf, gib seinen Namen ein und die Notiz folgt ihm.',
+      gone: 'Nicht mehr an diesem Tisch',
       title: 'Mein Tisch',
       now: 'jetzt',
       newTable: 'Neuer Tisch',
