@@ -11,7 +11,7 @@ const CURRENCIES = ['€', '$', '£']
 
 const EMPTY_FORM = {
   venue: '', name: '', buyin: '', currency: '€', levelMinutes: '20', startingStack: '20000',
-  currentLevel: '1', entries: '', playersLeft: '', myStack: '',
+  currentLevel: '1', entries: '', playersLeft: '',
 }
 
 export default function LiveTournaments() {
@@ -43,7 +43,8 @@ export default function LiveTournaments() {
     const startingStack = parseChips(form.startingStack) ?? 0
     const entries       = parseChips(form.entries)
     const playersLeft   = parseChips(form.playersLeft) ?? entries
-    const myStack       = parseChips(form.myStack) ?? (startingStack || null)
+    // Everyone starts with the starting stack, so there's nothing to ask
+    const myStack       = startingStack || null
     const now = new Date()
 
     // The structure always covers the current level, so editing it shows the right blinds
@@ -95,7 +96,6 @@ export default function LiveTournaments() {
             <div style={s.subtitle}>{t('live.subtitle')}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button style={s.ghostBtn} onClick={() => navigate('/live/players')}>✎ {t('live.notes.title')}</button>
             {!showForm && (
               <button style={s.btn} onClick={() => setShowForm(true)}>+ {t('live.newTournament')}</button>
             )}
@@ -141,11 +141,6 @@ export default function LiveTournaments() {
                 <input style={s.input} type="number" min="1" inputMode="numeric" value={form.currentLevel} onChange={set('currentLevel')} />
               </Field>
             </div>
-
-            <Field label={t('live.form.myStack')}>
-              <input style={s.input} inputMode="numeric" value={form.myStack} onChange={set('myStack')}
-                placeholder={form.startingStack} />
-            </Field>
 
             <div style={s.row}>
               <Field label={t('live.form.entries')} half>

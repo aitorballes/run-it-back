@@ -6,8 +6,9 @@ import { fmtNumber } from '../../i18n/core'
 // Portrait poker table for the live hand recorder: same felt and cards as the Visualizer, laid out for a
 // phone (seat 0 = hero at the bottom). Tapping a seat calls onSeatClick(i).
 //
-// seats: [{ name, pos, stack, stackUnknown, cards, showCards, folded, allin, bet, active, winner, hasNote }]
-export default function LiveTable({ seats, dealer, board, pot, potLabel, onSeatClick }) {
+// seats: [{ name, pos, stack, stackUnknown, cards, showCards, folded, allin, bet, active, winner, hasNote, selected }]
+// hideCards: no hole cards at all (just who sits where)
+export default function LiveTable({ seats, dealer, board, pot, potLabel, onSeatClick, hideCards }) {
   const ref = useRef(null)
   const [w, setW] = useState(0)
 
@@ -64,20 +65,20 @@ export default function LiveTable({ seats, dealer, board, pot, potLabel, onSeatC
           {seats.map((s, i) => {
             const p = at(i)
             const isHero = i === 0
-            const border = s.winner ? '#ffe566' : s.active ? '#5090d0' : isHero ? '#c8a800' : s.allin ? '#cc3333' : '#253045'
+            const border = s.winner || s.selected ? '#ffe566' : s.active ? '#5090d0' : isHero ? '#c8a800' : s.allin ? '#cc3333' : '#253045'
             return (
               <button key={i} type="button" onClick={() => onSeatClick?.(i)}
                 style={{ ...st.seat, left: p.x, top: p.y, opacity: s.folded ? 0.38 : 1, cursor: onSeatClick ? 'pointer' : 'default' }}>
-                <div style={{ display: 'flex', gap: 2, height: 39 }}>
+                {!hideCards && <div style={{ display: 'flex', gap: 2, height: 39 }}>
                   {s.folded ? null : s.cards?.length === 2 && s.showCards
                     ? s.cards.map((c, k) => <Card key={k} code={c} size="xs" />)
                     : [0, 1].map(k => <CardBack key={k} size="xs" />)}
-                </div>
+                </div>}
                 <div style={{
                   ...st.box,
                   border: `1px solid ${border}`,
                   background: isHero ? 'linear-gradient(to bottom,#2a2210,#1a1600)' : 'linear-gradient(to bottom,#1a2035,#101520)',
-                  boxShadow: s.active ? '0 0 10px rgba(60,130,220,0.5)' : s.winner ? '0 0 12px rgba(200,168,0,0.45)' : '0 2px 8px rgba(0,0,0,0.6)',
+                  boxShadow: s.active ? '0 0 10px rgba(60,130,220,0.5)' : s.winner || s.selected ? '0 0 12px rgba(200,168,0,0.45)' : '0 2px 8px rgba(0,0,0,0.6)',
                 }}>
                   <div style={{ ...st.name, color: isHero ? '#ffe566' : '#c8d4e8' }}>
                     {s.hasNote && <span style={{ color: '#f0c070' }}>✎ </span>}{s.name}

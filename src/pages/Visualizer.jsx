@@ -5,7 +5,7 @@ import Avatar from '../components/Avatar'
 import Logo from '../components/Logo'
 import { useI18n, fmtNumber } from '../i18n/core'
 import { supabase } from '../lib/supabase'
-import { fetchPlayerNotes, playerNameKey, generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList, setTournamentReviewed } from '../lib/db'
+import { fetchPlayerNotesForTournamentDb, playerNameKey, generateHandShareToken, fetchHandByShareToken, fetchHandNotes, saveHandNote, createSharedList, fetchSharedList, fetchHandsByIds, fetchUserReviewLists, fetchMarkedHandIds, fetchListsForHand, addHandToList, removeHandFromList, createReviewList, setTournamentReviewed } from '../lib/db'
 import { calculateEquity, evaluateShowdown } from '../lib/equityCalculator'
 import StudyModal from '../components/StudyModal'
 import { Card, CardBack } from '../components/table/Cards'
@@ -526,12 +526,14 @@ export default function Visualizer() {
   }, [id, token, handToken])
 
   const hasLiveHands = hands.some(h => h.platform === 'live')
+  const liveTournamentDbId = hasLiveHands && tournament?.platform === 'live' ? tournament.id : null
   useEffect(() => {
-    if (!user || !hasLiveHands) return
-    fetchPlayerNotes(user.id)
+    if (!user || !liveTournamentDbId) { setPlayerNotes(new Map()); return }
+    // Player notes are per live tournament
+    fetchPlayerNotesForTournamentDb(liveTournamentDbId)
       .then(rows => setPlayerNotes(new Map(rows.filter(r => r.note).map(r => [r.name_key, r]))))
       .catch(() => {}) // table missing until the migration runs
-  }, [user, hasLiveHands])
+  }, [user, liveTournamentDbId])
 
   // ── Rescale ──
   useEffect(() => {
