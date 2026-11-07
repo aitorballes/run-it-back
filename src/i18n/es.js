@@ -490,7 +490,7 @@ export default {
         bb: 'Ante de ciega grande',
         all: 'Ante por jugador',
       },
-      tableSize: 'Jugadores en la mesa',
+      tableSize: 'Jugadores',
       players: '{n} jugadores',
       myPosition: 'Mi posición',
       myCards: 'Mis cartas',

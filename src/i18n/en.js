@@ -489,7 +489,7 @@ export default {
         bb: 'Big blind ante',
         all: 'Ante per player',
       },
-      tableSize: 'Players at the table',
+      tableSize: 'Players',
       players: '{n} players',
       myPosition: 'My position',
       myCards: 'My cards',
