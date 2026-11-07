@@ -1151,8 +1151,9 @@ export default function Dashboard() {
                     {/* Tournament rows */}
                     {isExpanded && (
                       <div style={s.sessionRows}>
-                        {items.map(tour => (
-                          <div key={tour.id} style={s.row} data-tour="tournament" onClick={() => {
+                        {items.map((tour, k) => (
+                          <div key={tour.id} style={{ ...s.row, ...(k === items.length - 1 ? s.rowLast : null), ...(openMenu === tour.id ? s.rowMenuOpen : null) }}
+                            data-tour="tournament" onClick={() => {
                             const live = tour.platform === 'live' ? liveLinks.get(tour.id) : null
                             navigate(live?.status === 'running' ? `/live/${live.id}` : `/tournament/${tour.id}`)
                           }}>
@@ -1998,6 +1999,9 @@ const s = {
     gap: 14,
     cursor: 'pointer',
   },
+  rowLast: { borderBottom: 'none', borderBottomLeftRadius: 13, borderBottomRightRadius: 13 },
+  // The row with its menu open stays above the next rows/cards so the menu isn't covered
+  rowMenuOpen: { position: 'relative', zIndex: 20 },
   rowIcon: {
     flexShrink: 0,
     width: 24,
@@ -2194,7 +2198,7 @@ const s = {
     borderTop: 'none',
     borderBottomLeftRadius: 14,
     borderBottomRightRadius: 14,
-    overflow: 'hidden',
+    // No overflow: hidden here, it would clip the ⋯ menu of the last tournaments (the last row rounds itself)
   },
   // Progress
   progressWrap: {
