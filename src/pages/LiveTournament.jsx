@@ -399,6 +399,10 @@ export default function LiveTournament() {
           <button style={s.newHandBtn} onClick={() => navigate(`/live/${id}/hand/new`)}>🂡 {t('live.hands.new')}</button>
         )}
 
+        <button style={{ ...base.ghostBtn, alignSelf: 'flex-start' }} onClick={() => navigate(`/live/${id}/table`)}>
+          {t('live.myTable.title')}{tour.tables?.length ? ` · ${t('live.notes.tableN', { n: tour.tables.at(-1).no })}` : ''}
+        </button>
+
         {/* STATS */}
         <div style={s.stats}>
           <Stat label={t('live.stats.myStack')} value={tour.my_stack != null ? fmtNumber(tour.my_stack) : '—'}

@@ -3,8 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useI18n, fmtNumber } from '../i18n/core'
 import {
   fetchLiveTournament, updateLiveTournament, ensureLiveTournamentRow, insertLiveHand, updateLiveHand,
-  fetchLiveHand, generateHandShareToken, fetchPlayerNotes, savePlayerNote, playerNameKey,
+  fetchLiveHand, generateHandShareToken, fetchPlayerNotes, savePlayerNote,
 } from '../lib/db'
+import { TABLE_SIZES, currentTable, findTable, physicalSeat, noteAtSeat, noteByName, saveSeatNote, applySaved } from '../lib/liveTable'
 import { levelAt } from '../lib/liveTournament'
 import {
   positionLabels, seatLayout, replay, legalActions, foldsUntil, usedCards, potTotal, buildRawHand,
@@ -17,10 +18,27 @@ import { Card, CardBack } from '../components/table/Cards'
 import { base } from '../components/liveStyles'
 import { useVisualViewport } from '../components/useVisualViewport'
 
-const TABLE_SIZES = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 const STREET_KEYS = { flop: 'live.hand.flop', turn: 'live.hand.turn', river: 'live.hand.river' }
 
 const emptyPlayers = n => Array.from({ length: n }, () => ({ name: '', stack: null, cards: null }))
+
+// Sits the hand at one of your tables: as many players as seats, each rival with their physical seat and,
+// if you have a note on whoever sits there, their name. `table` null = no table (players keep no seat).
+function atTable(setup, table, notes) {
+  if (!table) return { ...setup, tableNo: null, players: setup.players.map(p => ({ ...p, seat: undefined })) }
+  const n = table.seats
+  const labels = positionLabels(n)
+  return {
+    ...setup, n, tableNo: table.no,
+    heroPos: labels.includes(setup.heroPos) ? setup.heroPos : labels[0],
+    players: Array.from({ length: n }, (_, i) => {
+      const p = setup.players[i] ?? { name: '', stack: null, cards: null }
+      if (i === 0) return p
+      const seat = physicalSeat(table, i)
+      return { ...p, seat, name: noteAtSeat(notes, table.no, seat)?.name ?? '' }
+    }),
+  }
+}
 
 // Records a live hand: setup → seats → play the action → save into `hands` (see lib/liveHand.js)
 export default function LiveHandRecorder() {
@@ -29,7 +47,7 @@ export default function LiveHandRecorder() {
   const { t } = useI18n()
 
   const [tour, setTour]     = useState(null)
-  const [notes, setNotes]   = useState([])      // player_notes of this user
+  const [notes, setNotes]   = useState([])      // player_notes of this tournament
   const [status, setStatus] = useState('loading')
   const [step, setStep]     = useState('setup') // setup | table | play | saved
   const [setup, setSetup]   = useState(null)
@@ -53,7 +71,8 @@ export default function LiveHandRecorder() {
         const row = await fetchLiveTournament(id)
         if (!row) { setStatus('notFound'); return }
         setTour(row)
-        fetchPlayerNotes(row.user_id).then(setNotes).catch(() => {}) // table missing until the migration runs
+        const ns = await fetchPlayerNotes(row.id).catch(() => []) // table missing until the migration runs
+        setNotes(ns)
         if (handDbId) {
           const hand = await fetchLiveHand(handDbId)
           const live = hand.raw?.live
@@ -67,11 +86,12 @@ export default function LiveHandRecorder() {
           const playLevel = row.on_break ? row.current_level + 1 : row.current_level
           const l = levelAt(row.structure, playLevel)
           setLevel(playLevel)
-          setSetup({
+          // The hand is played at the table you're at now (you can pick another one in the setup)
+          setSetup(atTable({
             n: 9, heroPos: 'BTN', sb: l.sb, bb: l.bb, ante: l.ante || 0, anteType: 'bb',
             players: [{ name: 'Hero', stack: row.my_stack ?? null, cards: null }, ...emptyPlayers(8)],
             revealHoleCards: false,
-          })
+          }, currentTable(row), ns))
         }
         setStatus('ready')
       } catch {
@@ -86,12 +106,23 @@ export default function LiveHandRecorder() {
   const finalStack = i => (st?.result ? st.stack[i] + (st.result.winnings[i] ?? 0) : st?.stack[i])
   const names = useMemo(() => (setup ? playerNames(setup) : []), [setup])
   const layout = useMemo(() => (setup ? seatLayout(setup.n, setup.heroPos) : null), [setup])
-  const noteFor = name => (name?.trim() ? notes.find(n => n.name_key === playerNameKey(name)) : null)
+  // Note on a rival: by their name, or the one on their seat (if it has no name yet or you left the name empty)
+  const noteFor = p => {
+    const byName = noteByName(notes, p?.name)
+    if (byName) return byName
+    const bySeat = setup?.tableNo != null ? noteAtSeat(notes, setup.tableNo, p?.seat) : null
+    return bySeat && (!bySeat.name || !p.name?.trim()) ? bySeat : null
+  }
 
-  async function storeNote(name, note) {
+  async function storeNote(p, note) {
     try {
-      const saved = await savePlayerNote(tour.user_id, name, note, tour.venue)
-      setNotes(ns => [saved, ...ns.filter(n => n.id !== saved.id)])
+      if (setup.tableNo != null && p.seat) {
+        const res = await saveSeatNote({ userId: tour.user_id, tourId: tour.id, notes, tableNo: setup.tableNo, seat: p.seat, name: p.name, note })
+        setNotes(ns => applySaved(ns, res))
+      } else {
+        const saved = await savePlayerNote(tour.user_id, tour.id, p.name, note)
+        setNotes(ns => applySaved(ns, { saved }))
+      }
     } catch {
       setError(t('live.notes.saveError'))
     }
@@ -122,12 +153,20 @@ export default function LiveHandRecorder() {
 
   function changeTableSize(n) {
     const labels = positionLabels(n)
+    const table = findTable(tour, setup.tableNo)
     setSetup(s => ({
       ...s, n,
       heroPos: labels.includes(s.heroPos) ? s.heroPos : labels[0],
-      players: Array.from({ length: n }, (_, i) => s.players[i] ?? { name: '', stack: null, cards: null }),
+      players: Array.from({ length: n }, (_, i) => {
+        if (s.players[i]) return s.players[i]
+        if (!table) return { name: '', stack: null, cards: null }
+        const seat = physicalSeat(table, i)
+        return { name: noteAtSeat(notes, table.no, seat)?.name ?? '', stack: null, cards: null, seat }
+      }),
     }))
   }
+
+  const chooseTable = no => setSetup(s => atTable(s, findTable(tour, no), notes))
 
   function openPicker(opts) { setPicker(opts) }
 
@@ -149,7 +188,7 @@ export default function LiveHandRecorder() {
         bet: playing && !st.result ? st.committed[i] : 0,
         active: playing && st.need?.type === 'action' && st.need.player === i,
         winner: playing && st.result && (st.result.winnings[i] ?? 0) > 0,
-        hasNote: i !== 0 && !!noteFor(p.name)?.note,
+        hasNote: i !== 0 && !!noteFor(p)?.note,
       }
     })
   }
@@ -249,6 +288,19 @@ export default function LiveHandRecorder() {
         {step === 'setup' && (
           <div style={base.card}>
             <div style={base.cardTitle}>{t('live.hand.setupTitle')}</div>
+            <div style={base.field}>
+              <span style={base.label}>{t('live.hand.whichTable')}</span>
+              <div style={s.chips}>
+                {[...(tour.tables ?? [])].reverse().map(tb => (
+                  <button key={tb.no} type="button" style={{ ...s.chip, ...(setup.tableNo === tb.no ? s.chipOn : null) }}
+                    onClick={() => chooseTable(tb.no)}>{t('live.notes.tableN', { n: tb.no })}</button>
+                ))}
+                <button type="button" style={{ ...s.chip, ...(setup.tableNo == null ? s.chipOn : null) }}
+                  onClick={() => chooseTable(null)}>{t('live.hand.noTable')}</button>
+                <button type="button" style={s.addChip} onClick={() => navigate(`/live/${id}/table`)}>+ {t('live.myTable.newTable')}</button>
+              </div>
+              {(tour.tables ?? []).length === 0 && <span style={base.hint}>{t('live.hand.noTablesHint')}</span>}
+            </div>
             <div style={base.row}>
               <Field label={t('live.structure.level')} flex="1 1 70px">
                 <input style={base.input} type="number" min="1" inputMode="numeric" value={level} onChange={e => changeLevel(e.target.value)} />
@@ -336,12 +388,12 @@ export default function LiveHandRecorder() {
         )}
 
         {step !== 'setup' && (() => {
-          const seated = setup.players.map((p, i) => ({ i, note: i ? noteFor(p.name) : null })).filter(x => x.note?.note)
+          const seated = setup.players.map((p, i) => ({ i, note: i ? noteFor(p) : null })).filter(x => x.note?.note)
           return seated.length > 0 && (
             <div style={s.tableNotes}>
               <div style={base.label}>✎ {t('live.notes.atTable')}</div>
               {seated.map(({ i, note }) => (
-                <div key={i} style={s.tableNote}><b style={{ color: '#f0c070' }}>{note.name}</b> ({layout.labels[i]}): {note.note}</div>
+                <div key={i} style={s.tableNote}><b style={{ color: '#f0c070' }}>{note.name || t('live.notes.seatN', { n: note.seat })}</b> ({layout.labels[i]}): {note.note}</div>
               ))}
             </div>
           )
@@ -390,6 +442,7 @@ export default function LiveHandRecorder() {
       {seatSheet != null && (
         <SeatSheet
           i={seatSheet} setup={setup} layout={layout} t={t} notes={notes} noteFor={noteFor} storeNote={storeNote}
+          table={findTable(tour, setup.tableNo)}
           onChange={patch => updatePlayer(seatSheet, patch)}
           onClose={() => setSeatSheet(null)}
           openPicker={openPicker}
@@ -552,19 +605,27 @@ function ResultLine({ st, names, t }) {
 }
 
 // ── Seat sheet: name/description, stack, known cards of a rival ──
-function SeatSheet({ i, setup, layout, t, notes, noteFor, storeNote, onChange, onClose, openPicker }) {
+function SeatSheet({ i, setup, table, layout, t, notes, noteFor, storeNote, onChange, onClose, openPicker }) {
   const p = setup.players[i]
   const isHero = i === 0
-  const [noteText, setNoteText] = useState(() => noteFor(p.name)?.note ?? '')
+  const [noteText, setNoteText] = useState(() => noteFor(p)?.note ?? '')
   const [noteDirty, setNoteDirty] = useState(false)
+  const canNote = !!(p.name?.trim() || (table && p.seat))
 
   function changeName(name) {
     onChange({ name })
-    if (!noteDirty) setNoteText(noteFor(name)?.note ?? '') // a known player brings their note
+    if (!noteDirty) setNoteText(noteFor({ ...p, name })?.note ?? '') // a known player brings their note
+  }
+
+  // Someone else sits there (a seat was empty): whoever you have a note on at that seat comes along
+  function changeSeat(seat) {
+    const n = noteAtSeat(notes, table.no, seat)
+    onChange({ seat, name: n?.name ?? '' })
+    if (!noteDirty) setNoteText(n?.note ?? '')
   }
 
   function close() {
-    if (!isHero && noteDirty && p.name?.trim()) storeNote(p.name, noteText.trim())
+    if (!isHero && noteDirty && canNote) storeNote(p, noteText.trim())
     onClose()
   }
 
@@ -580,17 +641,25 @@ function SeatSheet({ i, setup, layout, t, notes, noteFor, storeNote, onChange, o
     <div style={{ ...s.backdrop, ...fit }} onClick={close}>
       <div style={s.sheet} onClick={e => e.stopPropagation()} onFocus={reveal}>
         <div style={base.cardTitle}>{isHero ? t('live.hand.me') : t('live.hand.seatTitle', { pos: layout.labels[i] })}</div>
+        {!isHero && table && (
+          <Field label={t('live.notes.seat')}>
+            <select style={{ ...base.input, ...base.select }} value={p.seat ?? ''} onChange={e => changeSeat(Number(e.target.value))}>
+              {Array.from({ length: table.seats }, (_, k) => k + 1).filter(sn => sn !== table.mySeat)
+                .map(sn => <option key={sn} value={sn}>{t('live.notes.seatN', { n: sn })}</option>)}
+            </select>
+          </Field>
+        )}
         {!isHero && (
           <Field label={t('live.hand.rivalName')}>
             <input style={base.input} value={p.name ?? ''} autoFocus placeholder={t('live.hand.rivalNamePh')}
               list="player-note-names" onChange={e => changeName(e.target.value)} />
-            <datalist id="player-note-names">{notes.map(n => <option key={n.id} value={n.name} />)}</datalist>
+            <datalist id="player-note-names">{notes.filter(n => n.name).map(n => <option key={n.id} value={n.name} />)}</datalist>
           </Field>
         )}
         {!isHero && (
           <Field label={t('live.notes.note')}>
             <textarea style={{ ...base.input, minHeight: 64, resize: 'vertical' }} value={noteText}
-              placeholder={p.name?.trim() ? t('live.notes.notePh') : t('live.notes.needName')} disabled={!p.name?.trim()}
+              placeholder={canNote ? t('live.notes.notePh') : t('live.notes.needName')} disabled={!canNote}
               onChange={e => { setNoteText(e.target.value); setNoteDirty(true) }} />
           </Field>
         )}
@@ -644,6 +713,10 @@ const s = {
     padding: '8px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', minWidth: 46,
   },
   chipOn: { background: 'linear-gradient(135deg, #2a2210, #1a1600)', borderColor: '#c8a800', color: '#ffe566' },
+  addChip: {
+    background: 'none', border: '1px dashed #2a4a80', borderRadius: 8, color: '#5a8ab0',
+    padding: '8px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+  },
   cardSlot: {
     display: 'flex', alignItems: 'center', gap: 6, background: '#080e18', border: '1px dashed #2a3a52',
     borderRadius: 10, padding: 8, cursor: 'pointer', fontFamily: 'inherit', width: 'fit-content',

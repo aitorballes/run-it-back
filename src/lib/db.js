@@ -828,27 +828,60 @@ export async function deleteLiveHand(handDbId, tournamentDbId) {
   await importer.refreshTournamentCounts(supabase, tournamentDbId)
 }
 
-// ── Notes on live players (table "player_notes", one per user and name, see scripts/migrate-live-hands.sql) ──
+// ── Notes on live players (table "player_notes", one per live tournament and name,
+//    see scripts/migrate-live-hands.sql + scripts/migrate-player-notes-per-tournament.sql) ──
 
 export const playerNameKey = name => name.trim().toLowerCase().replace(/\s+/g, ' ')
 
-export async function fetchPlayerNotes(userId) {
+const PLAYER_NOTE_COLS = 'id, name, name_key, note, table_no, seat, updated_at'
+
+export async function fetchPlayerNotes(liveTournamentId) {
   const { data, error } = await supabase
-    .from('player_notes').select('id, name, name_key, note, last_venue, updated_at')
-    .eq('user_id', userId).order('updated_at', { ascending: false })
+    .from('player_notes').select(PLAYER_NOTE_COLS)
+    .eq('live_tournament_id', liveTournamentId).order('updated_at', { ascending: false })
   if (error) throw error
   return data ?? []
 }
 
-// Creates or updates the note for `name` (an empty note still keeps the player in the list)
-export async function savePlayerNote(userId, name, note, venue) {
+// Notes of the live tournament linked to a `tournaments` row (for the Visualizer)
+export async function fetchPlayerNotesForTournamentDb(tournamentDbId) {
+  const { data, error } = await supabase
+    .from('live_tournaments').select('id').eq('tournament_db_id', tournamentDbId).maybeSingle()
+  if (error) throw error
+  return data ? fetchPlayerNotes(data.id) : []
+}
+
+// Key of a note: the player's name, or their table and seat when there's no name
+export const playerNoteKey = (name, tableNo, seat) =>
+  name?.trim() ? playerNameKey(name) : `#${tableNo ?? ''}-${seat ?? ''}`
+
+// Creates or updates the note for `name` in this tournament (an empty note still keeps the player in the list).
+// `place` = { tableNo, seat } is optional: when left out, a note that already exists keeps its table and seat.
+export async function savePlayerNote(userId, liveTournamentId, name, note, place) {
   const { data, error } = await supabase
     .from('player_notes')
     .upsert({
-      user_id: userId, name: name.trim(), name_key: playerNameKey(name), note,
-      ...(venue ? { last_venue: venue } : null), updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,name_key' })
-    .select('id, name, name_key, note, last_venue, updated_at').single()
+      user_id: userId, live_tournament_id: liveTournamentId, name: (name ?? '').trim(),
+      name_key: playerNoteKey(name, place?.tableNo, place?.seat), note,
+      ...(place ? { table_no: place.tableNo ?? null, seat: place.seat ?? null } : null),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'live_tournament_id,name_key' })
+    .select(PLAYER_NOTE_COLS).single()
+  if (error) throw error
+  return data
+}
+
+// Updates an existing note by id. `patch` may hold name, note, tableNo, seat
+export async function updatePlayerNote(id, patch) {
+  const row = { updated_at: new Date().toISOString() }
+  if ('note' in patch) row.note = patch.note
+  if ('tableNo' in patch) row.table_no = patch.tableNo ?? null
+  if ('seat' in patch) row.seat = patch.seat ?? null
+  if ('name' in patch) {
+    row.name = (patch.name ?? '').trim()
+    row.name_key = playerNoteKey(patch.name, patch.tableNo, patch.seat)
+  }
+  const { data, error } = await supabase.from('player_notes').update(row).eq('id', id).select(PLAYER_NOTE_COLS).single()
   if (error) throw error
   return data
 }
