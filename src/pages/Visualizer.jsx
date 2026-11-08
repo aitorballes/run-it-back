@@ -270,6 +270,26 @@ function getBetsByStep(hand, stepIdx) {
   return bets
 }
 
+// Last action of each player on the current street up to stepIdx (to label the chips: RAISE, CALL…)
+function getLastActionsByStep(hand, stepIdx) {
+  const last = new Map()
+  if (!hand.sequence.length || stepIdx < 0) return last
+  const cur = hand.sequence[Math.min(stepIdx, hand.sequence.length - 1)]
+  const streetStart = hand.streetStartStep[cur.street] ?? 0
+  for (let i = streetStart; i <= stepIdx; i++) {
+    const step = hand.sequence[i]
+    if (!step || step.type !== 'action') continue
+    const a = hand.actions[step.street]?.[step.idx]
+    if (a) last.set(a.player, a)
+  }
+  return last
+}
+
+const CHIP_ACTION = {
+  'post-sb': ['SB', '#70c0ff'], 'post-bb': ['BB', '#70e070'],
+  call: ['CALL', '#40c0d0'], bet: ['BET', '#e08040'], raise: ['RAISE', '#e0c040'],
+}
+
 function heroFoldedPreflop(hand) {
   return (hand.actions?.preflop ?? []).some(a => a.player === 'Hero' && a.type === 'fold')
 }
@@ -970,6 +990,7 @@ export default function Visualizer() {
 
   const fmt        = makeFmt(displayBB, hand.bb)
   const bets       = getBetsByStep(hand, curStep)
+  const lastActions = getLastActionsByStep(hand, curStep)
   const stacks     = getStacksByStep(hand, curStep)
   const runningPot = getPotByStep(hand, curStep)
   const boardCards = []
@@ -1361,9 +1382,12 @@ export default function Visualizer() {
               const pos = positions[si]
               const isHeroChip = ordered[si]?.player === 'Hero'
               const adjY = pos.y - (isHeroChip ? geo.heroLift : 0)
-              const rim = seatEdge(pos.x, adjY, isMobile ? 30 : 45, geo)
+              // Portrait: the hero's bigger cards would cover it, so it goes just above them
+              const rim = isMobile && isHeroChip ? { x: pos.x, y: adjY - 112 } : seatEdge(pos.x, adjY, isMobile ? 30 : 45, geo)
+              const act = lastActions.get(player)
+              const tag = act ? (act.allin ? ['ALL-IN', '#ff6060'] : CHIP_ACTION[act.type]) : null
               return (
-                <div key={player} style={{ position:'absolute',
+                <div key={player} style={{ position:'absolute', zIndex:3,
                   left: rim.x,
                   top:  rim.y,
                   transform:'translate(-50%,-50%)', pointerEvents:'none',
@@ -1381,6 +1405,7 @@ export default function Visualizer() {
                   <div style={{ fontSize:10, fontWeight:800, color:'#ffe080',
                     textShadow:'0 1px 6px rgba(0,0,0,1)', whiteSpace:'nowrap',
                     background:'rgba(0,0,0,.8)', borderRadius:3, padding:'1px 6px' }}>
+                    {tag && <span style={{ color: tag[1], marginRight:4 }}>{tag[0]}</span>}
                     {fmt(amount)}
                   </div>
                 </div>
