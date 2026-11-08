@@ -83,29 +83,27 @@ function getPositionLabel(seatNum, seats, buttonSeatNum) {
   const offset = (seatIdx - btnIdx + n) % n
   return (POS_LABELS[n] ?? [])[offset] ?? ''
 }
-const FELT_IRX = 318, FELT_IRY = 182  // felt inner semi-axes (inside the rail)
-
-// Returns a point just inside the felt rim in the direction of seat (px,py)
-function feltRim(px, py, inset = 0) {
-  const dx = px - CX, dy = py - CY
-  const len = Math.sqrt(dx * dx + dy * dy)
-  if (len < 1) return { x: CX, y: CY }
-  const nx = dx / len, ny = dy / len
-  const a = FELT_IRX - inset, b = FELT_IRY - inset
-  const r = (a * b) / Math.sqrt(b * b * nx * nx + a * a * ny * ny)
-  return { x: CX + nx * r, y: CY + ny * r }
+// Table layouts: landscape 800×540 on desktop; portrait on phones (like the live hand recorder), with smaller cards
+const LANDSCAPE = {
+  W: 800, H: 540, cx: CX, cy: CY, rx: RX, ry: RY, half: [57, 80], heroLift: 20,
+  felt: feltStyle, seatW: 114, card: 'lg', heroCard: 'lg', boardCard: 'lg',
 }
+// Portrait height stretches with the phone's screen (taller phones get a taller oval)
+const portraitLayout = (H = 680) => ({
+  W: 520, H, cx: 260, cy: H / 2, rx: 200, ry: H / 2 - 92, half: [50, 62], heroLift: 10,
+  felt: { ...feltStyle, top: 64, bottom: 64, left: 40, right: 40, borderWidth: 18 }, seatW: 100, card: 'sm', heroCard: 'md', boardCard: 'md',
+})
 
 // Returns a point `gap` px outside the near face of the seat container, toward center.
 // W/H are the approximate half-extents of the seat box (cards + badge + seat).
-function seatEdge(px, py, gap) {
-  const dx = px - CX, dy = py - CY
+function seatEdge(px, py, gap, g = LANDSCAPE) {
+  const dx = px - g.cx, dy = py - g.cy
   const len = Math.sqrt(dx * dx + dy * dy)
-  if (len < 1) return { x: CX, y: CY }
+  if (len < 1) return { x: g.cx, y: g.cy }
   const nx = dx / len, ny = dy / len
-  const extent = Math.abs(nx) * 57 + Math.abs(ny) * 80 // half-width=57, half-height=80
+  const extent = Math.abs(nx) * g.half[0] + Math.abs(ny) * g.half[1] // half-width / half-height of a seat
   const d = Math.max(0, len - extent - gap)
-  return { x: CX + nx * d, y: CY + ny * d }
+  return { x: g.cx + nx * d, y: g.cy + ny * d }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -294,13 +292,13 @@ function heroNet(hand) {
 
 // ── Sub-components ────────────────────────────────────────────────────
 // Large card that, during the showdown reveal, rises if it's part of the winning hand and sinks/dims if not.
-function RevealCard({ code, revealing, used }) {
+function RevealCard({ code, revealing, used, size = 'lg' }) {
   const style = !revealing ? {}
     : used ? { transform:'translateY(-12px)', filter:'drop-shadow(0 0 8px rgba(255,220,90,0.75))' }
     : { transform:'translateY(8px)', opacity:0.4 }
   return (
     <div style={{ transition:'transform .25s, opacity .25s, filter .25s', ...style }}>
-      <Card code={code} size="lg" />
+      <Card code={code} size={size} />
     </div>
   )
 }
@@ -354,6 +352,7 @@ export default function Visualizer() {
   const [listCopied,      setListCopied]      = useState(false)
   const [showMobileHands, setShowMobileHands] = useState(false)
   const [isMobile,        setIsMobile]        = useState(() => window.innerWidth < 768)
+  const [portraitH,       setPortraitH]       = useState(680)
 
   const areaRef         = useRef()
   const timerRef        = useRef()
@@ -541,20 +540,24 @@ export default function Visualizer() {
       const area = areaRef.current
       if (!area) return
       const mobile = window.innerWidth < 768
-      const availW = area.clientWidth - (mobile ? 48 : 24)
+      const availW = area.clientWidth - (mobile ? 16 : 24)
+      // Phones: full width, and as tall as the space the controls (~150px) leave, within 620–860
+      const portraitH = Math.round(Math.min(860, Math.max(620, (area.clientHeight - 150) * 520 / availW)))
+      if (mobile) setPortraitH(portraitH)
+      const g = mobile ? portraitLayout(portraitH) : LANDSCAPE
       // Height formula derived analytically so table + controls + notes + seat overflow all fit:
       //   content_height(s) = s*540 (table) + s*80 (controls paddingTop) + 88 (nav) + 10 (gap) + 142 (notes) + 20 (gaps) = s*620 + 260
       //   seat_overflow(s)  = 23 * s  (top seats extend ~23px above canvas top)
       //   require: s*620 + 260 + 2*(23*s) ≤ h - 40  → s ≤ (h - 300) / 666
       const scaleFromH = mobile
-        ? (area.clientHeight - 200) / 540
+        ? (area.clientHeight - 150) / g.H
         : (area.clientHeight - 300) / 666
-      setScale(Math.max(0.2, Math.min(availW / 800, scaleFromH, 1.0)))
+      setScale(Math.max(0.2, Math.min(availW / g.W, scaleFromH, 1.0)))
     }
     rescale()
     window.addEventListener('resize', rescale)
     return () => window.removeEventListener('resize', rescale)
-  }, [loading])
+  }, [loading, isMobile])
 
   useEffect(() => {
     const fn = () => setIsMobile(window.innerWidth < 768)
@@ -970,7 +973,8 @@ export default function Visualizer() {
   const ordered = heroIdx >= 0
     ? [...hand.seats.slice(heroIdx), ...hand.seats.slice(0, heroIdx)]
     : hand.seats
-  const positions = seatPositions(ordered.length)
+  const geo       = isMobile ? portraitLayout(portraitH) : LANDSCAPE
+  const positions = seatPositions(ordered.length, geo)
   const totalWon  = hand.winners.reduce((s, w) => s + w.amount, 0) || hand.totalPot
 
   return (
@@ -1149,14 +1153,14 @@ export default function Visualizer() {
         <div ref={areaRef} style={ta.root}>
 
           {/* Table */}
-          <div style={{ position:'relative', width:800, height:540, flexShrink:0,
+          <div style={{ position:'relative', width:geo.W, height:geo.H, flexShrink:0,
             transform:`scale(${scale})`, transformOrigin:'top center',
-            marginBottom: Math.round(540*(scale-1))+'px',
-            marginLeft: Math.round(800*(scale-1)/2)+'px',
-            marginRight: Math.round(800*(scale-1)/2)+'px' }}>
+            marginBottom: Math.round(geo.H*(scale-1))+'px',
+            marginLeft: Math.round(geo.W*(scale-1)/2)+'px',
+            marginRight: Math.round(geo.W*(scale-1)/2)+'px' }}>
 
             {/* Felt */}
-            <div style={ta.felt}>
+            <div style={geo.felt}>
               {/* Watermark */}
               {PLATFORM_ICONS[platform] ? (
                 <img src={PLATFORM_ICONS[platform]} alt="" draggable={false} style={ta.roomWatermark} />
@@ -1170,7 +1174,7 @@ export default function Visualizer() {
             <div style={{ ...ta.boardWrap, ...(revealing ? { zIndex:3 } : {}) }}>
               {boardCards.length > 0 && (
                 <div style={{ display:'flex', gap:7 }}>
-                  {boardCards.map((c,i) => <RevealCard key={i} code={c} revealing={revealing} used={showdownResult?.usedCards.has(c)} />)}
+                  {boardCards.map((c,i) => <RevealCard key={i} code={c} size={geo.boardCard} revealing={revealing} used={showdownResult?.usedCards.has(c)} />)}
                 </div>
               )}
               {revealing && (
@@ -1196,7 +1200,7 @@ export default function Visualizer() {
             {/* Seats */}
             {ordered.map((seat, i) => {
               const isHeroSeat = seat.player === 'Hero'
-              const pos = { ...positions[i], y: positions[i].y + (isHeroSeat ? -20 : 0) }
+              const pos = { ...positions[i], y: positions[i].y - (isHeroSeat ? geo.heroLift : 0) }
               const isHero   = seat.player === 'Hero'
               const isFolded = foldedPlayers.has(seat.player)
               const isAllin  = allinPlayers.has(seat.player)
@@ -1221,14 +1225,14 @@ export default function Visualizer() {
                   position:'absolute', left:pos.x, top:pos.y,
                   transform:'translate(-50%,-50%)',
                   display:'flex', flexDirection:'column', alignItems:'center',
-                  gap:2, width:114, opacity: isFolded || isShowdownLoser ? 0.35 : 1, pointerEvents:'none', zIndex:2,
+                  gap:2, width:geo.seatW, opacity: isFolded || isShowdownLoser ? 0.35 : 1, pointerEvents:'none', zIndex:2,
                   filter: isShowdownLoser ? 'grayscale(0.8)' : 'none', transition:'opacity .25s, filter .25s' }}>
 
                   {/* Cards — opponents revealed at showdown or when all active players are all-in */}
                   <div style={{ display:'flex', gap:3 }}>
                     {cards && (isHero || hand.revealHoleCards || curStep === seq.length - 1 || allInRunout)
-                      ? cards.map((c,ci) => <RevealCard key={ci} code={c} revealing={revealing && !isShowdownLoser} used={showdownResult?.usedCards.has(c)} />)
-                      : [0,1].map(ci => <CardBack key={ci} size="lg" />)}
+                      ? cards.map((c,ci) => <RevealCard key={ci} code={c} size={isHero ? geo.heroCard : geo.card} revealing={revealing && !isShowdownLoser} used={showdownResult?.usedCards.has(c)} />)
+                      : [0,1].map(ci => <CardBack key={ci} size={isHero ? geo.heroCard : geo.card} />)}
                   </div>
 
                   {/* Hero avatar — overlaps the bottom of the cards */}
@@ -1307,8 +1311,9 @@ export default function Visualizer() {
               if (btnIdx < 0) return null
               const pos = positions[btnIdx]
               const isHeroBtn = ordered[btnIdx]?.player === 'Hero'
-              const adjY = pos.y + (isHeroBtn ? -20 : 0)
-              const rim = seatEdge(pos.x, adjY, 15)
+              const adjY = pos.y - (isHeroBtn ? geo.heroLift : 0)
+              // Portrait: the hero's bigger cards would cover it, so it sits beside them
+              const rim = isMobile && isHeroBtn ? { x: pos.x + 66, y: adjY - 24 } : seatEdge(pos.x, adjY, 15, geo)
               return (
                 <div style={{ position:'absolute', pointerEvents:'none',
                   left: rim.x,
@@ -1331,8 +1336,8 @@ export default function Visualizer() {
               if (si < 0) return null
               const pos = positions[si]
               const isHeroChip = ordered[si]?.player === 'Hero'
-              const adjY = pos.y + (isHeroChip ? -20 : 0)
-              const rim = seatEdge(pos.x, adjY, 45)
+              const adjY = pos.y - (isHeroChip ? geo.heroLift : 0)
+              const rim = seatEdge(pos.x, adjY, isMobile ? 30 : 45, geo)
               return (
                 <div key={player} style={{ position:'absolute',
                   left: rim.x,
@@ -1360,10 +1365,11 @@ export default function Visualizer() {
           </div>
 
           {/* ── Controls ── */}
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop: isMobile ? 12 : Math.round(scale * 80) }}>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop: isMobile ? 12 : Math.round(scale * 80),
+            ...(isMobile ? { width:'100%', boxSizing:'border-box', padding:'12px 16px 0' } : null) }}>
 
             {/* Street nav */}
-            <div style={{ display:'flex', gap:8 }}>
+            <div style={{ display:'flex', gap:8, ...(isMobile ? { width:'100%' } : null) }}>
               {STREET_ORDER.map(s => {
                 const exists = s === 'preflop'
                   || (s === 'flop'  && hand.board.flop.length > 0)
@@ -1373,7 +1379,7 @@ export default function Visualizer() {
                 return (
                   <button key={s} disabled={!exists || !(s in hand.streetStartStep)}
                     onClick={() => jumpToStreet(s)}
-                    style={{ ...stBtn, ...(active ? stBtnActive : {}),
+                    style={{ ...stBtn, ...(isMobile ? stBtnMobile : null), ...(active ? stBtnActive : {}),
                       opacity: (!exists || !(s in hand.streetStartStep)) ? 0.32 : 1 }}>
                     {s.toUpperCase()}
                   </button>
@@ -1382,13 +1388,13 @@ export default function Visualizer() {
             </div>
 
             {/* Step nav */}
-            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <div style={{ display:'flex', alignItems:'center', gap: isMobile ? 6 : 10, ...(isMobile ? { width:'100%' } : null) }}>
               {[
                 { id:'prev',     icon:'⏮\uFE0E', disabled: dispIdx <= 0 || displayHandsWithIdx.length <= 1,            action: () => goHand(displayHandsWithIdx[dispIdx-1]?.i) },
                 { id:'stepPrev', icon:'⏪\uFE0E', disabled: curStep <= 0 && !revealing, action: () => { setPlaying(false); if (revealing) setShowWinner(false); else setCurStep(s => Math.max(0, s-1)) } },
-              ].map(b => <button key={b.id} style={{ ...ctrlBtn, ...(b.disabled ? ctrlBtnDisabled : {}) }} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
+              ].map(b => <button key={b.id} style={{ ...ctrlBtn, ...(isMobile ? ctrlBtnMobile : null), ...(b.disabled ? ctrlBtnDisabled : {}) }} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
 
-              <button style={{ ...ctrlBtn, ...(playing ? ctrlBtnPlaying : {}) }}
+              <button style={{ ...ctrlBtn, ...(isMobile ? ctrlBtnMobile : null), ...(playing ? ctrlBtnPlaying : {}) }}
                 onClick={() => setPlaying(p => !p)}>
                 {playing ? '⏸\uFE0E' : '▶\uFE0E'}
               </button>
@@ -1399,10 +1405,10 @@ export default function Visualizer() {
                   if (curStep >= seq.length-1) setShowWinner(true); else setCurStep(s => Math.min(seq.length-1, s+1))
                 } },
                 { id:'next',     icon:'⏭\uFE0E', disabled: dispIdx >= displayHandsWithIdx.length-1 || displayHandsWithIdx.length <= 1, action: () => goHand(displayHandsWithIdx[dispIdx+1]?.i) },
-              ].map(b => <button key={b.id} style={{ ...ctrlBtn, ...(b.disabled ? ctrlBtnDisabled : {}) }} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
+              ].map(b => <button key={b.id} style={{ ...ctrlBtn, ...(isMobile ? ctrlBtnMobile : null), ...(b.disabled ? ctrlBtnDisabled : {}) }} disabled={b.disabled} onClick={b.action}>{b.icon}</button>)}
 
               {/* BB toggle */}
-              <button style={{ ...ctrlBtn, ...(displayBB ? ctrlBtnPlaying : {}), fontSize:13, fontWeight:900, width:46, marginLeft:14 }}
+              <button style={{ ...ctrlBtn, ...(isMobile ? ctrlBtnMobile : null), ...(displayBB ? ctrlBtnPlaying : {}), fontSize:13, fontWeight:900, width:46, marginLeft: isMobile ? 6 : 14 }}
                 onClick={() => setDisplayBB(p => !p)}>
                 {displayBB
                   ? <span style={{ textDecoration:'line-through', textDecorationThickness:2 }}>BB</span>
@@ -1805,7 +1811,6 @@ const ta = {
   info:      { display:'flex', flexDirection:'column', alignItems:'center', gap:3, flexShrink:0 },
   infoName:  { fontSize:15, fontWeight:800, color:'#90b8e0' },
   infoLevel: { fontSize:12, fontWeight:600, color:'#4a6a88' },
-  felt:      feltStyle,
   roomWatermark: { position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
                width:150, height:150, objectFit:'contain', borderRadius:28, opacity:0.1,
                filter:'grayscale(0.3)', pointerEvents:'none', userSelect:'none' },
@@ -1837,6 +1842,9 @@ const ctrlBtn = {
   boxShadow:'0 3px 6px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.55)',
   transition:'all 0.1s', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1,
 }
+// Phones: buttons share the row width (16px from the screen edges) instead of fixed widths
+const stBtnMobile  = { flex:'1 1 0', minWidth:0, padding:'6px 0', height:36 }
+const ctrlBtnMobile = { flex:'1 1 0', minWidth:0, width:'auto', height:44, fontSize:20 }
 const ctrlBtnPlaying = {
   background:'linear-gradient(to bottom,#3a8040 0%,#1e5028 100%)',
   color:'#a0ffa0', borderColor:'#2a6030',

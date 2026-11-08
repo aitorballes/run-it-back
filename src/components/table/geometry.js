@@ -1,10 +1,10 @@
 // Table geometry shared by the Visualizer and the live hand recorder: an 800×540 table, seat 0 at the bottom
 export const CX = 400, CY = 270, RX = 368, RY = 228
 
-export function seatPositions(n) {
+export function seatPositions(n, { cx = CX, cy = CY, rx = RX, ry = RY } = {}) {
   return Array.from({ length: n }, (_, i) => {
     const rad = (180 + 360 * i / n) * Math.PI / 180
-    return { x: CX + RX * Math.sin(rad), y: CY - RY * Math.cos(rad) }
+    return { x: cx + rx * Math.sin(rad), y: cy - ry * Math.cos(rad) }
   })
 }
 
