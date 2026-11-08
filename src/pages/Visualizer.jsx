@@ -1421,8 +1421,8 @@ export default function Visualizer() {
           <div ref={controlsRef} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop: isMobile ? 12 : Math.round(scale * 80),
             ...(isMobile ? { width:'100%', boxSizing:'border-box', padding:'12px 16px 0' } : null) }}>
 
-            {/* Street nav */}
-            <div style={{ display:'flex', gap:8, ...(isMobile ? { width:'100%' } : null) }}>
+            {/* Street nav (desktop only: on phones the space goes to the table) */}
+            <div style={{ display: isMobile ? 'none' : 'flex', gap:8 }}>
               {STREET_ORDER.map(s => {
                 const exists = s === 'preflop'
                   || (s === 'flop'  && hand.board.flop.length > 0)
@@ -1432,7 +1432,7 @@ export default function Visualizer() {
                 return (
                   <button key={s} disabled={!exists || !(s in hand.streetStartStep)}
                     onClick={() => jumpToStreet(s)}
-                    style={{ ...stBtn, ...(isMobile ? stBtnMobile : null), ...(active ? stBtnActive : {}),
+                    style={{ ...stBtn, ...(active ? stBtnActive : {}),
                       opacity: (!exists || !(s in hand.streetStartStep)) ? 0.32 : 1 }}>
                     {s.toUpperCase()}
                   </button>
@@ -1828,7 +1828,8 @@ export default function Visualizer() {
 
 
 // ── Styles ────────────────────────────────────────────────────────────
-const page = { height:'100vh', background:'radial-gradient(ellipse at 30% 20%,#1a2a3a 0%,#0d1520 40%,#050b10 100%)',
+// dvh: the visible height (on iOS Safari 100vh also counts what its toolbars cover, hiding the controls)
+const page = { height:'100dvh', background:'radial-gradient(ellipse at 30% 20%,#1a2a3a 0%,#0d1520 40%,#050b10 100%)',
   display:'flex', flexDirection:'column', fontFamily:"'Segoe UI',system-ui,sans-serif", color:'#dde0e8', overflow:'hidden' }
 
 const hdr = {
@@ -1896,7 +1897,6 @@ const ctrlBtn = {
   transition:'all 0.1s', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1,
 }
 // Phones: buttons share the row width (16px from the screen edges) instead of fixed widths
-const stBtnMobile  = { flex:'1 1 0', minWidth:0, padding:'6px 0', height:36 }
 const ctrlBtnMobile = { flex:'1 1 0', minWidth:0, width:'auto', height:44, fontSize:20 }
 const ctrlBtnPlaying = {
   background:'linear-gradient(to bottom,#3a8040 0%,#1e5028 100%)',
