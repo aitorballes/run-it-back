@@ -766,8 +766,8 @@ export default function LiveTournament() {
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <button style={{ ...base.ghostBtn, color: '#e07070', border: '1px solid rgba(160,30,30,0.35)' }} onClick={() => setConfirmDelete(true)}>
+          <div style={{ display: 'flex' }}>
+            <button style={{ ...base.ghostBtn, flex: 1, padding: '13px 14px', fontSize: 14, color: '#e07070', border: '1px solid rgba(160,30,30,0.35)' }} onClick={() => setConfirmDelete(true)}>
               {t('live.delete')}
             </button>
           </div>
