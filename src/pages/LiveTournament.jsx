@@ -35,6 +35,8 @@ export default function LiveTournament() {
   const [playersIn, setPlayersIn] = useState('')
   const [entriesIn, setEntriesIn] = useState('')
   const [savedFlash, setSavedFlash] = useState(false)
+  const [showUpdate, setShowUpdate] = useState(false)
+  const [showBreak, setShowBreak]   = useState(false)
 
   const [editingTime, setEditingTime] = useState(false)
   const [timeIn, setTimeIn]   = useState('')
@@ -180,6 +182,7 @@ export default function LiveTournament() {
       history: [...tour.history, { at: new Date().toISOString(), day, level: playLevel, stack, players, entries }],
     })
     setStackIn(''); setPlayersIn(''); setEntriesIn('')
+    setShowUpdate(false)
     setSavedFlash(true)
     setTimeout(() => setSavedFlash(false), 1500)
   }
@@ -202,6 +205,7 @@ export default function LiveTournament() {
     patch({ structure: addBreaks(tour.structure, after, minutes, every) })
     if (draft) setDraft(addBreaks(draft, after, minutes, every))
     setBrk(b => ({ ...b, after: '', every: '' }))
+    setShowBreak(false)
     setBreakAdded(true)
     setTimeout(() => setBreakAdded(false), 1500)
   }
@@ -395,14 +399,6 @@ export default function LiveTournament() {
           )}
         </div>
 
-        {running && (
-          <button style={s.newHandBtn} onClick={() => navigate(`/live/${id}/hand/new`)}>🂡 {t('live.hands.new')}</button>
-        )}
-
-        <button style={{ ...base.ghostBtn, alignSelf: 'flex-start' }} onClick={() => navigate(`/live/${id}/table`)}>
-          {t('live.myTable.title')}{tour.tables?.length ? ` · ${t('live.notes.tableN', { n: tour.tables.at(-1).no })}` : ''}
-        </button>
-
         {/* STATS */}
         <div style={s.stats}>
           <Stat label={t('live.stats.myStack')} value={tour.my_stack != null ? fmtNumber(tour.my_stack) : '—'}
@@ -417,34 +413,137 @@ export default function LiveTournament() {
             sub={t('live.stats.startingStack', { n: fmtNumber(tour.starting_stack) })} />
         </div>
 
-        {/* UPDATE */}
-        {running && (
-          <form style={base.card} onSubmit={saveUpdate}>
-            <div style={base.cardTitle}>{t('live.update.title')}</div>
-            <div style={base.row}>
-              <label style={{ ...base.field, flex: '1 1 140px', minWidth: 0 }}>
-                <span style={base.label}>{t('live.update.stack')}</span>
-                <input style={base.input} inputMode="numeric" value={stackIn} onChange={e => setStackIn(e.target.value)}
-                  placeholder={tour.my_stack != null ? fmtNumber(tour.my_stack) : ''} />
-              </label>
-              <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
-                <span style={base.label}>{t('live.update.players')}</span>
-                <input style={base.input} inputMode="numeric" value={playersIn} onChange={e => setPlayersIn(e.target.value)}
-                  placeholder={tour.players_left != null ? String(tour.players_left) : ''} />
-              </label>
-              <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
-                <span style={base.label}>{t('live.update.entries')}</span>
-                <input style={base.input} inputMode="numeric" value={entriesIn} onChange={e => setEntriesIn(e.target.value)}
-                  placeholder={tour.entries != null ? String(tour.entries) : ''} />
-              </label>
-            </div>
-            <div style={base.actions}>
+        {/* STACK CHART + update button */}
+        <div style={base.card}>
+          {tour.history.length === 0 ? (
+            <div style={base.hint}>{t('live.history.empty')}</div>
+          ) : (
+            <>
+              <StackChart points={chartPoints} locale={locale} labels={{
+                title: t('live.history.chartTitle'), stack: t('live.stats.myStack'),
+                average: t('live.stats.average'), level: t('live.structure.level'),
+                day: n => t('live.day', { n }),
+              }} multiDay={multiDay} selected={editIdx} onSelect={startEdit} />
+              {editing ? (
+                <form key={editIdx} ref={editRef} style={s.editRow} onSubmit={saveHistoryEdit}>
+                  <div style={s.editHead}>
+                    {new Date(editing.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })} · {t('live.level', { n: editing.level })}
+                  </div>
+                  <div style={base.row}>
+                    {[['stack', t('live.update.stack')], ['players', t('live.update.players')], ['entries', t('live.update.entries')]].map(([k, label]) => (
+                      <label key={k} style={{ ...base.field, flex: k === 'stack' ? '1 1 120px' : '1 1 80px', minWidth: 0 }}>
+                        <span style={base.label}>{label}</span>
+                        <input style={base.input} inputMode="numeric" value={editVals[k]}
+                          autoFocus={k === 'stack'} onFocus={e => e.target.select()} onChange={e => setEditVals(v => ({ ...v, [k]: e.target.value }))} />
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ ...base.actions, justifyContent: 'space-between' }}>
+                    <button type="button" style={{ ...base.ghostBtn, ...s.dangerBtn }} onClick={() => deleteHistory(editIdx)}>
+                      {t('common.delete')}
+                    </button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button type="button" style={base.ghostBtn} onClick={() => setEditIdx(null)}>{t('common.cancel')}</button>
+                      <button type="submit" style={base.btn}>{t('common.save')}</button>
+                    </div>
+                  </div>
+                </form>
+              ) : (
+                <div style={base.hint}>{t('live.history.editHint')}</div>
+              )}
+            </>
+          )}
+          {running && (
+            <div style={s.cardBtnRow}>
               {savedFlash && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
-              <button style={base.btn} type="submit" disabled={!stackIn && !playersIn && !entriesIn}>
-                {t('live.update.save')}
-              </button>
+              <button style={{ ...base.btn, flex: 1 }} onClick={() => setShowUpdate(true)}>{t('live.update.button')}</button>
             </div>
-          </form>
+          )}
+        </div>
+
+        {/* BREAKS */}
+        {running && (
+          <div style={s.cardBtnRow}>
+            {breakAdded && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
+            <button style={{ ...base.ghostBtn, ...s.breakBtn }} onClick={() => setShowBreak(true)}>
+              ☕ {t('live.structure.addBreak')}
+            </button>
+          </div>
+        )}
+
+        {running && (
+          <button style={s.newHandBtn} onClick={() => navigate(`/live/${id}/hand/new`)}>🂡 {t('live.hands.new')}</button>
+        )}
+
+        <button style={{ ...base.ghostBtn, alignSelf: 'flex-start' }} onClick={() => navigate(`/live/${id}/table`)}>
+          {t('live.myTable.title')}{tour.tables?.length ? ` · ${t('live.notes.tableN', { n: tour.tables.at(-1).no })}` : ''}
+        </button>
+
+        {/* UPDATE modal */}
+        {running && showUpdate && (
+          <Modal title={t('live.update.button')} onClose={() => setShowUpdate(false)} closeLabel={t('common.cancel')}>
+            <form style={s.modalForm} onSubmit={saveUpdate}>
+              <div style={base.row}>
+                <label style={{ ...base.field, flex: '1 1 140px', minWidth: 0 }}>
+                  <span style={base.label}>{t('live.update.stack')}</span>
+                  <input style={base.input} inputMode="numeric" value={stackIn} autoFocus onChange={e => setStackIn(e.target.value)}
+                    placeholder={tour.my_stack != null ? fmtNumber(tour.my_stack) : ''} />
+                </label>
+                <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
+                  <span style={base.label}>{t('live.update.players')}</span>
+                  <input style={base.input} inputMode="numeric" value={playersIn} onChange={e => setPlayersIn(e.target.value)}
+                    placeholder={tour.players_left != null ? String(tour.players_left) : ''} />
+                </label>
+                <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
+                  <span style={base.label}>{t('live.update.entries')}</span>
+                  <input style={base.input} inputMode="numeric" value={entriesIn} onChange={e => setEntriesIn(e.target.value)}
+                    placeholder={tour.entries != null ? String(tour.entries) : ''} />
+                </label>
+              </div>
+              <div style={base.actions}>
+                <button style={base.ghostBtn} type="button" onClick={() => setShowUpdate(false)}>{t('common.cancel')}</button>
+                <button style={base.btn} type="submit" disabled={!stackIn && !playersIn && !entriesIn}>
+                  {t('live.update.save')}
+                </button>
+              </div>
+            </form>
+          </Modal>
+        )}
+
+        {/* BREAK modal */}
+        {running && showBreak && (
+          <Modal title={`☕ ${t('live.structure.addBreak')}`} onClose={() => setShowBreak(false)} closeLabel={t('common.cancel')}>
+            <form style={s.modalForm} onSubmit={addBreak}>
+              <div style={s.breakGrid}>
+                <label style={{ ...base.field, minWidth: 0 }}>
+                  <span style={base.label}>{t('live.structure.afterLevel')}</span>
+                  <input style={base.input} inputMode="numeric" value={brk.after} placeholder={String(levelNo)}
+                    onChange={e => setBrk(b => ({ ...b, after: e.target.value }))} />
+                </label>
+                <label style={{ ...base.field, minWidth: 0 }}>
+                  <span style={base.label}>{t('live.structure.breakMinutes')}</span>
+                  <input style={base.input} inputMode="numeric" value={brk.minutes}
+                    onChange={e => setBrk(b => ({ ...b, minutes: e.target.value }))} />
+                </label>
+                <label style={{ ...base.field, minWidth: 0, gridColumn: '1 / -1' }}>
+                  <span style={base.label}>{t('live.structure.every')}</span>
+                  <input style={base.input} inputMode="numeric" value={brk.every} placeholder={t('live.structure.optional')}
+                    onChange={e => setBrk(b => ({ ...b, every: e.target.value }))} />
+                </label>
+              </div>
+              <div style={base.hint}>{t('live.structure.breakHint')}</div>
+              {upcomingBreaks.length > 0 && (
+                <div style={s.breakList}>
+                  {t('live.structure.upcomingBreaks')}{' '}
+                  {upcomingBreaks.map(b => t('live.structure.breakItem', { n: b.level, m: b.minutes })).join(' · ')}
+                </div>
+              )}
+              <div style={base.actions}>
+                <button style={base.ghostBtn} type="button" onClick={() => setShowBreak(false)}>{t('common.cancel')}</button>
+                <button type="submit" style={base.btn} disabled={!parseChips(brk.minutes)}>+ {t('live.structure.addBreak')}</button>
+              </div>
+            </form>
+          </Modal>
         )}
 
         {/* HANDS */}
@@ -485,42 +584,6 @@ export default function LiveTournament() {
             })}
           </div>
         )}
-
-        {/* BREAKS */}
-        {running && (
-          <form style={base.card} onSubmit={addBreak}>
-            <div style={base.cardTitle}>☕ {t('live.structure.addBreak')}</div>
-            <div style={s.breakGrid}>
-              <label style={{ ...base.field, minWidth: 0 }}>
-                <span style={base.label}>{t('live.structure.afterLevel')}</span>
-                <input style={base.input} inputMode="numeric" value={brk.after} placeholder={String(levelNo)}
-                  onChange={e => setBrk(b => ({ ...b, after: e.target.value }))} />
-              </label>
-              <label style={{ ...base.field, minWidth: 0 }}>
-                <span style={base.label}>{t('live.structure.breakMinutes')}</span>
-                <input style={base.input} inputMode="numeric" value={brk.minutes}
-                  onChange={e => setBrk(b => ({ ...b, minutes: e.target.value }))} />
-              </label>
-              <label style={{ ...base.field, minWidth: 0, gridColumn: '1 / -1' }}>
-                <span style={base.label}>{t('live.structure.every')}</span>
-                <input style={base.input} inputMode="numeric" value={brk.every} placeholder={t('live.structure.optional')}
-                  onChange={e => setBrk(b => ({ ...b, every: e.target.value }))} />
-              </label>
-            </div>
-            <div style={base.hint}>{t('live.structure.breakHint')}</div>
-            {upcomingBreaks.length > 0 && (
-              <div style={s.breakList}>
-                {t('live.structure.upcomingBreaks')}{' '}
-                {upcomingBreaks.map(b => t('live.structure.breakItem', { n: b.level, m: b.minutes })).join(' · ')}
-              </div>
-            )}
-            <div style={base.actions}>
-              {breakAdded && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
-              <button type="submit" style={base.btn} disabled={!parseChips(brk.minutes)}>+ {t('live.structure.addBreak')}</button>
-            </div>
-          </form>
-        )}
-
         {/* STRUCTURE */}
         <div style={base.card}>
           <button style={s.sectionToggle} onClick={() => setShowStructure(v => !v)}>
@@ -588,77 +651,40 @@ export default function LiveTournament() {
             </>
           )}
         </div>
-
         {/* HISTORY */}
-        <div style={base.card}>
-          <div style={base.cardTitle}>{t('live.history.title')}</div>
-          {tour.history.length === 0 ? (
-            <div style={base.hint}>{t('live.history.empty')}</div>
-          ) : (
-            <>
-              <StackChart points={chartPoints} locale={locale} labels={{
-                title: t('live.history.chartTitle'), stack: t('live.stats.myStack'),
-                average: t('live.stats.average'), level: t('live.structure.level'),
-                day: n => t('live.day', { n }),
-              }} multiDay={multiDay} selected={editIdx} onSelect={startEdit} />
-              {editing ? (
-                <form key={editIdx} ref={editRef} style={s.editRow} onSubmit={saveHistoryEdit}>
-                  <div style={s.editHead}>
-                    {new Date(editing.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })} · {t('live.level', { n: editing.level })}
-                  </div>
-                  <div style={base.row}>
-                    {[['stack', t('live.update.stack')], ['players', t('live.update.players')], ['entries', t('live.update.entries')]].map(([k, label]) => (
-                      <label key={k} style={{ ...base.field, flex: k === 'stack' ? '1 1 120px' : '1 1 80px', minWidth: 0 }}>
-                        <span style={base.label}>{label}</span>
-                        <input style={base.input} inputMode="numeric" value={editVals[k]}
-                          autoFocus={k === 'stack'} onFocus={e => e.target.select()} onChange={e => setEditVals(v => ({ ...v, [k]: e.target.value }))} />
-                      </label>
-                    ))}
-                  </div>
-                  <div style={{ ...base.actions, justifyContent: 'space-between' }}>
-                    <button type="button" style={{ ...base.ghostBtn, ...s.dangerBtn }} onClick={() => deleteHistory(editIdx)}>
-                      {t('common.delete')}
-                    </button>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" style={base.ghostBtn} onClick={() => setEditIdx(null)}>{t('common.cancel')}</button>
-                      <button type="submit" style={base.btn}>{t('common.save')}</button>
-                    </div>
-                  </div>
-                </form>
-              ) : (
-                <div style={base.hint}>{t('live.history.editHint')}</div>
-              )}
-              <div style={s.table}>
-                <div style={{ ...s.hr, ...s.th }}>
-                  <span>{t('live.history.time')}</span>
-                  <span title={t('live.structure.level')}>#</span>
-                  <span style={{ textAlign: 'right' }}>{t('live.history.stack')}</span>
-                  <span style={{ textAlign: 'right' }}>BB</span>
-                  <span style={{ textAlign: 'right' }}>{t('live.history.players')}</span>
-                  <span />
-                </div>
-                {history.map(({ h, idx }, k) => (
-                  <Fragment key={idx}>
-                    {multiDay && (k === 0 || (history[k - 1].h.day ?? 1) !== (h.day ?? 1)) && (
-                      <div style={s.daySep}>{t('live.day', { n: h.day ?? 1 })}</div>
-                    )}
-                    <button style={{ ...s.hr, ...s.hrBtn, ...(idx === editIdx ? s.hrSelected : null) }}
-                      onClick={() => startEdit(idx, true)} title={t('live.history.edit')}>
-                      <span style={{ color: '#4a6a8a' }}>
-                        {new Date(h.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      <span>{h.level}</span>
-                      <span style={{ textAlign: 'right', fontWeight: 700 }}>{h.stack != null ? fmtNumber(h.stack) : '—'}</span>
-                      <span style={{ textAlign: 'right', color: '#50d080' }}>{fmtBB(inBigBlinds(h.stack, levelAt(tour.structure, h.level)))}</span>
-                      <span style={{ textAlign: 'right' }}>{h.players != null ? fmtNumber(h.players) : '—'}</span>
-                      <span style={s.editIcon}>✎</span>
-                    </button>
-                  </Fragment>
-                ))}
+        {tour.history.length > 0 && (
+          <div style={base.card}>
+            <div style={base.cardTitle}>{t('live.history.title')}</div>
+            <div style={s.table}>
+              <div style={{ ...s.hr, ...s.th }}>
+                <span>{t('live.history.time')}</span>
+                <span title={t('live.structure.level')}>#</span>
+                <span style={{ textAlign: 'right' }}>{t('live.history.stack')}</span>
+                <span style={{ textAlign: 'right' }}>BB</span>
+                <span style={{ textAlign: 'right' }}>{t('live.history.players')}</span>
+                <span />
               </div>
-            </>
-          )}
-        </div>
+              {history.map(({ h, idx }, k) => (
+                <Fragment key={idx}>
+                  {multiDay && (k === 0 || (history[k - 1].h.day ?? 1) !== (h.day ?? 1)) && (
+                    <div style={s.daySep}>{t('live.day', { n: h.day ?? 1 })}</div>
+                  )}
+                  <button style={{ ...s.hr, ...s.hrBtn, ...(idx === editIdx ? s.hrSelected : null) }}
+                    onClick={() => startEdit(idx, true)} title={t('live.history.edit')}>
+                    <span style={{ color: '#4a6a8a' }}>
+                      {new Date(h.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span>{h.level}</span>
+                    <span style={{ textAlign: 'right', fontWeight: 700 }}>{h.stack != null ? fmtNumber(h.stack) : '—'}</span>
+                    <span style={{ textAlign: 'right', color: '#50d080' }}>{fmtBB(inBigBlinds(h.stack, levelAt(tour.structure, h.level)))}</span>
+                    <span style={{ textAlign: 'right' }}>{h.players != null ? fmtNumber(h.players) : '—'}</span>
+                    <span style={s.editIcon}>✎</span>
+                  </button>
+                </Fragment>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* FINISH */}
         {running && (
@@ -732,6 +758,26 @@ function CtrlButton({ icon, caption, title, active, disabled, onClick }) {
         {icon}
       </button>
       <span style={s.ctrlCaption}>{caption}</span>
+    </div>
+  )
+}
+
+// Centred dialog; closes with Esc or a tap outside
+function Modal({ title, onClose, closeLabel, children }) {
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div style={s.overlay} onClick={onClose}>
+      <div style={s.modal} role="dialog" aria-modal="true" aria-label={title} onClick={e => e.stopPropagation()}>
+        <div style={s.modalHeader}>
+          <span style={base.cardTitle}>{title}</span>
+          <button style={s.modalClose} onClick={onClose} aria-label={closeLabel} title={closeLabel}>✕</button>
+        </div>
+        {children}
+      </div>
     </div>
   )
 }
@@ -855,6 +901,18 @@ const s = {
     background: 'rgba(30,92,173,0.12)', border: '1px solid #2a4a80', borderRadius: 10,
   },
   editHead: { fontSize: 11, fontWeight: 800, color: '#7ab0d8' },
+  cardBtnRow: { display: 'flex', alignItems: 'center', gap: 10 },
+  breakBtn: { flex: 1, padding: '11px 14px', fontSize: 13, color: '#f0c070', borderColor: 'rgba(240,192,112,0.35)' },
+  overlay: {
+    position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+  },
+  modal: {
+    ...base.card, width: 'min(480px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxSizing: 'border-box',
+  },
+  modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  modalClose: { background: 'none', border: 'none', color: '#5a7a9a', fontSize: 18, cursor: 'pointer', padding: 4, lineHeight: 1 },
+  modalForm: { display: 'flex', flexDirection: 'column', gap: 12 },
   dangerBtn: { color: '#e07070', border: '1px solid rgba(160,30,30,0.35)' },
 
   resultCard: {

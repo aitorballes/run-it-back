@@ -433,6 +433,7 @@ export default {
     },
     update: {
       title: 'Mettre à jour',
+      button: 'Mettre à jour le tapis',
       stack: 'Mon tapis',
       players: 'Joueurs',
       entries: 'Entrées',

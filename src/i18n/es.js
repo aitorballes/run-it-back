@@ -434,6 +434,7 @@ export default {
     },
     update: {
       title: 'Actualizar',
+      button: 'Actualizar stack',
       stack: 'Mi stack',
       players: 'Jugadores',
       entries: 'Entradas',

@@ -433,6 +433,7 @@ export default {
     },
     update: {
       title: 'Update',
+      button: 'Update stack',
       stack: 'My stack',
       players: 'Players',
       entries: 'Entries',
