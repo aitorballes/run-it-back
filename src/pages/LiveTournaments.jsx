@@ -177,7 +177,11 @@ export default function LiveTournaments() {
             {items.map(x => (
               <button key={x.id} style={s.item} onClick={() => navigate(`/live/${x.id}`)}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={s.itemName}>{x.name}</div>
+                  <div style={s.itemName}>
+                    {x.name}{x.history?.some(h => h.rebuy) && (
+                      <span style={{ color: '#7ab0d8' }}> [{1 + x.history.filter(h => h.rebuy).length}]</span>
+                    )}
+                  </div>
                   <div style={s.itemMeta}>
                     {x.venue} · {new Date(x.created_at).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })}
                   </div>

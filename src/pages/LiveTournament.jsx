@@ -28,6 +28,8 @@ export default function LiveTournament() {
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmNextDay, setConfirmNextDay] = useState(false)
+  const [confirmFinish, setConfirmFinish] = useState(false) // finish or rebuy?
+  const [rebuyFlash, setRebuyFlash] = useState(null)
   const [now, setNow]     = useState(() => Date.now())
 
   // Update form
@@ -128,6 +130,7 @@ export default function LiveTournament() {
   const myBB      = inBigBlinds(tour.my_stack, level)
   const avgBB     = inBigBlinds(avg, level)
   const pctAvg    = avg && tour.my_stack != null ? Math.round((tour.my_stack / avg) * 100) : null
+  const myEntries = 1 + tour.history.filter(h => h.rebuy).length // the Dashboard shows [n] when > 1
   const totalChips = tour.entries && tour.starting_stack ? tour.entries * tour.starting_stack : null
 
   function goToLevel(n) {
@@ -244,6 +247,21 @@ export default function LiveTournament() {
     }).then(() => syncLiveTournamentRow(tourRef.current))
   }
 
+  // Rebuy: back to the starting stack with one more entry in the field; the tournament keeps running
+  function rebuy() {
+    setConfirmFinish(false)
+    const stack = tour.starting_stack ?? tour.my_stack
+    const entries = tour.entries ? tour.entries + 1 : tour.entries
+    patch({
+      my_stack: stack,
+      entries,
+      history: [...tour.history, { at: new Date().toISOString(), day, level: playLevel, stack, players: tour.players_left, entries, rebuy: true }],
+    }).then(() => syncLiveTournamentRow(tourRef.current))
+    setFinishPos(''); setFinishPrize('')
+    setRebuyFlash(myEntries + 1)
+    setTimeout(() => setRebuyFlash(null), 2500)
+  }
+
   async function handleDelete() {
     setConfirmDelete(false)
     try {
@@ -327,7 +345,8 @@ export default function LiveTournament() {
   function deleteHistory(idx) {
     if (!window.confirm(t('live.history.deleteConfirm'))) return
     const newHistory = tour.history.filter((_, i) => i !== idx)
-    patch({ history: newHistory, ...(idx === tour.history.length - 1 ? syncCurrent(newHistory) : null) })
+    const saved = patch({ history: newHistory, ...(idx === tour.history.length - 1 ? syncCurrent(newHistory) : null) })
+    if (tour.history[idx].rebuy) saved.then(() => syncLiveTournamentRow(tourRef.current))
     setEditIdx(null)
   }
 
@@ -337,7 +356,9 @@ export default function LiveTournament() {
 
       <div style={base.content}>
         <div>
-          <div style={base.title}>{tour.name}</div>
+          <div style={base.title}>
+            {tour.name}{myEntries > 1 && <span style={s.entriesTag}> [{myEntries}]</span>}
+          </div>
           <div style={base.subtitle}>
             {tour.venue} · {t('live.form.buyin')} {fmtNumber(tour.buyin)}{tour.currency} · {t('live.levelMinutesShort', { n: levelMinutes(tour, levelNo) })}
           </div>
@@ -535,6 +556,7 @@ export default function LiveTournament() {
                         onClick={() => startEdit(idx, true)} title={t('live.history.edit')}>
                         <span style={{ color: '#4a6a8a' }}>
                           {new Date(h.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
+                          {h.rebuy && <span title={t('live.finish.rebuyRow')}> 🔁</span>}
                         </span>
                         <span>{h.level}</span>
                         <span style={{ textAlign: 'right', fontWeight: 700 }}>{h.stack != null ? fmtNumber(h.stack) : '—'}</span>
@@ -705,7 +727,17 @@ export default function LiveTournament() {
                 <input style={base.input} inputMode="decimal" value={finishPrize} onChange={e => setFinishPrize(e.target.value)} placeholder="0" />
               </label>
             </div>
-            {confirmNextDay ? (
+            {rebuyFlash && <div style={s.rebuyFlash}>🔁 {t('live.finish.rebuyDone', { n: rebuyFlash })}</div>}
+            {confirmFinish ? (
+              <div style={s.dayConfirmBox}>
+                <div style={s.dayConfirmText}>{t('live.finish.confirm')}</div>
+                <div style={{ ...base.actions, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button type="button" style={base.ghostBtn} onClick={() => setConfirmFinish(false)}>{t('common.cancel')}</button>
+                  <button type="button" style={s.rebuyBtn} onClick={rebuy}>🔁 {t('live.finish.rebuy')}</button>
+                  <button type="submit" style={base.btn}>{t('live.finish.button')}</button>
+                </div>
+              </div>
+            ) : confirmNextDay ? (
               <div style={s.dayConfirmBox}>
                 <div style={s.dayConfirmText}>{t('live.nextDayConfirm', { n: day + 1 })}</div>
                 <div style={{ ...base.actions, justifyContent: 'center' }}>
@@ -718,7 +750,7 @@ export default function LiveTournament() {
                 <button type="button" style={base.ghostBtn} onClick={() => setConfirmNextDay(true)} title={t('live.nextDayTitle', { n: day + 1 })}>
                   🌙 {t('live.nextDay')}
                 </button>
-                <button style={base.btn} type="submit">{t('live.finish.button')}</button>
+                <button style={base.btn} type="button" onClick={() => { setConfirmNextDay(false); setConfirmFinish(true) }}>{t('live.finish.button')}</button>
               </div>
             )}
           </form>
@@ -947,6 +979,12 @@ const s = {
   dayConfirmBox: {
     display: 'flex', flexDirection: 'column', gap: 12, padding: '14px 16px', borderRadius: 12,
     background: 'rgba(30,92,173,0.12)', border: '1px solid #2a4a80',
+  },
+  entriesTag: { color: '#7ab0d8', fontWeight: 800 },
+  rebuyFlash: { fontSize: 13, fontWeight: 700, color: '#50d080', textAlign: 'center' },
+  rebuyBtn: {
+    background: 'linear-gradient(135deg, #2a2210 0%, #1a1600 100%)', border: '1px solid #c8a800', borderRadius: 9,
+    padding: '10px 18px', color: '#ffe566', fontSize: 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap',
   },
   dayConfirmText: { fontSize: 14, fontWeight: 700, color: '#c8d8f0', textAlign: 'center', lineHeight: 1.4 },
 }

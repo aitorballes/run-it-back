@@ -481,6 +481,10 @@ export default {
       prize: 'Premio',
       button: 'Terminar torneo',
       reopen: 'Reabrir torneo',
+      confirm: '¿Terminar el torneo o hacer una recompra y seguir jugando?',
+      rebuy: 'Recompra',
+      rebuyDone: 'Recompra hecha · entrada {n}',
+      rebuyRow: 'Recompra',
     },
     hand: {
       me: 'Yo',

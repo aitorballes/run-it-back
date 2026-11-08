@@ -480,6 +480,10 @@ export default {
       prize: 'Preisgeld',
       button: 'Turnier beenden',
       reopen: 'Turnier wieder öffnen',
+      confirm: 'Turnier beenden oder Rebuy machen und weiterspielen?',
+      rebuy: 'Rebuy',
+      rebuyDone: 'Rebuy erledigt · Entry {n}',
+      rebuyRow: 'Rebuy',
     },
     hands: {
       new: 'Neue Hand',

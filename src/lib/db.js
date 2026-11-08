@@ -730,6 +730,8 @@ function liveTournamentFields(live) {
     players: live.entries,
     finish_position: live.finish_position ?? null,
     prize_won: live.prize_won ?? null,
+    // Hero's entries: 1 + rebuys recorded in the live history (the Dashboard shows [n] when > 1)
+    entries: 1 + (live.history ?? []).filter(h => h.rebuy).length,
   }
 }
 

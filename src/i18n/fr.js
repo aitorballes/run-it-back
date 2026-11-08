@@ -480,6 +480,10 @@ export default {
       prize: 'Gain',
       button: 'Terminer le tournoi',
       reopen: 'Rouvrir le tournoi',
+      confirm: 'Terminer le tournoi ou faire une recave et continuer à jouer ?',
+      rebuy: 'Recave',
+      rebuyDone: 'Recave faite · entrée {n}',
+      rebuyRow: 'Recave',
     },
     hands: {
       new: 'Nouvelle main',

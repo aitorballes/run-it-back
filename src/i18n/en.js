@@ -480,6 +480,10 @@ export default {
       prize: 'Prize',
       button: 'Finish tournament',
       reopen: 'Reopen tournament',
+      confirm: 'Finish the tournament, or rebuy and keep playing?',
+      rebuy: 'Rebuy',
+      rebuyDone: 'Rebuy done · entry {n}',
+      rebuyRow: 'Rebuy',
     },
     hand: {
       me: 'Me',
