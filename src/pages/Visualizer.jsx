@@ -1033,7 +1033,7 @@ export default function Visualizer() {
         <div className={isMobile ? 'viz-sheet' : undefined} onClick={isMobile ? e => e.stopPropagation() : undefined}
           style={isMobile ? sheet.panel : { display:'flex', alignItems:'center', gap:10, flexShrink:0, marginLeft:'auto' }}>
           {isMobile && (
-            <div style={sheet.head}>
+            <div className="viz-sheet-head" style={sheet.head}>
               <span style={{ fontSize:12, color:'#70aaff', fontWeight:700 }}>#{hand.id} · {dispIdx + 1}/{displayHandsWithIdx.length}</span>
               <button style={sheet.close} onClick={() => setShowMobileMenu(false)} aria-label={t('common.close')}>✕</button>
             </div>
@@ -1936,7 +1936,8 @@ const sheet = {
              borderRadius:'16px 16px 0 0', padding:'14px 16px calc(20px + env(safe-area-inset-bottom))',
              display:'flex', flexDirection:'column', gap:10 },
   head:    { display:'flex', alignItems:'center', justifyContent:'space-between' },
-  close:   { background:'none', border:'none', color:'#5a7a9a', fontSize:18, cursor:'pointer', padding:4 },
+  close:   { width:44, height:44, flexShrink:0, marginRight:-8, background:'none', border:'none', color:'#7a9ab8',
+             fontSize:22, cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' },
 }
 
 const listPopover = {

@@ -46,4 +46,4 @@ body {
 
 /* Visualizer on phones: header actions in a bottom sheet, as full-width buttons with their labels */
 .viz-sheet > button,
-.viz-sheet > div > button { width: 100%; justify-content: flex-start; padding: 12px 14px !important; font-size: 14px !important; gap: 10px !important; }
+.viz-sheet > div:not(.viz-sheet-head) > button { width: 100%; justify-content: flex-start; padding: 12px 14px !important; font-size: 14px !important; gap: 10px !important; }
