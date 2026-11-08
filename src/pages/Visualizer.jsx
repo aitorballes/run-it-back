@@ -92,7 +92,9 @@ const LANDSCAPE = {
 const portraitLayout = (H = 680) => ({
   W: 520, H, cx: 260, cy: H / 2, rx: 214, ry: H / 2 - 92, half: [50, 62], heroLift: 10,
   felt: { ...feltStyle, top: 64, bottom: 64, left: 12, right: 12, borderWidth: 18 },
-  seatW: 100, card: 'sm', heroCard: 'md', boardCard: 'lg',
+  seatW: 100, card: 'sm', heroCard: 'md',
+  // Tall ovals fit the big board in the centre; shorter ones a medium board a bit lower, between the side seats
+  boardCard: H >= 760 ? 'lg' : 'md', boardShift: H >= 760 ? null : '-30%',
 })
 
 // Returns a point `gap` px outside the near face of the seat container, toward center.
@@ -378,6 +380,7 @@ export default function Visualizer() {
 
   const areaRef         = useRef()
   const tableRef        = useRef()
+  const controlsRef     = useRef()
   const timerRef        = useRef()
   const noteDebounceRef = useRef()
 
@@ -565,10 +568,10 @@ export default function Visualizer() {
       const mobile = window.innerWidth < 768
       const availW = area.clientWidth - (mobile ? 16 : 24)
       // Phones: height left by everything under the table (controls, notes), its gaps and the area's padding
-      const below = [...area.children].filter(c => c !== tableRef.current).reduce((sum, c) => sum + c.offsetHeight + 10, 0)
-      const freeH = area.clientHeight - below - 40
-      // Full width, and as tall as that space allows, within 620–860
-      const portraitH = Math.round(Math.min(860, Math.max(620, freeH * 520 / availW)))
+      // Phones: table + controls fill the screen (the notes sit below, reached by scrolling the area)
+      const freeH = area.clientHeight - (controlsRef.current?.offsetHeight ?? 110) - 10 - 16
+      // Full width, and as tall as that space allows: a taller oval leaves the board more room
+      const portraitH = Math.round(Math.min(1000, Math.max(560, freeH * 520 / availW)))
       if (mobile) setPortraitH(portraitH)
       const g = mobile ? portraitLayout(portraitH) : LANDSCAPE
       // Height formula derived analytically so table + controls + notes + seat overflow all fit:
@@ -1196,7 +1199,7 @@ export default function Visualizer() {
       <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
 
         {/* ── TABLE AREA ── */}
-        <div ref={areaRef} style={ta.root}>
+        <div ref={areaRef} style={isMobile ? { ...ta.root, justifyContent:'flex-start', overflowY:'auto', paddingTop:8, paddingBottom:8 } : ta.root}>
 
           {/* Table */}
           <div ref={tableRef} style={{ position:'relative', width:geo.W, height:geo.H, flexShrink:0,
@@ -1415,7 +1418,7 @@ export default function Visualizer() {
           </div>
 
           {/* ── Controls ── */}
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop: isMobile ? 12 : Math.round(scale * 80),
+          <div ref={controlsRef} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0, paddingTop: isMobile ? 12 : Math.round(scale * 80),
             ...(isMobile ? { width:'100%', boxSizing:'border-box', padding:'12px 16px 0' } : null) }}>
 
             {/* Street nav */}
