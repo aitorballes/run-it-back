@@ -292,7 +292,7 @@ export default function LiveTournament() {
 
   const editing = editIdx != null ? tour.history[editIdx] : null
 
-  // Opens the edit panel under the chart in the update modal (from a chart point or a history row)
+  // Opens the updates modal with that entry ready to correct (from a chart point or a row in the modal)
   function startEdit(idx, scroll = false) {
     const h = tour.history[idx]
     setEditVals({ stack: h.stack ?? '', players: h.players ?? '', entries: h.entries ?? '' })
@@ -428,12 +428,23 @@ export default function LiveTournament() {
             sub={t('live.stats.startingStack', { n: fmtNumber(tour.starting_stack) })} />
         </div>
 
-        {/* STACK: opens the chart + update modal */}
-        <div style={s.cardBtnRow}>
-          {savedFlash && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
-          <button style={{ ...base.btn, ...s.bigBtn }} onClick={() => setShowUpdate(true)}>
-            📈 {running ? t('live.update.button') : t('live.history.chartTitle')}
-          </button>
+        {/* STACK CHART + button that opens the updates modal */}
+        <div style={base.card}>
+          {tour.history.length === 0 ? (
+            <div style={base.hint}>{t('live.history.empty')}</div>
+          ) : (
+            <StackChart points={chartPoints} locale={locale} labels={{
+              title: t('live.history.chartTitle'), stack: t('live.stats.myStack'),
+              average: t('live.stats.average'), level: t('live.structure.level'),
+              day: n => t('live.day', { n }),
+            }} multiDay={multiDay} selected={editIdx} onSelect={startEdit} />
+          )}
+          <div style={s.cardBtnRow}>
+            {savedFlash && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
+            <button style={{ ...base.btn, ...s.bigBtn }} onClick={() => setShowUpdate(true)}>
+              {running ? t('live.update.button') : t('live.history.title')}
+            </button>
+          </div>
         </div>
 
         {/* BREAKS */}
@@ -446,49 +457,36 @@ export default function LiveTournament() {
           </div>
         )}
 
-        {/* UPDATE modal: stack chart (tap a point to correct it) + new update */}
+        {/* UPDATE modal: new update (or correcting one) + the list of updates */}
         {showUpdate && (
-          <Modal title={running ? t('live.update.button') : t('live.history.chartTitle')} onClose={closeUpdate} closeLabel={t('common.cancel')}>
-            {tour.history.length === 0 ? (
-              <div style={base.hint}>{t('live.history.empty')}</div>
-            ) : (
-              <>
-                <StackChart points={chartPoints} locale={locale} labels={{
-                  title: t('live.history.chartTitle'), stack: t('live.stats.myStack'),
-                  average: t('live.stats.average'), level: t('live.structure.level'),
-                  day: n => t('live.day', { n }),
-                }} multiDay={multiDay} selected={editIdx} onSelect={startEdit} />
-                {editing ? (
-                  <form key={editIdx} ref={editRef} style={s.editRow} onSubmit={saveHistoryEdit}>
-                    <div style={s.editHead}>
-                      {new Date(editing.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })} · {t('live.level', { n: editing.level })}
-                    </div>
-                    <div style={base.row}>
-                      {[['stack', t('live.update.stack')], ['players', t('live.update.players')], ['entries', t('live.update.entries')]].map(([k, label]) => (
-                        <label key={k} style={{ ...base.field, flex: k === 'stack' ? '1 1 120px' : '1 1 80px', minWidth: 0 }}>
-                          <span style={base.label}>{label}</span>
-                          <input style={base.input} inputMode="numeric" value={editVals[k]}
-                            autoFocus={k === 'stack'} onFocus={e => e.target.select()} onChange={e => setEditVals(v => ({ ...v, [k]: e.target.value }))} />
-                        </label>
-                      ))}
-                    </div>
-                    <div style={{ ...base.actions, justifyContent: 'space-between' }}>
-                      <button type="button" style={{ ...base.ghostBtn, ...s.dangerBtn }} onClick={() => deleteHistory(editIdx)}>
-                        {t('common.delete')}
-                      </button>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button type="button" style={base.ghostBtn} onClick={() => setEditIdx(null)}>{t('common.cancel')}</button>
-                        <button type="submit" style={base.btn}>{t('common.save')}</button>
-                      </div>
-                    </div>
-                  </form>
-                ) : (
-                  <div style={base.hint}>{t('live.history.editHint')}</div>
-                )}
-              </>
+          <Modal title={running ? t('live.update.button') : t('live.history.title')} onClose={closeUpdate} closeLabel={t('common.cancel')}>
+            {editing && (
+              <form key={editIdx} ref={editRef} style={s.editRow} onSubmit={saveHistoryEdit}>
+                <div style={s.editHead}>
+                  {new Date(editing.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })} · {t('live.level', { n: editing.level })}
+                </div>
+                <div style={base.row}>
+                  {[['stack', t('live.update.stack')], ['players', t('live.update.players')], ['entries', t('live.update.entries')]].map(([k, label]) => (
+                    <label key={k} style={{ ...base.field, flex: k === 'stack' ? '1 1 120px' : '1 1 80px', minWidth: 0 }}>
+                      <span style={base.label}>{label}</span>
+                      <input style={base.input} inputMode="numeric" value={editVals[k]}
+                        autoFocus={k === 'stack'} onFocus={e => e.target.select()} onChange={e => setEditVals(v => ({ ...v, [k]: e.target.value }))} />
+                    </label>
+                  ))}
+                </div>
+                <div style={{ ...base.actions, justifyContent: 'space-between' }}>
+                  <button type="button" style={{ ...base.ghostBtn, ...s.dangerBtn }} onClick={() => deleteHistory(editIdx)}>
+                    {t('common.delete')}
+                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" style={base.ghostBtn} onClick={() => setEditIdx(null)}>{t('common.cancel')}</button>
+                    <button type="submit" style={base.btn}>{t('common.save')}</button>
+                  </div>
+                </div>
+              </form>
             )}
             {running && !editing && (
-              <form style={{ ...s.modalForm, ...s.modalUpdate }} onSubmit={saveUpdate}>
+              <form style={s.modalForm} onSubmit={saveUpdate}>
                 <div style={base.row}>
                   <label style={{ ...base.field, flex: '1 1 140px', minWidth: 0 }}>
                     <span style={base.label}>{t('live.update.stack')}</span>
@@ -513,6 +511,41 @@ export default function LiveTournament() {
                   </button>
                 </div>
               </form>
+            )}
+            {tour.history.length === 0 ? (
+              <div style={base.hint}>{t('live.history.empty')}</div>
+            ) : (
+              <div style={s.modalSection}>
+                <div style={base.label}>{t('live.history.title')}</div>
+                <div style={s.table}>
+                  <div style={{ ...s.hr, ...s.th }}>
+                    <span>{t('live.history.time')}</span>
+                    <span title={t('live.structure.level')}>#</span>
+                    <span style={{ textAlign: 'right' }}>{t('live.history.stack')}</span>
+                    <span style={{ textAlign: 'right' }}>BB</span>
+                    <span style={{ textAlign: 'right' }}>{t('live.history.players')}</span>
+                    <span />
+                  </div>
+                  {history.map(({ h, idx }, k) => (
+                    <Fragment key={idx}>
+                      {multiDay && (k === 0 || (history[k - 1].h.day ?? 1) !== (h.day ?? 1)) && (
+                        <div style={s.daySep}>{t('live.day', { n: h.day ?? 1 })}</div>
+                      )}
+                      <button style={{ ...s.hr, ...s.hrBtn, ...(idx === editIdx ? s.hrSelected : null) }}
+                        onClick={() => startEdit(idx, true)} title={t('live.history.edit')}>
+                        <span style={{ color: '#4a6a8a' }}>
+                          {new Date(h.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span>{h.level}</span>
+                        <span style={{ textAlign: 'right', fontWeight: 700 }}>{h.stack != null ? fmtNumber(h.stack) : '—'}</span>
+                        <span style={{ textAlign: 'right', color: '#50d080' }}>{fmtBB(inBigBlinds(h.stack, levelAt(tour.structure, h.level)))}</span>
+                        <span style={{ textAlign: 'right' }}>{h.players != null ? fmtNumber(h.players) : '—'}</span>
+                        <span style={s.editIcon}>✎</span>
+                      </button>
+                    </Fragment>
+                  ))}
+                </div>
+              </div>
             )}
           </Modal>
         )}
@@ -658,41 +691,6 @@ export default function LiveTournament() {
             </>
           )}
         </div>
-        {/* HISTORY */}
-        {tour.history.length > 0 && (
-          <div style={base.card}>
-            <div style={base.cardTitle}>{t('live.history.title')}</div>
-            <div style={s.table}>
-              <div style={{ ...s.hr, ...s.th }}>
-                <span>{t('live.history.time')}</span>
-                <span title={t('live.structure.level')}>#</span>
-                <span style={{ textAlign: 'right' }}>{t('live.history.stack')}</span>
-                <span style={{ textAlign: 'right' }}>BB</span>
-                <span style={{ textAlign: 'right' }}>{t('live.history.players')}</span>
-                <span />
-              </div>
-              {history.map(({ h, idx }, k) => (
-                <Fragment key={idx}>
-                  {multiDay && (k === 0 || (history[k - 1].h.day ?? 1) !== (h.day ?? 1)) && (
-                    <div style={s.daySep}>{t('live.day', { n: h.day ?? 1 })}</div>
-                  )}
-                  <button style={{ ...s.hr, ...s.hrBtn, ...(idx === editIdx ? s.hrSelected : null) }}
-                    onClick={() => startEdit(idx, true)} title={t('live.history.edit')}>
-                    <span style={{ color: '#4a6a8a' }}>
-                      {new Date(h.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span>{h.level}</span>
-                    <span style={{ textAlign: 'right', fontWeight: 700 }}>{h.stack != null ? fmtNumber(h.stack) : '—'}</span>
-                    <span style={{ textAlign: 'right', color: '#50d080' }}>{fmtBB(inBigBlinds(h.stack, levelAt(tour.structure, h.level)))}</span>
-                    <span style={{ textAlign: 'right' }}>{h.players != null ? fmtNumber(h.players) : '—'}</span>
-                    <span style={s.editIcon}>✎</span>
-                  </button>
-                </Fragment>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* FINISH */}
         {running && (
           <form style={base.card} onSubmit={finish}>
@@ -916,7 +914,7 @@ const s = {
     color: '#9ac8f0', fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit',
   },
   bigBtn: { flex: 1, padding: '13px 14px', fontSize: 14 },
-  modalUpdate: { borderTop: '1px solid #1e2e42', paddingTop: 12 },
+  modalSection: { display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid #1e2e42', paddingTop: 12 },
   breakBtn: { flex: 1, padding: '11px 14px', fontSize: 13, color: '#f0c070', borderColor: 'rgba(240,192,112,0.35)' },
   overlay: {
     position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
