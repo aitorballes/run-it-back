@@ -351,10 +351,12 @@ export default function Visualizer() {
   const [handCopied,      setHandCopied]      = useState(false)
   const [listCopied,      setListCopied]      = useState(false)
   const [showMobileHands, setShowMobileHands] = useState(false)
+  const [showMobileMenu,  setShowMobileMenu]  = useState(false) // phones: header actions live in a sheet
   const [isMobile,        setIsMobile]        = useState(() => window.innerWidth < 768)
   const [portraitH,       setPortraitH]       = useState(680)
 
   const areaRef         = useRef()
+  const tableRef        = useRef()
   const timerRef        = useRef()
   const noteDebounceRef = useRef()
 
@@ -541,8 +543,11 @@ export default function Visualizer() {
       if (!area) return
       const mobile = window.innerWidth < 768
       const availW = area.clientWidth - (mobile ? 16 : 24)
-      // Phones: full width, and as tall as the space the controls (~150px) leave, within 620–860
-      const portraitH = Math.round(Math.min(860, Math.max(620, (area.clientHeight - 150) * 520 / availW)))
+      // Phones: height left by everything under the table (controls, notes), its gaps and the area's padding
+      const below = [...area.children].filter(c => c !== tableRef.current).reduce((sum, c) => sum + c.offsetHeight + 10, 0)
+      const freeH = area.clientHeight - below - 40
+      // Full width, and as tall as that space allows, within 620–860
+      const portraitH = Math.round(Math.min(860, Math.max(620, freeH * 520 / availW)))
       if (mobile) setPortraitH(portraitH)
       const g = mobile ? portraitLayout(portraitH) : LANDSCAPE
       // Height formula derived analytically so table + controls + notes + seat overflow all fit:
@@ -550,14 +555,17 @@ export default function Visualizer() {
       //   seat_overflow(s)  = 23 * s  (top seats extend ~23px above canvas top)
       //   require: s*620 + 260 + 2*(23*s) ≤ h - 40  → s ≤ (h - 300) / 666
       const scaleFromH = mobile
-        ? (area.clientHeight - 150) / g.H
+        ? freeH / g.H
         : (area.clientHeight - 300) / 666
       setScale(Math.max(0.2, Math.min(availW / g.W, scaleFromH, 1.0)))
     }
     rescale()
     window.addEventListener('resize', rescale)
-    return () => window.removeEventListener('resize', rescale)
-  }, [loading, isMobile])
+    // The area also changes size without a window resize (header wrapping, notes appearing)
+    const ro = areaRef.current ? new ResizeObserver(rescale) : null
+    if (ro) ro.observe(areaRef.current)
+    return () => { window.removeEventListener('resize', rescale); ro?.disconnect() }
+  }, [loading, isMobile, user])
 
   useEffect(() => {
     const fn = () => setIsMobile(window.innerWidth < 768)
@@ -1015,20 +1023,34 @@ export default function Visualizer() {
             ☰ {dispIdx+1}/{displayHandsWithIdx.length}
           </button>
         )}
-        <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0, marginLeft:'auto' }}>
+        {!handToken && isMobile && (
+          <button style={{ ...hdr.handsBtn, fontSize:18, padding:'2px 12px', lineHeight:1 }} onClick={() => setShowMobileMenu(true)}
+            aria-label={t('visualizer.menu')} title={t('visualizer.menu')}>⋯</button>
+        )}
+        {/* Actions: inline on desktop; on phones, in a bottom sheet opened with ⋯ */}
+        {(!isMobile || showMobileMenu) && (
+        <div style={isMobile ? sheet.overlay : { display:'contents' }} onClick={isMobile ? () => setShowMobileMenu(false) : undefined}>
+        <div className={isMobile ? 'viz-sheet' : undefined} onClick={isMobile ? e => e.stopPropagation() : undefined}
+          style={isMobile ? sheet.panel : { display:'flex', alignItems:'center', gap:10, flexShrink:0, marginLeft:'auto' }}>
+          {isMobile && (
+            <div style={sheet.head}>
+              <span style={{ fontSize:12, color:'#70aaff', fontWeight:700 }}>#{hand.id} · {dispIdx + 1}/{displayHandsWithIdx.length}</span>
+              <button style={sheet.close} onClick={() => setShowMobileMenu(false)} aria-label={t('common.close')}>✕</button>
+            </div>
+          )}
           {!handToken && (
-            <button style={{ ...hdr.filterBtn, ...(hasFilters ? hdr.filterBtnActive : {}) }} onClick={openFilter}>
+            <button style={{ ...hdr.filterBtn, ...(hasFilters ? hdr.filterBtnActive : {}) }} onClick={() => { setShowMobileMenu(false); openFilter() }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <circle cx="11" cy="11" r="7"/>
                 <line x1="16.5" y1="16.5" x2="22" y2="22"/>
               </svg>
-              {!isMobile && t('common.filter')}
+              {t('common.filter')}
               {hasFilters && <span style={hdr.filterDot} />}
             </button>
           )}
           {!handToken && tournament?.isStudy && (
             <button style={{ ...hdr.filterBtn, display:'flex', alignItems:'center', gap:5 }}
-              onClick={() => setShowRangeModal(true)}
+              onClick={() => { setShowMobileMenu(false); setShowRangeModal(true) }}
               title={t('visualizer.range.show')}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3"  y="3"  width="7" height="7" rx="1"/>
@@ -1036,13 +1058,13 @@ export default function Visualizer() {
                 <rect x="3"  y="14" width="7" height="7" rx="1"/>
                 <rect x="14" y="14" width="7" height="7" rx="1"/>
               </svg>
-              {!isMobile && t('visualizer.range.short')}
+              {t('visualizer.range.short')}
             </button>
           )}
           {!token && !handToken && (
             <button style={{ ...hdr.filterBtn, display: 'flex', alignItems: 'center', gap: 5 }} onClick={shareCurrentHand}>
               {handCopied ? (
-                <>{!isMobile ? `✓ ${t('common.copied')}` : '✓'}</>
+                <>✓ {t('common.copied')}</>
               ) : (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -1050,7 +1072,7 @@ export default function Visualizer() {
                     <line x1="12" y1="2" x2="12" y2="15"/>
                     <path d="M4 15v6h16v-6"/>
                   </svg>
-                  {!isMobile && t('common.share')}
+                  {t('common.share')}
                 </>
               )}
             </button>
@@ -1069,10 +1091,10 @@ export default function Visualizer() {
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                     <circle cx="12" cy="12" r="3"/>
                   </svg>
-                  {!isMobile && (marked ? t('visualizer.lists.inList') : t('visualizer.lists.add'))}
+                  {marked ? t('visualizer.lists.inList') : t('visualizer.lists.add')}
                 </button>
                 {showListPopover && (
-                  <div style={listPopover.root}>
+                  <div style={{ ...listPopover.root, ...(isMobile ? { position:'static', width:'100%', marginTop:8 } : null) }}>
                     <div style={listPopover.header}>{t('visualizer.lists.header')}</div>
                     {popoverLoading ? <div style={listPopover.loading}>{t('common.loading')}</div> : <>
                       {userLists.length === 0 && !showNewListForm &&
@@ -1134,16 +1156,18 @@ export default function Visualizer() {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              {!isMobile && (tournament?.reviewed ? t('visualizer.reviewed.done') : t('visualizer.reviewed.mark'))}
+              {tournament?.reviewed ? t('visualizer.reviewed.done') : t('visualizer.reviewed.mark')}
             </button>
           )}
-          {!handToken && (
+          {!handToken && !isMobile && (
             <div style={{ textAlign:'right' }}>
               <div style={{ fontSize:11, color:'#70aaff', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.3px' }}>#{hand.id}</div>
               <div style={hdr.counter}>{dispIdx + 1} / {displayHandsWithIdx.length}</div>
             </div>
           )}
         </div>
+        </div>
+        )}
       </div>
 
       {/* ── BODY ── */}
@@ -1153,7 +1177,7 @@ export default function Visualizer() {
         <div ref={areaRef} style={ta.root}>
 
           {/* Table */}
-          <div style={{ position:'relative', width:geo.W, height:geo.H, flexShrink:0,
+          <div ref={tableRef} style={{ position:'relative', width:geo.W, height:geo.H, flexShrink:0,
             transform:`scale(${scale})`, transformOrigin:'top center',
             marginBottom: Math.round(geo.H*(scale-1))+'px',
             marginLeft: Math.round(geo.W*(scale-1)/2)+'px',
@@ -1430,7 +1454,7 @@ export default function Visualizer() {
                 className="hand-note-textarea"
                 style={{ ...noteStyle.textarea, resize:'none' }}
                 ref={textareaRef}
-                rows={4}
+                rows={isMobile ? 2 : 4}
                 maxLength={10000}
                 placeholder={t('visualizer.notesPlaceholder')}
                 defaultValue=""
@@ -1902,6 +1926,17 @@ const noteStyle = {
                borderRadius:8, color:'#c8d4e8', fontSize:13, lineHeight:1.5,
                padding:'8px 12px', resize:'vertical', outline:'none',
                fontFamily:'inherit', boxSizing:'border-box' },
+}
+
+// Phones: bottom sheet with the header actions (full-width buttons with their labels)
+const sheet = {
+  overlay: { position:'fixed', inset:0, zIndex:60, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'flex-end' },
+  panel:   { width:'100%', maxHeight:'80vh', overflowY:'auto', boxSizing:'border-box',
+             background:'linear-gradient(160deg,#1a2030 0%,#111828 100%)', borderTop:'1px solid #2a3a52',
+             borderRadius:'16px 16px 0 0', padding:'14px 16px calc(20px + env(safe-area-inset-bottom))',
+             display:'flex', flexDirection:'column', gap:10 },
+  head:    { display:'flex', alignItems:'center', justifyContent:'space-between' },
+  close:   { background:'none', border:'none', color:'#5a7a9a', fontSize:18, cursor:'pointer', padding:4 },
 }
 
 const listPopover = {

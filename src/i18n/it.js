@@ -321,6 +321,7 @@ export default {
   },
 
   visualizer: {
+    menu: 'Azioni',
     searchTitle: 'Ricerca',
     sharedList: 'Lista condivisa',
     notFound: 'Contenuto non trovato o link non valido.',
