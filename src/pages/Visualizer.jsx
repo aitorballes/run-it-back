@@ -90,8 +90,9 @@ const LANDSCAPE = {
 }
 // Portrait height stretches with the phone's screen (taller phones get a taller oval)
 const portraitLayout = (H = 680) => ({
-  W: 520, H, cx: 260, cy: H / 2, rx: 200, ry: H / 2 - 92, half: [50, 62], heroLift: 10,
-  felt: { ...feltStyle, top: 64, bottom: 64, left: 40, right: 40, borderWidth: 18 }, seatW: 100, card: 'sm', heroCard: 'md', boardCard: 'md',
+  W: 520, H, cx: 260, cy: H / 2, rx: 214, ry: H / 2 - 92, half: [50, 62], heroLift: 10,
+  felt: { ...feltStyle, top: 64, bottom: 64, left: 12, right: 12, borderWidth: 18 },
+  seatW: 100, card: 'sm', heroCard: 'md', boardCard: 'lg',
 })
 
 // Returns a point `gap` px outside the near face of the seat container, toward center.
@@ -1216,7 +1217,7 @@ export default function Visualizer() {
             </div>
 
             {/* Board */}
-            <div style={{ ...ta.boardWrap, ...(revealing ? { zIndex:3 } : {}) }}>
+            <div style={{ ...ta.boardWrap, ...(geo.boardShift ? { transform:`translate(-50%,${geo.boardShift})` } : null), ...(revealing ? { zIndex:3 } : {}) }}>
               {boardCards.length > 0 && (
                 <div style={{ display:'flex', gap:7 }}>
                   {boardCards.map((c,i) => <RevealCard key={i} code={c} size={geo.boardCard} revealing={revealing} used={showdownResult?.usedCards.has(c)} />)}
