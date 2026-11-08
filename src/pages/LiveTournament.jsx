@@ -182,7 +182,7 @@ export default function LiveTournament() {
       history: [...tour.history, { at: new Date().toISOString(), day, level: playLevel, stack, players, entries }],
     })
     setStackIn(''); setPlayersIn(''); setEntriesIn('')
-    setShowUpdate(false)
+    closeUpdate()
     setSavedFlash(true)
     setTimeout(() => setSavedFlash(false), 1500)
   }
@@ -292,12 +292,18 @@ export default function LiveTournament() {
 
   const editing = editIdx != null ? tour.history[editIdx] : null
 
-  // Opens the edit panel under the chart (from a chart point or a list row, which scrolls up to it)
+  // Opens the edit panel under the chart in the update modal (from a chart point or a history row)
   function startEdit(idx, scroll = false) {
     const h = tour.history[idx]
     setEditVals({ stack: h.stack ?? '', players: h.players ?? '', entries: h.entries ?? '' })
     setEditIdx(idx)
+    setShowUpdate(true)
     if (scroll) requestAnimationFrame(() => editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  }
+
+  function closeUpdate() {
+    setShowUpdate(false)
+    setEditIdx(null)
   }
 
   // Editing the latest update also corrects the tournament's current stack/players/entries
@@ -399,6 +405,15 @@ export default function LiveTournament() {
           )}
         </div>
 
+        <div style={s.quickBtns}>
+          {running && (
+            <button style={{ ...s.newHandBtn, ...s.quickBtn }} onClick={() => navigate(`/live/${id}/hand/new`)}>🂡 {t('live.hands.new')}</button>
+          )}
+          <button style={{ ...s.tableBtn, ...s.quickBtn }} onClick={() => navigate(`/live/${id}/table`)}>
+            {t('live.myTable.title')}{tour.tables?.length ? ` · ${t('live.notes.tableN', { n: tour.tables.at(-1).no })}` : ''}
+          </button>
+        </div>
+
         {/* STATS */}
         <div style={s.stats}>
           <Stat label={t('live.stats.myStack')} value={tour.my_stack != null ? fmtNumber(tour.my_stack) : '—'}
@@ -413,52 +428,12 @@ export default function LiveTournament() {
             sub={t('live.stats.startingStack', { n: fmtNumber(tour.starting_stack) })} />
         </div>
 
-        {/* STACK CHART + update button */}
-        <div style={base.card}>
-          {tour.history.length === 0 ? (
-            <div style={base.hint}>{t('live.history.empty')}</div>
-          ) : (
-            <>
-              <StackChart points={chartPoints} locale={locale} labels={{
-                title: t('live.history.chartTitle'), stack: t('live.stats.myStack'),
-                average: t('live.stats.average'), level: t('live.structure.level'),
-                day: n => t('live.day', { n }),
-              }} multiDay={multiDay} selected={editIdx} onSelect={startEdit} />
-              {editing ? (
-                <form key={editIdx} ref={editRef} style={s.editRow} onSubmit={saveHistoryEdit}>
-                  <div style={s.editHead}>
-                    {new Date(editing.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })} · {t('live.level', { n: editing.level })}
-                  </div>
-                  <div style={base.row}>
-                    {[['stack', t('live.update.stack')], ['players', t('live.update.players')], ['entries', t('live.update.entries')]].map(([k, label]) => (
-                      <label key={k} style={{ ...base.field, flex: k === 'stack' ? '1 1 120px' : '1 1 80px', minWidth: 0 }}>
-                        <span style={base.label}>{label}</span>
-                        <input style={base.input} inputMode="numeric" value={editVals[k]}
-                          autoFocus={k === 'stack'} onFocus={e => e.target.select()} onChange={e => setEditVals(v => ({ ...v, [k]: e.target.value }))} />
-                      </label>
-                    ))}
-                  </div>
-                  <div style={{ ...base.actions, justifyContent: 'space-between' }}>
-                    <button type="button" style={{ ...base.ghostBtn, ...s.dangerBtn }} onClick={() => deleteHistory(editIdx)}>
-                      {t('common.delete')}
-                    </button>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" style={base.ghostBtn} onClick={() => setEditIdx(null)}>{t('common.cancel')}</button>
-                      <button type="submit" style={base.btn}>{t('common.save')}</button>
-                    </div>
-                  </div>
-                </form>
-              ) : (
-                <div style={base.hint}>{t('live.history.editHint')}</div>
-              )}
-            </>
-          )}
-          {running && (
-            <div style={s.cardBtnRow}>
-              {savedFlash && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
-              <button style={{ ...base.btn, flex: 1 }} onClick={() => setShowUpdate(true)}>{t('live.update.button')}</button>
-            </div>
-          )}
+        {/* STACK: opens the chart + update modal */}
+        <div style={s.cardBtnRow}>
+          {savedFlash && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
+          <button style={{ ...base.btn, ...s.bigBtn }} onClick={() => setShowUpdate(true)}>
+            📈 {running ? t('live.update.button') : t('live.history.chartTitle')}
+          </button>
         </div>
 
         {/* BREAKS */}
@@ -471,42 +446,74 @@ export default function LiveTournament() {
           </div>
         )}
 
-        {running && (
-          <button style={s.newHandBtn} onClick={() => navigate(`/live/${id}/hand/new`)}>🂡 {t('live.hands.new')}</button>
-        )}
-
-        <button style={{ ...base.ghostBtn, alignSelf: 'flex-start' }} onClick={() => navigate(`/live/${id}/table`)}>
-          {t('live.myTable.title')}{tour.tables?.length ? ` · ${t('live.notes.tableN', { n: tour.tables.at(-1).no })}` : ''}
-        </button>
-
-        {/* UPDATE modal */}
-        {running && showUpdate && (
-          <Modal title={t('live.update.button')} onClose={() => setShowUpdate(false)} closeLabel={t('common.cancel')}>
-            <form style={s.modalForm} onSubmit={saveUpdate}>
-              <div style={base.row}>
-                <label style={{ ...base.field, flex: '1 1 140px', minWidth: 0 }}>
-                  <span style={base.label}>{t('live.update.stack')}</span>
-                  <input style={base.input} inputMode="numeric" value={stackIn} autoFocus onChange={e => setStackIn(e.target.value)}
-                    placeholder={tour.my_stack != null ? fmtNumber(tour.my_stack) : ''} />
-                </label>
-                <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
-                  <span style={base.label}>{t('live.update.players')}</span>
-                  <input style={base.input} inputMode="numeric" value={playersIn} onChange={e => setPlayersIn(e.target.value)}
-                    placeholder={tour.players_left != null ? String(tour.players_left) : ''} />
-                </label>
-                <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
-                  <span style={base.label}>{t('live.update.entries')}</span>
-                  <input style={base.input} inputMode="numeric" value={entriesIn} onChange={e => setEntriesIn(e.target.value)}
-                    placeholder={tour.entries != null ? String(tour.entries) : ''} />
-                </label>
-              </div>
-              <div style={base.actions}>
-                <button style={base.ghostBtn} type="button" onClick={() => setShowUpdate(false)}>{t('common.cancel')}</button>
-                <button style={base.btn} type="submit" disabled={!stackIn && !playersIn && !entriesIn}>
-                  {t('live.update.save')}
-                </button>
-              </div>
-            </form>
+        {/* UPDATE modal: stack chart (tap a point to correct it) + new update */}
+        {showUpdate && (
+          <Modal title={running ? t('live.update.button') : t('live.history.chartTitle')} onClose={closeUpdate} closeLabel={t('common.cancel')}>
+            {tour.history.length === 0 ? (
+              <div style={base.hint}>{t('live.history.empty')}</div>
+            ) : (
+              <>
+                <StackChart points={chartPoints} locale={locale} labels={{
+                  title: t('live.history.chartTitle'), stack: t('live.stats.myStack'),
+                  average: t('live.stats.average'), level: t('live.structure.level'),
+                  day: n => t('live.day', { n }),
+                }} multiDay={multiDay} selected={editIdx} onSelect={startEdit} />
+                {editing ? (
+                  <form key={editIdx} ref={editRef} style={s.editRow} onSubmit={saveHistoryEdit}>
+                    <div style={s.editHead}>
+                      {new Date(editing.at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })} · {t('live.level', { n: editing.level })}
+                    </div>
+                    <div style={base.row}>
+                      {[['stack', t('live.update.stack')], ['players', t('live.update.players')], ['entries', t('live.update.entries')]].map(([k, label]) => (
+                        <label key={k} style={{ ...base.field, flex: k === 'stack' ? '1 1 120px' : '1 1 80px', minWidth: 0 }}>
+                          <span style={base.label}>{label}</span>
+                          <input style={base.input} inputMode="numeric" value={editVals[k]}
+                            autoFocus={k === 'stack'} onFocus={e => e.target.select()} onChange={e => setEditVals(v => ({ ...v, [k]: e.target.value }))} />
+                        </label>
+                      ))}
+                    </div>
+                    <div style={{ ...base.actions, justifyContent: 'space-between' }}>
+                      <button type="button" style={{ ...base.ghostBtn, ...s.dangerBtn }} onClick={() => deleteHistory(editIdx)}>
+                        {t('common.delete')}
+                      </button>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button type="button" style={base.ghostBtn} onClick={() => setEditIdx(null)}>{t('common.cancel')}</button>
+                        <button type="submit" style={base.btn}>{t('common.save')}</button>
+                      </div>
+                    </div>
+                  </form>
+                ) : (
+                  <div style={base.hint}>{t('live.history.editHint')}</div>
+                )}
+              </>
+            )}
+            {running && !editing && (
+              <form style={{ ...s.modalForm, ...s.modalUpdate }} onSubmit={saveUpdate}>
+                <div style={base.row}>
+                  <label style={{ ...base.field, flex: '1 1 140px', minWidth: 0 }}>
+                    <span style={base.label}>{t('live.update.stack')}</span>
+                    <input style={base.input} inputMode="numeric" value={stackIn} onChange={e => setStackIn(e.target.value)}
+                      placeholder={tour.my_stack != null ? fmtNumber(tour.my_stack) : ''} />
+                  </label>
+                  <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
+                    <span style={base.label}>{t('live.update.players')}</span>
+                    <input style={base.input} inputMode="numeric" value={playersIn} onChange={e => setPlayersIn(e.target.value)}
+                      placeholder={tour.players_left != null ? String(tour.players_left) : ''} />
+                  </label>
+                  <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
+                    <span style={base.label}>{t('live.update.entries')}</span>
+                    <input style={base.input} inputMode="numeric" value={entriesIn} onChange={e => setEntriesIn(e.target.value)}
+                      placeholder={tour.entries != null ? String(tour.entries) : ''} />
+                  </label>
+                </div>
+                <div style={base.actions}>
+                  <button style={base.ghostBtn} type="button" onClick={closeUpdate}>{t('common.cancel')}</button>
+                  <button style={base.btn} type="submit" disabled={!stackIn && !playersIn && !entriesIn}>
+                    {t('live.update.save')}
+                  </button>
+                </div>
+              </form>
+            )}
           </Modal>
         )}
 
@@ -902,13 +909,21 @@ const s = {
   },
   editHead: { fontSize: 11, fontWeight: 800, color: '#7ab0d8' },
   cardBtnRow: { display: 'flex', alignItems: 'center', gap: 10 },
+  quickBtns: { display: 'flex', gap: 10 },
+  quickBtn: { flex: '1 1 0', minWidth: 0, padding: '14px 10px', fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  tableBtn: {
+    background: 'linear-gradient(135deg, #12223a 0%, #0c1626 100%)', border: '1px solid #2a4a80', borderRadius: 12,
+    color: '#9ac8f0', fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit',
+  },
+  bigBtn: { flex: 1, padding: '13px 14px', fontSize: 14 },
+  modalUpdate: { borderTop: '1px solid #1e2e42', paddingTop: 12 },
   breakBtn: { flex: 1, padding: '11px 14px', fontSize: 13, color: '#f0c070', borderColor: 'rgba(240,192,112,0.35)' },
   overlay: {
     position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
   },
   modal: {
-    ...base.card, width: 'min(480px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxSizing: 'border-box',
+    ...base.card, width: 'min(560px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxSizing: 'border-box',
   },
   modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   modalClose: { background: 'none', border: 'none', color: '#5a7a9a', fontSize: 18, cursor: 'pointer', padding: 4, lineHeight: 1 },
