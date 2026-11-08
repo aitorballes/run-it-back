@@ -920,10 +920,11 @@ const s = {
   handMain: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
   handMeta: { fontSize: 11, color: '#5a7a9a', fontWeight: 600 },
   handNet: { fontSize: 14, fontWeight: 800 },
-  handBtns: { display: 'flex', gap: 4 },
+  // Full-width row of big tap targets (used from the phone at the table)
+  handBtns: { display: 'flex', gap: 8, width: '100%' },
   iconBtn: {
-    width: 34, height: 34, borderRadius: 8, border: '1px solid #1e2e42', background: '#0a1422',
-    color: '#7ab0d8', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flex: '1 1 0', minWidth: 0, height: 46, fontSize: 18, borderRadius: 10, border: '1px solid #1e2e42', background: '#0a1422',
+    color: '#7ab0d8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   shareBox: { width: '100%', fontSize: 11, color: '#50d080', wordBreak: 'break-all' },
   breakList: { fontSize: 12, color: '#f0c070' },
