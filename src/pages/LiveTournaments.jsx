@@ -4,13 +4,15 @@ import { useAuth } from '../context/AuthContext'
 import { useI18n, fmtNumber } from '../i18n/core'
 import { fetchLiveTournaments, createLiveTournament, ensureLiveTournamentRow } from '../lib/db'
 import { defaultStructure, levelAt, parseChips } from '../lib/liveTournament'
+import { findStructurePreset, presetStructure, SIDE_EVENT_DEFAULTS } from '../lib/structurePresets'
 import Logo from '../components/Logo'
 import { base as s } from '../components/liveStyles'
 
 const CURRENCIES = ['€', '$', '£']
 
 const EMPTY_FORM = {
-  venue: '', name: '', buyin: '', currency: '€', levelMinutes: '20', startingStack: '20000',
+  venue: '', name: '', buyin: '', currency: '€',
+  levelMinutes: String(SIDE_EVENT_DEFAULTS.minutes), startingStack: String(SIDE_EVENT_DEFAULTS.startingStack),
   currentLevel: '1', entries: '', playersLeft: '',
 }
 
@@ -33,6 +35,20 @@ export default function LiveTournaments() {
   }, [user.id, t])
 
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }))
+
+  // A known tournament also brings its level duration and starting stack (still editable afterwards)
+  const setName = e => {
+    const name = e.target.value
+    const preset = findStructurePreset(name)
+    setForm(f => {
+      if (!preset || preset === findStructurePreset(f.name)) return { ...f, name }
+      return {
+        ...f, name,
+        ...(preset.minutes ? { levelMinutes: String(preset.minutes) } : null),
+        ...(preset.startingStack ? { startingStack: String(preset.startingStack) } : null),
+      }
+    })
+  }
 
   // Venues already used, most recent first, for autocomplete
   const pastVenues = useMemo(() => {
@@ -58,7 +74,10 @@ export default function LiveTournaments() {
     const now = new Date()
 
     // The structure always covers the current level, so editing it shows the right blinds
-    const structure = defaultStructure().map(l => ({ ...l, minutes: levelMinutes }))
+    const preset = findStructurePreset(form.name)
+    const structure = preset
+      ? presetStructure(preset, levelMinutes)
+      : defaultStructure().map(l => ({ ...l, minutes: levelMinutes }))
     while (structure.length < currentLevel) structure.push(levelAt(structure, structure.length + 1))
 
     setCreating(true)
@@ -124,7 +143,7 @@ export default function LiveTournaments() {
                   options={pastVenues} placeholder={t('live.form.venuePlaceholder')} autoFocus required />
               </Field>
               <Field label={t('live.form.name')} half>
-                <input style={s.input} value={form.name} onChange={set('name')}
+                <input style={s.input} value={form.name} onChange={setName}
                   placeholder={t('live.form.namePlaceholder')} required />
               </Field>
             </div>
