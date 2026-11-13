@@ -45,6 +45,8 @@ export default function LiveTournament() {
   const [showStructure, setShowStructure] = useState(false)
   const [draft, setDraft]     = useState(null) // structure being edited, saved with the button
   const [recalc, setRecalc]   = useState(true) // editing a level recalculates the following ones
+  const [extraLevels, setExtraLevels] = useState(0) // structure table: levels shown beyond the next 10
+  const [showPast, setShowPast] = useState(false)  // structure table: levels already played
   const [brk, setBrk] = useState({ after: '', minutes: '15', every: '' }) // "add break" form
   const [breakAdded, setBreakAdded] = useState(false)
   const [editIdx, setEditIdx]   = useState(null) // history entry being corrected
@@ -659,6 +661,21 @@ export default function LiveTournament() {
                 <input type="checkbox" checked={recalc} onChange={e => setRecalc(e.target.checked)} />
                 {t('live.structure.recalc')}
               </label>
+              {(() => {
+                // Only the current level and the next 10 by default; the rest on demand. On a break it
+                // starts at the level before it, so the break row shows
+                const cur = Math.max(0, Math.min(levelNo, rows.length) - 1)
+                const from = showPast ? 0 : cur
+                const to = cur + 11 + extraLevels
+                const shown = rows.slice(from, to).map((l, k) => [l, from + k])
+                const left = rows.length - Math.min(to, rows.length)
+                return (
+              <>
+              {from > 0 && (
+                <button style={s.moreBtn} onClick={() => setShowPast(true)}>
+                  ▲ {t('live.structure.showPast', { n: from })}
+                </button>
+              )}
               <div style={s.table}>
                 <div style={{ ...s.tr, ...s.th }}>
                   <span title={t('live.structure.level')}>#</span>
@@ -668,7 +685,7 @@ export default function LiveTournament() {
                   <span title={t('live.structure.minutesFull')}>Min</span>
                   <span />
                 </div>
-                {rows.map((l, i) => (
+                {shown.map(([l, i]) => (
                   <Fragment key={i}>
                   <div style={{ ...s.tr, ...(i + 1 === playLevel && !onBreak ? s.trCurrent : null) }}>
                     <button style={s.levelNo} onClick={() => running && goToLevel(i + 1)} title={t('live.structure.goTo')}>
@@ -696,9 +713,20 @@ export default function LiveTournament() {
                   </Fragment>
                 ))}
               </div>
+              {left > 0 && (
+                <button style={s.moreBtn} onClick={() => setExtraLevels(n => n + 10)}>
+                  ▼ {t('live.structure.showMore', { n: Math.min(10, left) })}
+                </button>
+              )}
+              </>
+                )
+              })()}
               <div style={s.structureActions}>
                 <button style={base.ghostBtn}
-                  onClick={() => setDraft([...rows, extrapolateLevel(rows[rows.length - 1])])}>
+                  onClick={() => {
+                    setDraft([...rows, extrapolateLevel(rows[rows.length - 1])])
+                    setExtraLevels(rows.length) // the new level is the last one: show up to it
+                  }}>
                   + {t('live.structure.add')}
                 </button>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -895,6 +923,10 @@ const s = {
     color: '#c8d4e8', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', minWidth: 0,
   },
   checkRow: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#7ab0d8', cursor: 'pointer' },
+  moreBtn: {
+    alignSelf: 'center', background: 'none', border: '1px solid #24405e', borderRadius: 8,
+    color: '#7ab0d8', fontSize: 12, fontWeight: 700, padding: '9px 14px', minHeight: 40, cursor: 'pointer',
+  },
   structureActions: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   unsaved: { fontSize: 11, color: '#f0a040', textAlign: 'right' },
   removeBtn: { background: 'none', border: 'none', color: '#5a4050', fontSize: 18, cursor: 'pointer', padding: 0 },

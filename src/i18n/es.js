@@ -447,6 +447,8 @@ export default {
       hint: 'Cambia la ciega pequeña (SB), la grande (BB), el ante o los minutos de cualquier nivel y pulsa Guardar. Toca el número de nivel para ir a él.',
       recalc: 'Al cambiar un nivel, recalcular los siguientes a partir de él',
       minutesFull: 'Duración del nivel (minutos)',
+      showPast: 'Ver {n} niveles anteriores',
+      showMore: 'Cargar {n} niveles más',
       unsaved: 'Tienes cambios sin guardar',
       level: 'Nivel',
       sbFull: 'Ciega pequeña',

@@ -446,6 +446,8 @@ export default {
       hint: 'Ändere Small Blind (SB), Big Blind (BB), Ante oder Minuten eines Levels und tippe auf Speichern. Tippe auf eine Levelnummer, um dorthin zu springen.',
       recalc: 'Beim Ändern eines Levels die folgenden daraus neu berechnen',
       minutesFull: 'Leveldauer (Minuten)',
+      showPast: '{n} frühere Level anzeigen',
+      showMore: '{n} weitere Level laden',
       unsaved: 'Du hast ungespeicherte Änderungen',
       level: 'Level',
       sbFull: 'Small Blind',

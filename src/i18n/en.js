@@ -446,6 +446,8 @@ export default {
       hint: 'Change any level\'s small blind (SB), big blind (BB), ante or minutes and press Save. Tap a level number to jump to it.',
       recalc: 'When you change a level, recalculate the following ones from it',
       minutesFull: 'Level length (minutes)',
+      showPast: 'Show {n} earlier levels',
+      showMore: 'Load {n} more levels',
       unsaved: 'You have unsaved changes',
       level: 'Level',
       sbFull: 'Small blind',

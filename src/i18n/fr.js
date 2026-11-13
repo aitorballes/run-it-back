@@ -446,6 +446,8 @@ export default {
       hint: 'Modifiez la petite blinde (SB), la grosse blinde (BB), l’ante ou les minutes de n’importe quel niveau, puis appuyez sur Enregistrer. Touchez un numéro de niveau pour y aller.',
       recalc: 'En modifiant un niveau, recalculer les suivants à partir de celui-ci',
       minutesFull: 'Durée du niveau (minutes)',
+      showPast: 'Voir les {n} niveaux précédents',
+      showMore: 'Charger {n} niveaux de plus',
       unsaved: 'Modifications non enregistrées',
       level: 'Niveau',
       sbFull: 'Petite blinde',

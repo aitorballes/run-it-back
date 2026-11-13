@@ -446,6 +446,8 @@ export default {
       hint: 'Mude o small blind (SB), o big blind (BB), o ante ou os minutos de qualquer nível e toque em Salvar. Toque no número de um nível para ir até ele.',
       recalc: 'Ao mudar um nível, recalcular os seguintes a partir dele',
       minutesFull: 'Duração do nível (minutos)',
+      showPast: 'Ver {n} níveis anteriores',
+      showMore: 'Carregar mais {n} níveis',
       unsaved: 'Você tem alterações não salvas',
       level: 'Nível',
       sbFull: 'Small blind',
