@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useI18n, fmtNumber } from '../i18n/core'
@@ -33,6 +33,16 @@ export default function LiveTournaments() {
   }, [user.id, t])
 
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }))
+
+  // Venues already used, most recent first, for autocomplete
+  const pastVenues = useMemo(() => {
+    const seen = new Map()
+    for (const x of list ?? []) {
+      const v = x.venue?.trim()
+      if (v && !seen.has(fold(v))) seen.set(fold(v), v)
+    }
+    return [...seen.values()]
+  }, [list])
 
   async function handleCreate(e) {
     e.preventDefault()
@@ -110,8 +120,8 @@ export default function LiveTournaments() {
 
             <div style={s.row}>
               <Field label={t('live.form.venue')} half>
-                <input style={s.input} value={form.venue} onChange={set('venue')}
-                  placeholder={t('live.form.venuePlaceholder')} autoFocus required />
+                <Autocomplete value={form.venue} onChange={v => setForm(f => ({ ...f, venue: v }))}
+                  options={pastVenues} placeholder={t('live.form.venuePlaceholder')} autoFocus required />
               </Field>
               <Field label={t('live.form.name')} half>
                 <input style={s.input} value={form.name} onChange={set('name')}
@@ -201,6 +211,52 @@ export default function LiveTournaments() {
       </div>
     </div>
   )
+}
+
+// Lowercase without accents, so "torre" matches "Casino Torrelodones"
+function fold(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+function Autocomplete({ value, onChange, options, ...inputProps }) {
+  const [open, setOpen] = useState(false)
+  const q = fold(value.trim())
+  const matches = q
+    ? options.filter(o => fold(o).includes(q) && fold(o) !== q).slice(0, 5)
+    : []
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input {...inputProps} style={s.input} value={value} autoComplete="off"
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }} />
+      {open && matches.length > 0 && (
+        <div style={ac.menu} role="listbox">
+          {matches.map(o => (
+            <div key={o} role="option" style={ac.option}
+              // pointerdown + preventDefault: the input keeps focus and doesn't blur before the pick
+              onPointerDown={e => { e.preventDefault(); onChange(o); setOpen(false) }}>
+              {o}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const ac = {
+  menu: {
+    position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 20,
+    background: '#141c2c', border: '1px solid #2a3a52', borderRadius: 10,
+    boxShadow: '0 12px 32px rgba(0,0,0,0.55)', overflow: 'hidden',
+  },
+  option: {
+    padding: '12px 12px', fontSize: 14, color: '#dde0e8', cursor: 'pointer',
+    borderBottom: '1px solid #1c2638',
+  },
 }
 
 function Field({ label, half, children }) {
