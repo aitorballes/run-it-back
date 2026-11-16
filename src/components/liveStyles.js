@@ -33,7 +33,7 @@ export const base = {
   muted: { fontSize: 13, color: '#3a5a7a', textAlign: 'center', padding: 20 },
   input: {
     background: '#080e18', border: '1px solid #1e2e42', borderRadius: 9,
-    padding: '10px 12px', color: '#c8d4e8', fontSize: 15, outline: 'none',
+    padding: '11px 12px', color: '#c8d4e8', fontSize: 16, outline: 'none', // 16px: iOS zooms into smaller inputs
     width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', minWidth: 0,
   },
   select: {

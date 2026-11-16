@@ -7,6 +7,8 @@ import { TABLE_SIZES, currentTable, findTable, physicalSeat, noteAtSeat, saveSea
 import Logo from '../components/Logo'
 import LiveTable from '../components/table/LiveTable'
 import { base } from '../components/liveStyles'
+import BottomSheet from '../components/BottomSheet'
+import NoteTags from '../components/NoteTags'
 
 const toInt = v => { const n = parseInt(String(v).replace(/[^\d]/g, ''), 10); return n > 0 ? n : null }
 
@@ -61,6 +63,7 @@ export default function MyTable() {
   const table = findTable(tour, viewNo)
   const allNotes = notes ?? []
   const displayName = n => n.name || t('live.notes.seatN', { n: n.seat ?? '?' })
+  const tags = t('live.notes.tags')
 
   // ── Tables ──
   function openNewTable() {
@@ -104,7 +107,7 @@ export default function MyTable() {
   function closeSeat() { setSeat(null); setName(''); setText('') }
 
   async function saveSeat(e) {
-    e.preventDefault()
+    e?.preventDefault()
     try {
       const res = await saveSeatNote({
         userId: user.id, tourId: tour.id, notes: allNotes, tableNo: table.no, seat, name, note: text.trim(),
@@ -112,8 +115,10 @@ export default function MyTable() {
       })
       setNotes(ns => applySaved(ns, res))
       closeSeat()
+      return true
     } catch {
       setError(t('live.notes.saveError'))
+      return false
     }
   }
 
@@ -162,6 +167,16 @@ export default function MyTable() {
     }
   }) : []
   const seatOf = i => physicalSeat(table, i)
+  // ‹ › in the seat sheet: the next/previous seat round the table (not yours). What you typed is saved
+  // before moving on; if saving fails you stay on the seat with your text
+  const otherSeats = table ? Array.from({ length: table.seats - 1 }, (_, k) => physicalSeat(table, k + 1)) : []
+  const seatDirty = seat != null && (name !== (noteAtSeat(allNotes, table.no, seat)?.name ?? '') || text !== (noteAtSeat(allNotes, table.no, seat)?.note ?? ''))
+  async function moveSeat(step) {
+    const k = otherSeats.indexOf(seat)
+    const next = otherSeats[(k + step + otherSeats.length) % otherSeats.length]
+    if (seatDirty && !(await saveSeat())) return
+    openSeat(next)
+  }
   const seatNote = table && seat ? noteAtSeat(allNotes, table.no, seat) : null
   const otherNamed = name.trim() ? allNotes.find(n => n.name && n.name_key === playerNameKey(name) && n.id !== seatNote?.id) : null
 
@@ -187,14 +202,15 @@ export default function MyTable() {
               </div>
               {editing !== n.id && (
                 <div style={{ display: 'flex', gap: 4 }}>
-                  <button style={st.iconBtn} title={t('live.notes.edit')} onClick={() => { setEditing(n.id); setDraft(n.note) }}>✎</button>
-                  <button style={{ ...st.iconBtn, color: '#e07070' }} title={t('common.delete')} onClick={() => remove(n.id)}>✕</button>
+                  <button style={st.iconBtn} title={t('live.notes.edit')} aria-label={t('live.notes.edit')} onClick={() => { setEditing(n.id); setDraft(n.note) }}>✎</button>
+                  <button style={{ ...st.iconBtn, color: '#e07070' }} title={t('common.delete')} aria-label={t('common.delete')} onClick={() => remove(n.id)}>✕</button>
                 </div>
               )}
             </div>
             {editing === n.id ? (
               <>
-                <textarea style={{ ...base.input, minHeight: 80, resize: 'vertical' }} value={draft} autoFocus onChange={e => setDraft(e.target.value)} />
+                <textarea style={{ ...base.input, minHeight: 80, resize: 'vertical', lineHeight: 1.45 }} value={draft} autoFocus onChange={e => setDraft(e.target.value)} />
+                {Array.isArray(tags) && <NoteTags tags={tags} text={draft} onChange={setDraft} />}
                 <div style={base.actions}>
                   <button style={base.ghostBtn} onClick={() => setEditing(null)}>{t('common.cancel')}</button>
                   <button style={base.btn} onClick={() => saveEdit(n)}>{t('common.save')}</button>
@@ -282,40 +298,47 @@ export default function MyTable() {
           </div>
         )}
 
-        {/* Seat editor */}
+        {/* Seat editor: a sheet over the table, so it's in view right where you tapped */}
         {table && seat && !tableForm && (
-          <form style={base.card} onSubmit={saveSeat}>
-            <div style={base.cardTitle}>{t('live.notes.tableN', { n: table.no })} · {t('live.notes.seatN', { n: seat })}</div>
+          <BottomSheet
+            title={seatNote?.name || name.trim() || t('live.notes.seatN', { n: seat })}
+            subtitle={`${t('live.notes.tableN', { n: table.no })} · ${t('live.notes.seatN', { n: seat })}`}
+            onClose={closeSeat} closeLabel={t('common.close')}
+            nav={otherSeats.length > 1 ? { onPrev: () => moveSeat(-1), onNext: () => moveSeat(1), prevLabel: t('live.hand.prevSeat'), nextLabel: t('live.hand.nextSeat') } : null}
+            footer={<>
+              <button style={st.secondaryCta} type="button" onClick={closeSeat}>{t('common.cancel')}</button>
+              <button style={st.primaryCta} type="button" onClick={() => saveSeat()}>{t('common.save')}</button>
+            </>}>
             <label style={base.field}>
-              <span style={base.label}>{t('live.hand.rivalName')} ({t('live.hand.optional')})</span>
-              <input style={base.input} value={name} autoFocus list="my-table-names" placeholder={t('live.hand.rivalNamePh')}
-                onChange={e => setName(e.target.value)} />
+              <span style={base.label}>{t('live.hand.rivalName')} · {t('live.hand.optional')}</span>
+              <input style={base.input} value={name} autoFocus={!name} list="my-table-names" placeholder={t('live.hand.rivalNamePh')}
+                autoComplete="off" autoCapitalize="words" onChange={e => setName(e.target.value)} />
               <datalist id="my-table-names">{allNotes.filter(n => n.name).map(n => <option key={n.id} value={n.name} />)}</datalist>
             </label>
-            <label style={base.field}>
-              <span style={base.label}>{t('live.notes.note')}</span>
-              <textarea style={{ ...base.input, minHeight: 80, resize: 'vertical' }} value={text}
-                onChange={e => setText(e.target.value)} placeholder={t('live.notes.notePh')} />
-            </label>
             {otherNamed && (
-              <div style={base.hint}>
+              <div style={st.notice}>
                 {otherNamed.table_no != null && otherNamed.table_no !== table.no
                   ? t('live.myTable.movesHere', { name: otherNamed.name, place: t('live.notes.tableN', { n: otherNamed.table_no }) })
                   : t('live.notes.willReplace', { name: otherNamed.name })}
               </div>
             )}
-            {seatNote && <div style={base.hint}>{t('live.myTable.leftHint')}</div>}
-            <div style={{ ...base.actions, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {seatNote && <button style={base.ghostBtn} type="button" onClick={() => leave(seatNote)}>🚪 {t('live.myTable.leftTable')}</button>}
-                {seatNote && <button style={{ ...base.ghostBtn, color: '#e07070' }} type="button" onClick={() => remove(seatNote.id)}>{t('common.delete')}</button>}
+            <label style={base.field}>
+              <span style={base.label}>{t('live.notes.note')}</span>
+              <textarea style={{ ...base.input, minHeight: 88, resize: 'vertical', lineHeight: 1.45 }} value={text}
+                onChange={e => setText(e.target.value)} placeholder={t('live.notes.notePh')} />
+            </label>
+            {Array.isArray(tags) && <NoteTags tags={tags} text={text} onChange={setText} />}
+            {seatNote && (
+              <div style={st.seatActions}>
+                <div style={base.hint}>{t('live.myTable.leftHint')}</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button style={{ ...st.secondaryCta, flex: 1 }} type="button" onClick={() => leave(seatNote)}>🚪 {t('live.myTable.leftTable')}</button>
+                  <button style={{ ...st.secondaryCta, flex: '0 0 auto', color: '#e07070', borderColor: 'rgba(160,30,30,0.4)' }} type="button"
+                    onClick={() => remove(seatNote.id)}>{t('common.delete')}</button>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button style={base.ghostBtn} type="button" onClick={closeSeat}>{t('common.cancel')}</button>
-                <button style={base.btn} type="submit">{t('common.save')}</button>
-              </div>
-            </div>
-          </form>
+            )}
+          </BottomSheet>
         )}
 
         {/* Notes: this table's players, or a search across every table */}
@@ -349,15 +372,16 @@ function Header({ navigate, t, id }) {
 const st = {
   chips: { display: 'flex', flexWrap: 'wrap', gap: 6 },
   chip: {
-    background: '#080e18', border: '1px solid #1e2e42', borderRadius: 8, color: '#7a94b0',
-    padding: '8px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', minWidth: 42,
+    background: '#080e18', border: '1px solid #1e2e42', borderRadius: 9, color: '#7a94b0',
+    minHeight: 40, padding: '0 12px', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', minWidth: 44,
+    touchAction: 'manipulation',
   },
   chipOn: { background: 'linear-gradient(135deg, #2a2210, #1a1600)', borderColor: '#c8a800', color: '#ffe566' },
   addChip: {
-    background: 'none', border: '1px dashed #2a4a80', borderRadius: 8, color: '#5a8ab0',
-    padding: '8px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+    background: 'none', border: '1px dashed #2a4a80', borderRadius: 9, color: '#5a8ab0',
+    minHeight: 40, padding: '0 12px', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
   },
-  tableHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '0 8px' },
+  tableHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '0 8px', minHeight: 40 },
   tableTitle: { fontSize: 14, fontWeight: 800, color: '#c8d8f0' },
   item: {
     background: 'rgba(16,24,38,0.85)', border: '1px solid #1e2e42', borderRadius: 11,
@@ -368,7 +392,20 @@ const st = {
   meta: { fontSize: 11, color: '#4a6a8a', marginTop: 2 },
   note: { fontSize: 13, color: '#c8d4e8', lineHeight: 1.5, whiteSpace: 'pre-wrap' },
   iconBtn: {
-    width: 32, height: 32, borderRadius: 8, border: '1px solid #1e2e42', background: '#0a1422',
-    color: '#7ab0d8', cursor: 'pointer', fontSize: 13,
+    width: 40, height: 40, borderRadius: 9, border: '1px solid #1e2e42', background: '#0a1422',
+    color: '#7ab0d8', cursor: 'pointer', fontSize: 15, padding: 0, touchAction: 'manipulation',
   },
+  primaryCta: {
+    flex: '1 1 0', minHeight: 48, borderRadius: 11, fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+    color: '#e0f0ff', border: '1px solid #2a5aa0', background: 'linear-gradient(135deg, #1e5cad 0%, #1040a0 50%, #0c3080 100%)',
+  },
+  secondaryCta: {
+    flex: '1 1 0', minHeight: 48, borderRadius: 11, fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+    color: '#9ac8f0', background: '#0a1422', border: '1px solid #24405e', padding: '0 14px', whiteSpace: 'nowrap',
+  },
+  notice: {
+    fontSize: 12, color: '#f0c070', lineHeight: 1.45, padding: '8px 10px', borderRadius: 9,
+    background: 'rgba(240,192,112,0.08)', border: '1px solid rgba(240,192,112,0.3)',
+  },
+  seatActions: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12, borderTop: '1px solid #1e2e42' },
 }
