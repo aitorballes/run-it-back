@@ -9,8 +9,10 @@ import { heroNet } from '../lib/handUtils'
 import { Card, CardBack } from '../components/table/Cards'
 import {
   levelAt, levelMinutes, breakMinutes, extrapolateLevel, recalcAfter, addBreaks, editLevelValue, isPaused, remainingSeconds, advanceClock, setLevelClock,
-  averageStack, inBigBlinds, formatClock, parseChips,
+  averageStack, inBigBlinds, formatClock, parseChips, nextBreakIn, formatDuration,
 } from '../lib/liveTournament'
+import { getCachedTour, cacheTour, forgetTour, getPending, addPending, clearPending } from '../lib/liveOffline'
+import { unlockAudio, playAlert, useWakeLock, wakeLockSupported, readPref, writePref } from '../lib/liveAlerts'
 import Logo from '../components/Logo'
 import StackChart from '../components/StackChart'
 import { base } from '../components/liveStyles'
@@ -54,24 +56,114 @@ export default function LiveTournament() {
   const editRef = useRef(null)
   const [finishPos, setFinishPos]     = useState('')
   const [finishPrize, setFinishPrize] = useState('')
+  const [paidIn, setPaidIn]           = useState('')
+  const [focusField, setFocusField]   = useState('stack') // field focused when the update modal opens
+
+  // Table aids (per device): screen kept on, beeps/vibration on level changes, flash of the clock card
+  const [awake, setAwake]   = useState(() => readPref('live-awake'))
+  const [alerts, setAlerts] = useState(() => readPref('live-alerts'))
+  const [flash, setFlash]   = useState(false)
+  useWakeLock(awake && tour?.status === 'running')
+
+  // Changes not yet in the database (no signal at the venue): kept on the phone and retried
+  const [offline, setOffline] = useState(false)
+  const flushingRef = useRef(false)
 
   useEffect(() => {
     fetchLiveTournament(id)
       .then(row => {
-        if (!row) { setStatus('notFound'); return }
-        setTour(row)
+        if (!row) { forgetTour(id); setStatus('notFound'); return }
+        const pending = getPending(id)
+        const merged = pending ? { ...row, ...pending } : row
+        tourRef.current = merged
+        setTour(merged)
         setStatus('ready')
+        if (pending) flush()
         if (!row.tournament_db_id) {
           ensureLiveTournamentRow(row).then(dbId => {
             if (dbId) setTour(prev => (prev ? { ...prev, tournament_db_id: dbId } : prev))
           })
         }
       })
-      .catch(() => setStatus('error'))
+      .catch(() => {
+        // No connection: open the copy saved on this phone
+        const cached = getCachedTour(id)
+        if (!cached) { setStatus('error'); return }
+        const merged = { ...cached, ...getPending(id) }
+        tourRef.current = merged
+        setTour(merged)
+        setStatus('ready')
+        setOffline(true)
+      })
+    // flush only reads refs and storage
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const tourRef = useRef(null)
-  useEffect(() => { tourRef.current = tour }, [tour])
+  useEffect(() => {
+    tourRef.current = tour
+    if (tour) cacheTour(tour)
+  }, [tour])
+
+  // Sends every pending change in one update. Network errors keep them for later; an error from the
+  // database itself (it won't go through by retrying) drops them and says so
+  async function flush() {
+    if (flushingRef.current) return
+    const fields = getPending(id)
+    if (!fields) { setOffline(false); return }
+    flushingRef.current = true
+    clearPending(id)
+    let ok = true
+    try {
+      await updateLiveTournament(id, fields)
+    } catch (e) {
+      ok = false
+      if (e?.code) setError(t('live.saveError'))
+      else addPending(id, { ...fields, ...getPending(id) }) // newer changes win over the ones that failed
+    }
+    flushingRef.current = false
+    const left = !!getPending(id)
+    setOffline(left)
+    if (ok && left) return flush()
+  }
+
+  // Retry when the phone gets signal back, when the page comes back to the front, and every 20 s
+  useEffect(() => {
+    const retry = () => { if (getPending(id)) flush() }
+    const onVisible = () => { if (document.visibilityState === 'visible') retry() }
+    window.addEventListener('online', retry)
+    document.addEventListener('visibilitychange', onVisible)
+    const iv = setInterval(retry, 20000)
+    return () => {
+      window.removeEventListener('online', retry)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(iv)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
+  // Sound can only start after a tap: every tap re-enables it while alerts are on
+  useEffect(() => {
+    if (!alerts) return
+    unlockAudio()
+    window.addEventListener('pointerdown', unlockAudio)
+    return () => window.removeEventListener('pointerdown', unlockAudio)
+  }, [alerts])
+
+  const alertsRef = useRef(alerts)
+  useEffect(() => { alertsRef.current = alerts }, [alerts])
+  const flashTimer = useRef(null)
+  function notify(kind) {
+    if (kind !== 'minute') {
+      setFlash(true)
+      clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => setFlash(false), 4000)
+    }
+    if (alertsRef.current) playAlert(kind)
+  }
+  const notifyRef = useRef(notify)
+  const patchRef = useRef(null)
+  useEffect(() => { notifyRef.current = notify; patchRef.current = patch })
 
   // Hands recorded in this tournament (rows in `hands` under its tournaments row)
   const [hands, setHands] = useState([])
@@ -83,26 +175,57 @@ export default function LiveTournament() {
   }, [tournamentDbId])
 
   // Ticks every second; when the level's time runs out the clock moves on to the next level by itself
+  // (with a beep/vibration if alerts are on, and one minute before the end)
+  const lastRemRef = useRef(null)
   useEffect(() => {
     const iv = setInterval(() => {
       const ts = Date.now()
       setNow(ts)
       const cur = tourRef.current
-      const advance = cur && advanceClock(cur, ts)
-      if (!advance) return
-      tourRef.current = { ...cur, ...advance }
-      setTour(prev => ({ ...prev, ...advance }))
-      updateLiveTournament(id, advance).catch(() => setError(t('live.saveError')))
+      if (!cur) return
+      const advance = advanceClock(cur, ts)
+      if (advance) {
+        patchRef.current?.(advance)
+        notifyRef.current(advance.on_break ? 'break' : 'level')
+        lastRemRef.current = null
+        return
+      }
+      const rem = remainingSeconds(cur, ts)
+      const prev = lastRemRef.current
+      // Only when the clock runs down past 1:00 by itself, not on a manual jump
+      if (cur.status === 'running' && !isPaused(cur) && !cur.on_break && prev > 60 && rem <= 60 && rem > 55) notifyRef.current('minute')
+      lastRemRef.current = rem
     }, 1000)
     return () => clearInterval(iv)
-  }, [id, t])
+  }, [])
 
-  // Saves locally at once and in the database in the background
+  // Saves on the phone at once and in the database in the background (or later, without signal)
   function patch(fields) {
     tourRef.current = { ...tourRef.current, ...fields } // so quick repeated taps build on each other
     setTour(prev => ({ ...prev, ...fields }))
     setError('')
-    return updateLiveTournament(id, fields).catch(() => setError(t('live.saveError')))
+    addPending(id, fields)
+    return flush()
+  }
+
+  function toggleAwake() {
+    setAwake(v => { writePref('live-awake', !v); return !v })
+  }
+
+  function toggleAlerts() {
+    const on = !alerts
+    writePref('live-alerts', on)
+    setAlerts(on)
+    if (on) { unlockAudio(); playAlert('minute') } // a sample beep, which also confirms sound works
+  }
+
+  // Paid places need their own column (scripts/migrate-live-paid-places.sql), so they're saved
+  // on their own: if the column is missing, nothing else is held back
+  function savePaidPlaces(n) {
+    setTour(prev => ({ ...prev, paid_places: n }))
+    updateLiveTournament(id, { paid_places: n }).catch(e => {
+      setError(e?.code === 'PGRST204' || /paid_places/.test(e?.message ?? '') ? t('live.paid.migration') : t('live.saveError'))
+    })
   }
 
   if (status !== 'ready') {
@@ -134,6 +257,13 @@ export default function LiveTournament() {
   const pctAvg    = avg && tour.my_stack != null ? Math.round((tour.my_stack / avg) * 100) : null
   const myEntries = 1 + tour.history.filter(h => h.rebuy).length // the Dashboard shows [n] when > 1
   const totalChips = tour.entries && tour.starting_stack ? tour.entries * tour.starting_stack : null
+  const clockTime = secs => new Date(now + secs * 1000).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+  const endsAt    = running && !paused ? clockTime(remaining) : null
+  const breakIn   = running && breakNext === 0 ? nextBreakIn(tour, now) : null // a break right after this level already shows above
+  const paid      = tour.paid_places || null
+  const toCash    = paid && tour.players_left != null ? tour.players_left - paid : null
+  const invested  = (Number(tour.buyin) || 0) * myEntries
+  const net       = (Number(tour.prize_won) || 0) - invested
 
   function goToLevel(n) {
     if (n < 1) return
@@ -180,13 +310,17 @@ export default function LiveTournament() {
     const stack   = parseChips(stackIn)   ?? tour.my_stack
     const players = parseChips(playersIn) ?? tour.players_left
     const entries = parseChips(entriesIn) ?? tour.entries
-    patch({
-      my_stack: stack,
-      players_left: players,
-      entries,
-      history: [...tour.history, { at: new Date().toISOString(), day, level: playLevel, stack, players, entries }],
-    })
-    setStackIn(''); setPlayersIn(''); setEntriesIn('')
+    const paidPlaces = parseChips(paidIn)
+    if (paidPlaces != null && paidPlaces !== tour.paid_places) savePaidPlaces(paidPlaces)
+    if (stackIn || playersIn || entriesIn) {
+      patch({
+        my_stack: stack,
+        players_left: players,
+        entries,
+        history: [...tour.history, { at: new Date().toISOString(), day, level: playLevel, stack, players, entries }],
+      })
+    }
+    setStackIn(''); setPlayersIn(''); setEntriesIn(''); setPaidIn('')
     closeUpdate()
     setSavedFlash(true)
     setTimeout(() => setSavedFlash(false), 1500)
@@ -270,6 +404,7 @@ export default function LiveTournament() {
       // Its tournaments row goes too, with the recorded hands
       if (tour.tournament_db_id) await deleteTournament(tour.tournament_db_id, tour.user_id)
       await deleteLiveTournament(id)
+      forgetTour(id)
       navigate('/live')
     } catch {
       setError(t('live.saveError'))
@@ -326,6 +461,30 @@ export default function LiveTournament() {
     setEditIdx(null)
   }
 
+  // From the update button or by tapping a stat: the modal opens on that field
+  function openUpdate(field = 'stack') {
+    setFocusField(running ? field : null)
+    setEditIdx(null)
+    setShowUpdate(true)
+  }
+
+  // What the typed values mean before saving: stack in BB and against the average
+  const pvStack   = parseChips(stackIn)
+  const pvAvg     = averageStack({
+    entries: parseChips(entriesIn) ?? tour.entries,
+    players_left: parseChips(playersIn) ?? tour.players_left,
+    starting_stack: tour.starting_stack,
+  })
+  const pvBB      = inBigBlinds(pvStack, level)
+  const pvPct     = pvAvg && pvStack != null ? Math.round((pvStack / pvAvg) * 100) : null
+
+  function bumpPlayers(delta) {
+    setPlayersIn(v => {
+      const cur = parseChips(v) ?? tour.players_left
+      return cur == null ? v : String(Math.max(1, cur + delta))
+    })
+  }
+
   // Editing the latest update also corrects the tournament's current stack/players/entries
   function syncCurrent(newHistory) {
     const latest = newHistory[newHistory.length - 1]
@@ -368,6 +527,13 @@ export default function LiveTournament() {
 
         {error && <div style={base.error}>{error}</div>}
 
+        {offline && (
+          <div style={s.offlineBox}>
+            <span>📶 {t('live.sync.offline')}</span>
+            <button style={s.offlineBtn} onClick={flush}>{t('live.sync.retry')}</button>
+          </div>
+        )}
+
         {!running && (
           <div style={s.resultCard}>
             <div style={s.resultMain}>
@@ -376,12 +542,20 @@ export default function LiveTournament() {
             {tour.prize_won > 0 && (
               <div style={s.resultPrize}>{t('live.finish.prize')}: {fmtNumber(tour.prize_won)}{tour.currency}</div>
             )}
+            {invested > 0 && (
+              <div style={s.resultSub}>
+                {t('live.finish.invested', { n: `${fmtNumber(invested)}${tour.currency}` })} ·{' '}
+                <span style={{ color: net >= 0 ? '#50d080' : '#e07070', fontWeight: 800 }}>
+                  {t('live.finish.net', { n: `${net > 0 ? '+' : ''}${fmtNumber(net)}${tour.currency}` })}
+                </span>
+              </div>
+            )}
             <button style={base.ghostBtn} onClick={() => patch({ status: 'running' }).then(() => syncLiveTournamentRow(tourRef.current))}>{t('live.finish.reopen')}</button>
           </div>
         )}
 
         {/* CLOCK */}
-        <div style={{ ...s.clockCard, ...(onBreak ? s.clockCardBreak : null) }}>
+        <div style={{ ...s.clockCard, ...(onBreak ? s.clockCardBreak : null), ...(flash ? s.clockCardFlash : null) }}>
           <div style={s.clockTop}>
             <span style={s.levelLabel}>
               {t('live.day', { n: day })} · {onBreak ? t('live.break') : t('live.level', { n: levelNo })}
@@ -413,6 +587,18 @@ export default function LiveTournament() {
               : breakNext > 0 ? t('live.nextBreak', { m: breakNext })
               : t('live.nextLevel', { blinds: fmtBlinds(nextLevel) })}
           </div>
+          {(endsAt || breakIn) && (
+            <div style={s.clockInfo}>
+              {endsAt && <span>🕒 {t(onBreak ? 'live.breakEndsAt' : 'live.endsAt', { time: endsAt })}</span>}
+              {breakIn && (
+                <span style={{ color: '#c8a060' }}>
+                  ☕ {paused
+                    ? t('live.breakIn', { d: formatDuration(breakIn.seconds) })
+                    : t('live.breakInAt', { d: formatDuration(breakIn.seconds), time: clockTime(breakIn.seconds) })}
+                </span>
+              )}
+            </div>
+          )}
           {running && (
             <div style={s.clockBtns}>
               <CtrlButton icon={'⏮\uFE0E'} caption={t('live.structure.level')} title={t('live.prevLevel')}
@@ -424,6 +610,20 @@ export default function LiveTournament() {
               <CtrlButton icon={'⏩\uFE0E'} caption="+1 min" title={t('live.plusMinute')} onClick={() => adjustTime(60)} />
               <CtrlButton icon={'⏭\uFE0E'} caption={breakNext > 0 ? t('live.break') : t('live.structure.level')}
                 title={breakNext > 0 ? t('live.goToBreak') : t('live.nextLevelBtn')} onClick={goNext} />
+            </div>
+          )}
+          {running && (
+            <div style={s.toggles}>
+              {wakeLockSupported() && (
+                <button style={{ ...s.toggle, ...(awake ? s.toggleOn : null) }} onClick={toggleAwake}
+                  aria-pressed={awake} title={t('live.awakeTitle')}>
+                  🔆 {t('live.awake')}
+                </button>
+              )}
+              <button style={{ ...s.toggle, ...(alerts ? s.toggleOn : null) }} onClick={toggleAlerts}
+                aria-pressed={alerts} title={t('live.alertsTitle')}>
+                {alerts ? '🔔' : '🔕'} {t('live.alerts')}
+              </button>
             </div>
           )}
         </div>
@@ -439,16 +639,25 @@ export default function LiveTournament() {
 
         {/* STATS */}
         <div style={s.stats}>
+          {/* Tapping a stat opens the update on that value */}
           <Stat label={t('live.stats.myStack')} value={tour.my_stack != null ? fmtNumber(tour.my_stack) : '—'}
             big={t('live.stats.bb', { n: fmtBB(myBB) })} accent={myBB != null && myBB < 15 ? '#f0a040' : '#50d080'}
-            sub={pctAvg != null ? t('live.stats.ofAverage', { pct: pctAvg }) : null} />
+            sub={pctAvg != null ? t('live.stats.ofAverage', { pct: pctAvg }) : null}
+            onClick={running ? () => openUpdate('stack') : null} />
           <Stat label={t('live.stats.average')} value={avg != null ? fmtNumber(Math.round(avg)) : '—'}
             big={t('live.stats.bb', { n: fmtBB(avgBB) })} accent="#60b0ff"
-            sub={avg == null ? t('live.stats.averageHint') : null} />
+            sub={avg == null ? t('live.stats.averageHint') : null}
+            onClick={running ? () => openUpdate('players') : null} />
           <Stat label={t('live.stats.players')}
-            value={tour.players_left != null ? `${fmtNumber(tour.players_left)}${tour.entries ? ` / ${fmtNumber(tour.entries)}` : ''}` : '—'} />
+            value={tour.players_left != null ? `${fmtNumber(tour.players_left)}${tour.entries ? ` / ${fmtNumber(tour.entries)}` : ''}` : '—'}
+            sub={toCash == null ? (running ? t('live.paid.add') : null)
+              : toCash > 0 ? t('live.paid.bubble', { n: fmtNumber(toCash), paid: fmtNumber(paid) })
+              : t('live.paid.itm', { paid: fmtNumber(paid) })}
+            subColor={toCash == null ? null : toCash > 0 ? (toCash <= Math.max(3, paid * 0.1) ? '#f0a040' : null) : '#50d080'}
+            onClick={running ? () => openUpdate(paid ? 'players' : 'paid') : null} />
           <Stat label={t('live.stats.chips')} value={totalChips != null ? fmtNumber(totalChips) : '—'}
-            sub={t('live.stats.startingStack', { n: fmtNumber(tour.starting_stack) })} />
+            sub={t('live.stats.startingStack', { n: fmtNumber(tour.starting_stack) })}
+            onClick={running ? () => openUpdate('entries') : null} />
         </div>
 
         {/* STACK CHART + button that opens the updates modal */}
@@ -464,7 +673,7 @@ export default function LiveTournament() {
           )}
           <div style={s.cardBtnRow}>
             {savedFlash && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
-            <button style={{ ...base.btn, ...s.bigBtn }} onClick={() => setShowUpdate(true)}>
+            <button style={{ ...base.btn, ...s.bigBtn }} onClick={() => openUpdate('stack')}>
               {running ? t('live.update.button') : t('live.history.title')}
             </button>
           </div>
@@ -510,26 +719,53 @@ export default function LiveTournament() {
             )}
             {running && !editing && (
               <form style={s.modalForm} onSubmit={saveUpdate}>
-                <div style={base.row}>
-                  <label style={{ ...base.field, flex: '1 1 140px', minWidth: 0 }}>
-                    <span style={base.label}>{t('live.update.stack')}</span>
-                    <input style={base.input} inputMode="numeric" value={stackIn} onChange={e => setStackIn(e.target.value)}
+                <label style={base.field}>
+                  <span style={base.label}>{t('live.update.stack')}</span>
+                  <div style={s.inputWithKeys}>
+                    <input style={{ ...base.input, fontSize: 20, fontWeight: 800 }} inputMode="numeric" value={stackIn}
+                      onChange={e => setStackIn(e.target.value)} autoFocus={focusField === 'stack'}
                       placeholder={tour.my_stack != null ? fmtNumber(tour.my_stack) : ''} />
-                  </label>
-                  <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
+                    {/* Stacks are big round numbers: one tap for the thousands (the number pad has no "k") */}
+                    <button type="button" style={s.keyBtn} onClick={() => setStackIn(v => (v ? `${v}000` : v))}
+                      disabled={!stackIn} title={t('live.update.thousands')}>000</button>
+                  </div>
+                  <span style={s.preview}>
+                    {pvStack != null ? (
+                      <>
+                        = <b>{fmtNumber(pvStack)}</b>
+                        {pvBB != null && <> · <b style={{ color: pvBB < 15 ? '#f0a040' : '#50d080' }}>{t('live.stats.bb', { n: fmtBB(pvBB) })}</b></>}
+                        {pvPct != null && <> · {t('live.stats.ofAverage', { pct: pvPct })}</>}
+                      </>
+                    ) : t('live.update.stackHint')}
+                  </span>
+                </label>
+                <div style={base.row}>
+                  <label style={{ ...base.field, flex: '1 1 130px', minWidth: 0 }}>
                     <span style={base.label}>{t('live.update.players')}</span>
-                    <input style={base.input} inputMode="numeric" value={playersIn} onChange={e => setPlayersIn(e.target.value)}
-                      placeholder={tour.players_left != null ? String(tour.players_left) : ''} />
+                    <div style={s.inputWithKeys}>
+                      <input style={base.input} inputMode="numeric" value={playersIn} onChange={e => setPlayersIn(e.target.value)}
+                        autoFocus={focusField === 'players'}
+                        placeholder={tour.players_left != null ? String(tour.players_left) : ''} />
+                      <button type="button" style={s.keyBtn} onClick={() => bumpPlayers(-1)}
+                        disabled={tour.players_left == null && !playersIn} title={t('live.update.minusOne')}>−1</button>
+                    </div>
                   </label>
-                  <label style={{ ...base.field, flex: '1 1 100px', minWidth: 0 }}>
+                  <label style={{ ...base.field, flex: '1 1 90px', minWidth: 0 }}>
                     <span style={base.label}>{t('live.update.entries')}</span>
                     <input style={base.input} inputMode="numeric" value={entriesIn} onChange={e => setEntriesIn(e.target.value)}
+                      autoFocus={focusField === 'entries'}
                       placeholder={tour.entries != null ? String(tour.entries) : ''} />
+                  </label>
+                  <label style={{ ...base.field, flex: '1 1 90px', minWidth: 0 }}>
+                    <span style={base.label}>{t('live.paid.label')}</span>
+                    <input style={base.input} inputMode="numeric" value={paidIn} onChange={e => setPaidIn(e.target.value)}
+                      autoFocus={focusField === 'paid'}
+                      placeholder={tour.paid_places ? String(tour.paid_places) : t('live.structure.optional')} />
                   </label>
                 </div>
                 <div style={base.actions}>
                   <button style={base.ghostBtn} type="button" onClick={closeUpdate}>{t('common.cancel')}</button>
-                  <button style={base.btn} type="submit" disabled={!stackIn && !playersIn && !entriesIn}>
+                  <button style={base.btn} type="submit" disabled={!stackIn && !playersIn && !entriesIn && !paidIn}>
                     {t('live.update.save')}
                   </button>
                 </div>
@@ -847,14 +1083,15 @@ function Modal({ title, onClose, closeLabel, children }) {
   )
 }
 
-function Stat({ label, value, big, sub, accent }) {
+function Stat({ label, value, big, sub, subColor, accent, onClick }) {
+  const Tag = onClick ? 'button' : 'div'
   return (
-    <div style={s.stat}>
+    <Tag style={{ ...s.stat, ...(onClick ? s.statBtn : null) }} onClick={onClick ?? undefined}>
       <div style={base.label}>{label}</div>
       {big && <div style={{ ...s.statBig, color: accent }}>{big}</div>}
       <div style={big ? s.statValueSmall : s.statValue}>{value}</div>
-      {sub && <div style={s.statSub}>{sub}</div>}
-    </div>
+      {sub && <div style={{ ...s.statSub, ...(subColor ? { color: subColor, fontWeight: 700 } : null) }}>{sub}</div>}
+    </Tag>
   )
 }
 
@@ -864,6 +1101,30 @@ const s = {
     alignItems: 'center', textAlign: 'center', gap: 6, padding: '18px 16px',
   },
   clockCardBreak: { borderColor: '#6a5420', background: 'linear-gradient(160deg, #241f14 0%, #15130c 100%)' },
+  clockCardFlash: { borderColor: '#50d080', boxShadow: '0 0 0 3px rgba(80,208,128,0.45), 0 20px 60px rgba(0,0,0,0.5)', transition: 'box-shadow 0.3s' },
+  clockInfo: { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px 14px', fontSize: 12, fontWeight: 700, color: '#7a94b0' },
+  toggles: { display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 8 },
+  toggle: {
+    background: 'none', border: '1px solid #1e3048', borderRadius: 999, color: '#4a6a8a', fontFamily: 'inherit',
+    padding: '8px 14px', minHeight: 36, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  },
+  toggleOn: { color: '#a0e8b8', borderColor: '#2a6a3a', background: 'rgba(40,120,60,0.18)' },
+  offlineBox: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 12, lineHeight: 1.4,
+    color: '#f0c070', background: 'rgba(240,160,64,0.1)', border: '1px solid rgba(240,160,64,0.35)', borderRadius: 10, padding: '10px 12px',
+  },
+  offlineBtn: {
+    background: 'none', border: '1px solid rgba(240,160,64,0.5)', borderRadius: 8, color: '#f0c070',
+    padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit',
+  },
+  statBtn: { cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', color: 'inherit', width: '100%' },
+  inputWithKeys: { display: 'flex', gap: 6 },
+  keyBtn: {
+    flexShrink: 0, minWidth: 54, background: '#0a1422', border: '1px solid #24405e', borderRadius: 9,
+    color: '#9ac8f0', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+  },
+  preview: { fontSize: 12, color: '#7a94b0', minHeight: 16 },
+  resultSub: { fontSize: 13, color: '#9ab4d0' },
   clockTop: { display: 'flex', alignItems: 'center', gap: 8 },
   levelLabel: { fontSize: 12, fontWeight: 800, color: '#5a8ab0', letterSpacing: '1.5px', textTransform: 'uppercase' },
   pausedTag: {

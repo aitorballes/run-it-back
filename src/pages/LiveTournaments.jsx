@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useI18n, fmtNumber } from '../i18n/core'
 import { fetchLiveTournaments, createLiveTournament, ensureLiveTournamentRow } from '../lib/db'
-import { defaultStructure, levelAt, parseChips } from '../lib/liveTournament'
+import { defaultStructure, levelAt, parseChips, advanceClock, inBigBlinds } from '../lib/liveTournament'
+import { getCachedList, cacheList } from '../lib/liveOffline'
 import { findStructurePreset, presetStructure, SIDE_EVENT_DEFAULTS } from '../lib/structurePresets'
 import Logo from '../components/Logo'
 import { base as s } from '../components/liveStyles'
@@ -30,8 +31,13 @@ export default function LiveTournaments() {
 
   useEffect(() => {
     fetchLiveTournaments(user.id)
-      .then(rows => { setList(rows); if (!rows.length) setShowForm(true) })
-      .catch(() => { setList([]); setLoadError(t('live.loadError')) })
+      .then(rows => { setList(rows); cacheList(rows); if (!rows.length) setShowForm(true) })
+      .catch(() => {
+        // No signal at the venue: the last list seen on this phone
+        const cached = getCachedList()
+        setList(cached ?? [])
+        setLoadError(cached ? t('live.sync.offlineList') : t('live.loadError'))
+      })
   }, [user.id, t])
 
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }))
@@ -110,6 +116,21 @@ export default function LiveTournaments() {
 
   const running  = list?.filter(x => x.status === 'running') ?? []
   const finished = list?.filter(x => x.status === 'finished') ?? []
+
+  // Results of finished tournaments, per currency: buy-ins (with rebuys), prizes, net and cashes
+  const summary = useMemo(() => {
+    const by = new Map()
+    for (const x of list ?? []) {
+      if (x.status !== 'finished') continue
+      const cur = by.get(x.currency) ?? { currency: x.currency, count: 0, invested: 0, prizes: 0, cashes: 0 }
+      cur.count++
+      cur.invested += (Number(x.buyin) || 0) * (1 + (x.history ?? []).filter(h => h.rebuy).length)
+      cur.prizes += Number(x.prize_won) || 0
+      if (x.prize_won > 0) cur.cashes++
+      by.set(x.currency, cur)
+    }
+    return [...by.values()].sort((a, b) => b.count - a.count)
+  }, [list])
 
   return (
     <div style={s.page}>
@@ -200,6 +221,27 @@ export default function LiveTournaments() {
 
         {list === null && <div style={s.muted}>{t('common.loading')}</div>}
 
+        {!showForm && summary.length > 0 && (
+          <div style={s.card}>
+            <div style={s.cardTitle}>{t('live.summary.title')}</div>
+            {summary.map(r => {
+              const net = r.prizes - r.invested
+              return (
+                <div key={r.currency} style={sm.grid}>
+                  <SumCell label={t('live.summary.tournaments')} value={fmtNumber(r.count)} />
+                  <SumCell label={t('live.summary.invested')} value={`${fmtNumber(r.invested)}${r.currency}`} />
+                  <SumCell label={t('live.summary.prizes')} value={`${fmtNumber(r.prizes)}${r.currency}`} />
+                  <SumCell label={t('live.summary.net')} value={`${net > 0 ? '+' : ''}${fmtNumber(net)}${r.currency}`}
+                    color={net >= 0 ? '#50d080' : '#e07070'} />
+                  <SumCell label={t('live.summary.itm')} value={`${r.cashes}/${r.count} · ${Math.round((r.cashes / r.count) * 100)}%`} />
+                  <SumCell label="ROI" value={r.invested ? `${net > 0 ? '+' : ''}${Math.round((net / r.invested) * 100)}%` : '—'}
+                    color={net >= 0 ? '#50d080' : '#e07070'} />
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         {[[running, 'live.running'], [finished, 'live.finished']].map(([items, label]) => items.length > 0 && (
           <div key={label} style={s.section}>
             <div style={s.sectionTitle}>{t(label)}</div>
@@ -219,8 +261,10 @@ export default function LiveTournaments() {
                   <div style={s.itemBuyin}>{fmtNumber(x.buyin)}{x.currency}</div>
                   <div style={s.itemMeta}>
                     {x.status === 'running'
-                      ? t('live.level', { n: x.current_level })
-                      : x.finish_position ? t('live.finish.position', { pos: x.finish_position }) : '—'}
+                      ? <RunningInfo x={x} t={t} />
+                      : x.finish_position
+                        ? <>{t('live.finish.position', { pos: x.finish_position })}{x.prize_won > 0 && <span style={{ color: '#50d080', fontWeight: 700 }}> · {fmtNumber(x.prize_won)}{x.currency}</span>}</>
+                        : '—'}
                   </div>
                 </div>
               </button>
@@ -230,6 +274,33 @@ export default function LiveTournaments() {
       </div>
     </div>
   )
+}
+
+// Level where the clock is now (it kept running while the page was closed) and my stack in BB
+function RunningInfo({ x, t }) {
+  const cur = x.structure?.length ? { ...x, ...(advanceClock(x) ?? null) } : x
+  const lvl = x.structure?.length ? levelAt(x.structure, cur.on_break ? cur.current_level + 1 : cur.current_level) : null
+  const bb = inBigBlinds(x.my_stack, lvl)
+  return (
+    <>
+      {cur.on_break ? `☕ ${t('live.break')}` : t('live.level', { n: cur.current_level })}
+      {bb != null && <span style={{ color: bb < 15 ? '#f0a040' : '#50d080', fontWeight: 700 }}> · {t('live.stats.bb', { n: fmtNumber(bb, { maximumFractionDigits: bb < 10 ? 1 : 0 }) })}</span>}
+    </>
+  )
+}
+
+function SumCell({ label, value, color }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={s.label}>{label}</div>
+      <div style={{ ...sm.value, ...(color ? { color } : null) }}>{value}</div>
+    </div>
+  )
+}
+
+const sm = {
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px 10px' },
+  value: { fontSize: 15, fontWeight: 800, color: '#e0ecff', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
 }
 
 // Lowercase without accents, so "torre" matches "Casino Torrelodones"

@@ -134,8 +134,34 @@ export function formatClock(seconds) {
   return `${h ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}`
 }
 
-// Parses user input like "25000", "25.000" or "25,000" into an integer (null if empty/invalid)
+// Parses user input like "25000", "25.000" or "25,000" into an integer (null if empty/invalid).
+// Also "45k", "1,2m" or "1.5M", the way players say stacks at the table
 export function parseChips(value) {
-  const digits = String(value ?? '').replace(/[^\d]/g, '')
+  const str = String(value ?? '').trim()
+  const short = /^(\d+(?:[.,]\d+)?)\s*([km])$/i.exec(str)
+  if (short) return Math.round(parseFloat(short[1].replace(',', '.')) * (short[2].toLowerCase() === 'k' ? 1e3 : 1e6))
+  const digits = str.replace(/[^\d]/g, '')
   return digits ? parseInt(digits, 10) : null
+}
+
+// Seconds of play until the next break (counting from the clock as it is now), with the break's
+// level and minutes; null on a break or when no break is set ahead
+export function nextBreakIn(t, now = Date.now()) {
+  if (t.on_break) return null
+  let level = t.current_level
+  let seconds = remainingSeconds(t, now)
+  for (let guard = 0; level <= t.structure.length && guard < 60; guard++) {
+    const minutes = breakMinutes(t, level)
+    if (minutes > 0) return { seconds, level, minutes }
+    level++
+    seconds += levelMinutes(t, level) * 60
+  }
+  return null
+}
+
+// "1 h 05 min" / "25 min"
+export function formatDuration(seconds) {
+  const mins = Math.max(0, Math.round(seconds / 60))
+  const h = Math.floor(mins / 60)
+  return h ? `${h} h ${String(mins % 60).padStart(2, '0')} min` : `${mins} min`
 }
