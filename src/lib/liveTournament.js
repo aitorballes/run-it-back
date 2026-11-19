@@ -63,6 +63,32 @@ export function addBreaks(structure, after, minutes, every) {
   return out
 }
 
+// Same, for a single break after level `after`, adding levels to the structure if it doesn't reach that far yet
+export function withBreak(structure, after, minutes) {
+  const full = after > structure.length ? recalcAfter(structure, structure.length - 1, after) : structure
+  return addBreaks(full, after, minutes, 0)
+}
+
+// "Break now": which level the break belongs to. In the first half of a level, the level has barely been
+// played, so the break comes before it (after the previous level) and the level is played in full afterwards;
+// in the second half the level is over and the break comes after it. Level 1 has nothing before it.
+export function breakNowSlot(t, now = Date.now()) {
+  const level = t.current_level
+  const total = levelMinutes(t, level) * 60
+  const elapsed = total - remainingSeconds(t, now)
+  return level > 1 && elapsed < total / 2 ? level - 1 : level
+}
+
+// Patch that starts a break of `minutes` right now (clock running), placed by breakNowSlot
+export function startBreakNow(t, minutes, now = Date.now()) {
+  const after = breakNowSlot(t, now)
+  return {
+    structure: withBreak(t.structure, after, minutes),
+    current_level: after, on_break: true, paused_remaining: null,
+    level_ends_at: new Date(now + minutes * 60 * 1000).toISOString(),
+  }
+}
+
 // Edits one value of a level. Changing the big blind carries along a big blind ante (ante = BB)
 // and a small blind that was exactly half of it
 export function editLevelValue(level, key, value) {

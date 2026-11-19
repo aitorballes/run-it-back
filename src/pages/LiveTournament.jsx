@@ -8,7 +8,7 @@ import {
 import { heroNet } from '../lib/handUtils'
 import { Card, CardBack } from '../components/table/Cards'
 import {
-  levelAt, levelMinutes, breakMinutes, extrapolateLevel, recalcAfter, addBreaks, editLevelValue, isPaused, periodSeconds, remainingSeconds, typeChips, typeMoney, parseMoney, groupDigits, advanceClock, setLevelClock,
+  levelAt, levelMinutes, breakMinutes, extrapolateLevel, recalcAfter, addBreaks, editLevelValue, isPaused, periodSeconds, remainingSeconds, typeChips, typeMoney, parseMoney, groupDigits, advanceClock, setLevelClock, withBreak, breakNowSlot, startBreakNow,
   averageStack, inBigBlinds, formatClock, parseChips, nextBreakIn, formatDuration,
 } from '../lib/liveTournament'
 import { getCachedTour, cacheTour, forgetTour, getPending, addPending, clearPending } from '../lib/liveOffline'
@@ -294,6 +294,20 @@ export default function LiveTournament() {
     patch({ structure: addBreaks(tour.structure, after, minutes, every) })
     if (draft) setDraft(addBreaks(draft, after, minutes, every))
     setBrk(b => ({ ...b, after: '', every: '' }))
+    setShowBreak(false)
+    setBreakAdded(true)
+    setTimeout(() => setBreakAdded(false), 1500)
+  }
+
+  // The break starts now: the level being played ends (or, if it had only just started, the break counts
+  // as coming before it and the level is replayed in full afterwards)
+  function breakNow() {
+    const minutes = parseChips(brk.minutes)
+    if (!minutes) return
+    const cur = tourRef.current
+    const p = startBreakNow(cur, minutes)
+    patch(p)
+    if (draft) setDraft(withBreak(draft, p.current_level, minutes))
     setShowBreak(false)
     setBreakAdded(true)
     setTimeout(() => setBreakAdded(false), 1500)
@@ -731,6 +745,30 @@ export default function LiveTournament() {
         {running && showBreak && (
           <Modal title={`☕ ${t('live.structure.addBreak')}`} onClose={() => setShowBreak(false)} closeLabel={t('common.cancel')}>
             <form style={s.modalForm} onSubmit={addBreak}>
+              <label style={base.field}>
+                <span style={base.label}>{t('live.structure.breakMinutes')}</span>
+                <input style={base.input} inputMode="numeric" value={brk.minutes}
+                  onChange={e => setBrk(b => ({ ...b, minutes: e.target.value }))} />
+              </label>
+              {!onBreak && (() => {
+                const slot = breakNowSlot(tour, now)
+                return (
+                  <div style={s.breakNow}>
+                    <button type="button" style={{ ...base.btn, ...s.bigBtn, ...s.breakNowBtn }} onClick={breakNow}
+                      disabled={!parseChips(brk.minutes)}>
+                      ☕ {t('live.structure.breakNow')}
+                    </button>
+                    <div style={base.hint}>
+                      {slot === levelNo
+                        ? t('live.structure.breakNowAfter', { n: levelNo, next: levelNo + 1 })
+                        : t('live.structure.breakNowBefore', { n: levelNo })}
+                    </div>
+                  </div>
+                )
+              })()}
+              <div style={s.modalSection}>
+                <span style={base.label}>{t('live.structure.orSchedule')}</span>
+              </div>
               <div style={s.breakGrid}>
                 <label style={{ ...base.field, minWidth: 0 }}>
                   <span style={base.label}>{t('live.structure.afterLevel')}</span>
@@ -738,11 +776,6 @@ export default function LiveTournament() {
                     onChange={e => setBrk(b => ({ ...b, after: e.target.value }))} />
                 </label>
                 <label style={{ ...base.field, minWidth: 0 }}>
-                  <span style={base.label}>{t('live.structure.breakMinutes')}</span>
-                  <input style={base.input} inputMode="numeric" value={brk.minutes}
-                    onChange={e => setBrk(b => ({ ...b, minutes: e.target.value }))} />
-                </label>
-                <label style={{ ...base.field, minWidth: 0, gridColumn: '1 / -1' }}>
                   <span style={base.label}>{t('live.structure.every')}</span>
                   <input style={base.input} inputMode="numeric" value={brk.every} placeholder={t('live.structure.optional')}
                     onChange={e => setBrk(b => ({ ...b, every: e.target.value }))} />
@@ -757,7 +790,7 @@ export default function LiveTournament() {
               )}
               <div style={base.actions}>
                 <button style={base.ghostBtn} type="button" onClick={() => setShowBreak(false)}>{t('common.cancel')}</button>
-                <button type="submit" style={base.btn} disabled={!parseChips(brk.minutes)}>+ {t('live.structure.addBreak')}</button>
+                <button type="submit" style={base.btn} disabled={!parseChips(brk.minutes)}>{t('live.structure.schedule')}</button>
               </div>
             </form>
           </Modal>
@@ -1128,6 +1161,8 @@ const s = {
   },
   shareBox: { width: '100%', fontSize: 11, color: '#50d080', wordBreak: 'break-all' },
   breakList: { fontSize: 12, color: '#f0c070' },
+  breakNow: { display: 'flex', flexDirection: 'column', gap: 6 },
+  breakNowBtn: { background: 'linear-gradient(135deg, #b8862a 0%, #8a6218 100%)', color: '#fff8e8', borderColor: '#d0a040' },
   daySep: {
     fontSize: 10, fontWeight: 800, color: '#7ab0d8', letterSpacing: '1px', textTransform: 'uppercase',
     padding: '10px 4px 4px', borderBottom: '1px solid #1e2e42',

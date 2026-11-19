@@ -459,6 +459,11 @@ export default {
       saved: 'Enregistré',
     },
     structure: {
+      breakNow: 'Commencer la pause maintenant',
+      breakNowAfter: 'Le niveau {n} est considéré comme terminé ; le niveau {next} commence après la pause.',
+      breakNowBefore: 'Le niveau {n} vient de commencer : la pause compte comme avant lui, et le niveau {n} repart de zéro après la pause.',
+      orSchedule: 'Ou programmez-la pour plus tard',
+      schedule: 'Programmer la pause',
       title: 'Structure des blindes',
       hint: 'Modifiez la petite blinde (SB), la grosse blinde (BB), l’ante ou les minutes de n’importe quel niveau, puis appuyez sur Enregistrer. Touchez un numéro de niveau pour y aller.',
       recalc: 'En modifiant un niveau, recalculer les suivants à partir de celui-ci',

@@ -460,6 +460,11 @@ export default {
       saved: 'Guardado',
     },
     structure: {
+      breakNow: 'Empezar descanso ahora',
+      breakNowAfter: 'El nivel {n} se da por terminado; al volver empieza el nivel {next}.',
+      breakNowBefore: 'El nivel {n} acaba de empezar: el descanso cuenta como previo a él y, al volver, el nivel {n} empieza de cero.',
+      orSchedule: 'O prográmalo para más adelante',
+      schedule: 'Programar descanso',
       title: 'Estructura de ciegas',
       hint: 'Cambia la ciega pequeña (SB), la grande (BB), el ante o los minutos de cualquier nivel y pulsa Guardar. Toca el número de nivel para ir a él.',
       recalc: 'Al cambiar un nivel, recalcular los siguientes a partir de él',

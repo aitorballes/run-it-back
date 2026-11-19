@@ -459,6 +459,11 @@ export default {
       saved: 'Salvo',
     },
     structure: {
+      breakNow: 'Começar intervalo agora',
+      breakNowAfter: 'O nível {n} é dado como terminado; depois do intervalo começa o nível {next}.',
+      breakNowBefore: 'O nível {n} acabou de começar: o intervalo conta como anterior a ele e, na volta, o nível {n} recomeça do zero.',
+      orSchedule: 'Ou programe para mais tarde',
+      schedule: 'Programar intervalo',
       title: 'Estrutura de blinds',
       hint: 'Mude o small blind (SB), o big blind (BB), o ante ou os minutos de qualquer nível e toque em Salvar. Toque no número de um nível para ir até ele.',
       recalc: 'Ao mudar um nível, recalcular os seguintes a partir dele',

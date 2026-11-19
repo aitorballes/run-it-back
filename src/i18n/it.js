@@ -459,6 +459,11 @@ export default {
       saved: 'Salvato',
     },
     structure: {
+      breakNow: 'Inizia la pausa ora',
+      breakNowAfter: 'Il livello {n} si considera finito; dopo la pausa inizia il livello {next}.',
+      breakNowBefore: 'Il livello {n} è appena iniziato: la pausa conta come precedente e, al rientro, il livello {n} riparte da zero.',
+      orSchedule: 'Oppure programmala per dopo',
+      schedule: 'Programma pausa',
       title: 'Struttura dei bui',
       hint: 'Cambia small blind (SB), big blind (BB), ante o minuti di qualsiasi livello e premi Salva. Tocca il numero di un livello per andarci.',
       recalc: 'Quando cambi un livello, ricalcola i successivi a partire da esso',

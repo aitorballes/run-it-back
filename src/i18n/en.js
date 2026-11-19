@@ -459,6 +459,11 @@ export default {
       saved: 'Saved',
     },
     structure: {
+      breakNow: 'Start break now',
+      breakNowAfter: 'Level {n} counts as finished; level {next} starts after the break.',
+      breakNowBefore: 'Level {n} has only just started: the break counts as before it, and level {n} starts from scratch after the break.',
+      orSchedule: 'Or schedule it for later',
+      schedule: 'Schedule break',
       title: 'Blind structure',
       hint: 'Change any level\'s small blind (SB), big blind (BB), ante or minutes and press Save. Tap a level number to jump to it.',
       recalc: 'When you change a level, recalculate the following ones from it',

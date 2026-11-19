@@ -459,6 +459,11 @@ export default {
       saved: 'Gespeichert',
     },
     structure: {
+      breakNow: 'Pause jetzt starten',
+      breakNowAfter: 'Level {n} gilt als beendet; nach der Pause beginnt Level {next}.',
+      breakNowBefore: 'Level {n} hat gerade erst begonnen: Die Pause zählt als davor, und Level {n} beginnt nach der Pause von vorn.',
+      orSchedule: 'Oder für später planen',
+      schedule: 'Pause planen',
       title: 'Blindstruktur',
       hint: 'Ändere Small Blind (SB), Big Blind (BB), Ante oder Minuten eines Levels und tippe auf Speichern. Tippe auf eine Levelnummer, um dorthin zu springen.',
       recalc: 'Beim Ändern eines Levels die folgenden daraus neu berechnen',
