@@ -1,5 +1,6 @@
 // Helpers for live tournaments: blind structure and level clock.
 // A level is { sb, bb, ante }; level N (1-based) is structure[N - 1].
+import { getLocale } from '../i18n/core'
 
 const DEFAULT_BBS = [
   200, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000,
@@ -90,6 +91,9 @@ export const breakMinutes = (t, n) => (n <= t.structure.length ? t.structure[n -
 
 export const isPaused = t => t.level_ends_at == null
 
+// Full length in seconds of what is being played now (the level, or the break after it): the clock can't go above it
+export const periodSeconds = t => (t.on_break ? breakMinutes(t, t.current_level) : levelMinutes(t, t.current_level)) * 60
+
 // Seconds left in the current level
 export function remainingSeconds(t, now = Date.now()) {
   if (isPaused(t)) return Math.max(0, t.paused_remaining ?? (t.on_break ? breakMinutes(t, t.current_level) : levelMinutes(t, t.current_level)) * 60)
@@ -164,4 +168,39 @@ export function formatDuration(seconds) {
   const mins = Math.max(0, Math.round(seconds / 60))
   const h = Math.floor(mins / 60)
   return h ? `${h} h ${String(mins % 60).padStart(2, '0')} min` : `${mins} min`
+}
+
+// ── Number fields: thousands separators appear as you type ("109000" → "109.000" in Spanish) ──
+const decimalSep = () => (1.5).toLocaleString(getLocale()).charAt(1)
+// 'always' so Spanish also groups 4 digits (1.500, not 1500)
+export const groupDigits = digits => (digits === '' || digits == null ? '' : Number(digits).toLocaleString(getLocale(), { useGrouping: 'always' }))
+
+// Whole numbers (chips, players, entries). A typed "k"/"m" shorthand (109k) is kept as written
+export function typeChips(value) {
+  const str = String(value ?? '')
+  if (/^\s*\d+([.,]\d+)?\s*[km]\s*$/i.test(str)) return str
+  return groupDigits(str.replace(/\D/g, '').replace(/^0+(?=\d)/, ''))
+}
+
+// Money (buy-in, prize): whole part grouped, up to 2 decimals. A "." or "," typed at the end starts the
+// decimals whatever the language (formatting never ends in a separator), so either key on the pad works.
+export function typeMoney(value) {
+  const sep = decimalSep()
+  let str = String(value ?? '')
+  if (/[.,]$/.test(str) && !str.slice(0, -1).includes(sep)) str = str.slice(0, -1) + sep
+  const at = str.indexOf(sep)
+  const whole = (at < 0 ? str : str.slice(0, at)).replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+  if (at < 0) return groupDigits(whole)
+  return `${groupDigits(whole) || '0'}${sep}${str.slice(at + 1).replace(/\D/g, '').slice(0, 2)}`
+}
+
+// Reads back what typeMoney wrote
+export function parseMoney(value) {
+  const sep = decimalSep()
+  const str = String(value ?? '')
+  const at = str.indexOf(sep)
+  const whole = (at < 0 ? str : str.slice(0, at)).replace(/\D/g, '')
+  const frac = at < 0 ? '' : str.slice(at + 1).replace(/\D/g, '')
+  if (!whole && !frac) return null
+  return parseFloat(`${whole || 0}.${frac || 0}`)
 }

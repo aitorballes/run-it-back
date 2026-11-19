@@ -410,10 +410,6 @@ export default {
     breakEndsAt: 'Si riprende alle {time}',
     breakIn: 'Pausa tra {d}',
     breakInAt: 'Pausa tra {d} · {time}',
-    awake: 'Schermo acceso',
-    awakeTitle: 'Evita che lo schermo si spenga mentre il torneo è in corso',
-    alerts: 'Avvisi',
-    alertsTitle: 'Bip e vibrazione a 1 minuto dalla fine e quando inizia un livello o una pausa',
     sync: {
       offline: 'Nessuna connessione. Tutto resta su questo telefono e viene caricato appena torna il segnale.',
       retry: 'Riprova',
@@ -461,9 +457,6 @@ export default {
       startingStack: 'Stack iniziale {n}',
     },
     update: {
-      stackHint: 'Scrivi il tuo stack: il tasto 000 aggiunge le migliaia.',
-      thousands: 'Aggiungi 000',
-      minusOne: 'Un giocatore in meno',
       title: 'Aggiorna',
       button: 'Aggiorna stack',
       stack: 'Il mio stack',

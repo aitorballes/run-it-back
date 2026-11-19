@@ -6,7 +6,7 @@ import {
   fetchLiveHand, generateHandShareToken, fetchPlayerNotes, savePlayerNote,
 } from '../lib/db'
 import { TABLE_SIZES, currentTable, findTable, physicalSeat, noteAtSeat, noteByName, saveSeatNote, applySaved } from '../lib/liveTable'
-import { levelAt } from '../lib/liveTournament'
+import { levelAt, groupDigits } from '../lib/liveTournament'
 import {
   positionLabels, seatLayout, replay, legalActions, foldsUntil, usedCards, potTotal, buildRawHand,
   canAutoResolve, playerNames,
@@ -563,7 +563,7 @@ export default function LiveHandRecorder() {
 
 const num = v => parseInt(String(v).replace(/[^\d]/g, ''), 10) || 0
 // Chip amounts in inputs with thousands separators (num() reads them back)
-const chips = v => (v ? fmtNumber(v) : '')
+const chips = v => (v ? groupDigits(v) : '')
 
 // ── Action panel: whose turn it is and what they can do, board cards, showdown, save ──
 function ActionPanel({ st, setup, names, layout, t, amount, setAmount, act, push, undo, openPicker,

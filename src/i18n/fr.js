@@ -410,10 +410,6 @@ export default {
     breakEndsAt: 'Reprise à {time}',
     breakIn: 'Pause dans {d}',
     breakInAt: 'Pause dans {d} · {time}',
-    awake: 'Écran allumé',
-    awakeTitle: 'Empêche l\'écran de s\'éteindre pendant le tournoi',
-    alerts: 'Alertes',
-    alertsTitle: 'Bip et vibration à 1 minute de la fin et au début d\'un niveau ou d\'une pause',
     sync: {
       offline: 'Pas de connexion. Tout est gardé sur ce téléphone et envoyé dès le retour du réseau.',
       retry: 'Réessayer',
@@ -461,9 +457,6 @@ export default {
       startingStack: 'Tapis de départ {n}',
     },
     update: {
-      stackHint: 'Tapez votre tapis : le bouton 000 ajoute les milliers.',
-      thousands: 'Ajouter 000',
-      minusOne: 'Un joueur de moins',
       title: 'Mettre à jour',
       button: 'Mettre à jour le tapis',
       stack: 'Mon tapis',

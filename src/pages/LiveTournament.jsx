@@ -8,11 +8,10 @@ import {
 import { heroNet } from '../lib/handUtils'
 import { Card, CardBack } from '../components/table/Cards'
 import {
-  levelAt, levelMinutes, breakMinutes, extrapolateLevel, recalcAfter, addBreaks, editLevelValue, isPaused, remainingSeconds, advanceClock, setLevelClock,
+  levelAt, levelMinutes, breakMinutes, extrapolateLevel, recalcAfter, addBreaks, editLevelValue, isPaused, periodSeconds, remainingSeconds, typeChips, typeMoney, parseMoney, groupDigits, advanceClock, setLevelClock,
   averageStack, inBigBlinds, formatClock, parseChips, nextBreakIn, formatDuration,
 } from '../lib/liveTournament'
 import { getCachedTour, cacheTour, forgetTour, getPending, addPending, clearPending } from '../lib/liveOffline'
-import { unlockAudio, playAlert, useWakeLock, wakeLockSupported, readPref, writePref } from '../lib/liveAlerts'
 import Logo from '../components/Logo'
 import StackChart from '../components/StackChart'
 import { base } from '../components/liveStyles'
@@ -59,11 +58,8 @@ export default function LiveTournament() {
   const [paidIn, setPaidIn]           = useState('')
   const [focusField, setFocusField]   = useState('stack') // field focused when the update modal opens
 
-  // Table aids (per device): screen kept on, beeps/vibration on level changes, flash of the clock card
-  const [awake, setAwake]   = useState(() => readPref('live-awake'))
-  const [alerts, setAlerts] = useState(() => readPref('live-alerts'))
+  // The clock card flashes when a level or break starts
   const [flash, setFlash]   = useState(false)
-  useWakeLock(awake && tour?.status === 'running')
 
   // Changes not yet in the database (no signal at the venue): kept on the phone and retried
   const [offline, setOffline] = useState(false)
@@ -142,24 +138,11 @@ export default function LiveTournament() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
-  // Sound can only start after a tap: every tap re-enables it while alerts are on
-  useEffect(() => {
-    if (!alerts) return
-    unlockAudio()
-    window.addEventListener('pointerdown', unlockAudio)
-    return () => window.removeEventListener('pointerdown', unlockAudio)
-  }, [alerts])
-
-  const alertsRef = useRef(alerts)
-  useEffect(() => { alertsRef.current = alerts }, [alerts])
   const flashTimer = useRef(null)
-  function notify(kind) {
-    if (kind !== 'minute') {
-      setFlash(true)
-      clearTimeout(flashTimer.current)
-      flashTimer.current = setTimeout(() => setFlash(false), 4000)
-    }
-    if (alertsRef.current) playAlert(kind)
+  function notify() {
+    setFlash(true)
+    clearTimeout(flashTimer.current)
+    flashTimer.current = setTimeout(() => setFlash(false), 4000)
   }
   const notifyRef = useRef(notify)
   const patchRef = useRef(null)
@@ -175,8 +158,7 @@ export default function LiveTournament() {
   }, [tournamentDbId])
 
   // Ticks every second; when the level's time runs out the clock moves on to the next level by itself
-  // (with a beep/vibration if alerts are on, and one minute before the end)
-  const lastRemRef = useRef(null)
+  // (and the clock card flashes)
   useEffect(() => {
     const iv = setInterval(() => {
       const ts = Date.now()
@@ -186,15 +168,8 @@ export default function LiveTournament() {
       const advance = advanceClock(cur, ts)
       if (advance) {
         patchRef.current?.(advance)
-        notifyRef.current(advance.on_break ? 'break' : 'level')
-        lastRemRef.current = null
-        return
+        notifyRef.current()
       }
-      const rem = remainingSeconds(cur, ts)
-      const prev = lastRemRef.current
-      // Only when the clock runs down past 1:00 by itself, not on a manual jump
-      if (cur.status === 'running' && !isPaused(cur) && !cur.on_break && prev > 60 && rem <= 60 && rem > 55) notifyRef.current('minute')
-      lastRemRef.current = rem
     }, 1000)
     return () => clearInterval(iv)
   }, [])
@@ -206,17 +181,6 @@ export default function LiveTournament() {
     setError('')
     addPending(id, fields)
     return flush()
-  }
-
-  function toggleAwake() {
-    setAwake(v => { writePref('live-awake', !v); return !v })
-  }
-
-  function toggleAlerts() {
-    const on = !alerts
-    writePref('live-alerts', on)
-    setAlerts(on)
-    if (on) { unlockAudio(); playAlert('minute') } // a sample beep, which also confirms sound works
   }
 
   // Paid places need their own column (scripts/migrate-live-paid-places.sql), so they're saved
@@ -286,10 +250,12 @@ export default function LiveTournament() {
     patch({ day: day + 1, paused_remaining: remaining, level_ends_at: null })
   }
 
-  // Moves the clock by whole minutes (the − button down to 0, which ends the level if the clock is running)
+  // Moves the clock by whole minutes: − down to 0 (which ends the level if the clock is running),
+  // + never above the level's (or break's) full length, so levels can't be made longer than the structure says
   function adjustTime(deltaSeconds) {
     const cur = tourRef.current
-    patch(setLevelClock(cur, cur.current_level, Math.max(0, remainingSeconds(cur) + deltaSeconds), undefined, !!cur.on_break))
+    const secs = Math.min(periodSeconds(cur), Math.max(0, remainingSeconds(cur) + deltaSeconds))
+    patch(setLevelClock(cur, cur.current_level, secs, undefined, !!cur.on_break))
   }
 
   function togglePause() {
@@ -301,7 +267,7 @@ export default function LiveTournament() {
   function saveTime(e) {
     e.preventDefault()
     const minutes = parseFloat(String(timeIn).replace(',', '.'))
-    if (Number.isFinite(minutes) && minutes >= 0) patch(setLevelClock(tour, levelNo, Math.round(minutes * 60), now, onBreak))
+    if (Number.isFinite(minutes) && minutes >= 0) patch(setLevelClock(tour, levelNo, Math.min(periodSeconds(tour), Math.round(minutes * 60)), now, onBreak))
     setEditingTime(false)
   }
 
@@ -377,7 +343,7 @@ export default function LiveTournament() {
     patch({
       status: 'finished',
       finish_position: parseChips(finishPos),
-      prize_won: parseFloat(String(finishPrize).replace(',', '.')) || null,
+      prize_won: parseMoney(finishPrize) || null,
       paused_remaining: remaining,
       level_ends_at: null,
     }).then(() => syncLiveTournamentRow(tourRef.current))
@@ -450,7 +416,7 @@ export default function LiveTournament() {
   // Opens the updates modal with that entry ready to correct (from a chart point or a row in the modal)
   function startEdit(idx, scroll = false) {
     const h = tour.history[idx]
-    setEditVals({ stack: h.stack ?? '', players: h.players ?? '', entries: h.entries ?? '' })
+    setEditVals({ stack: typeChips(h.stack), players: typeChips(h.players), entries: typeChips(h.entries) })
     setEditIdx(idx)
     setShowUpdate(true)
     if (scroll) requestAnimationFrame(() => editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
@@ -477,13 +443,6 @@ export default function LiveTournament() {
   })
   const pvBB      = inBigBlinds(pvStack, level)
   const pvPct     = pvAvg && pvStack != null ? Math.round((pvStack / pvAvg) * 100) : null
-
-  function bumpPlayers(delta) {
-    setPlayersIn(v => {
-      const cur = parseChips(v) ?? tour.players_left
-      return cur == null ? v : String(Math.max(1, cur + delta))
-    })
-  }
 
   // Editing the latest update also corrects the tournament's current stack/players/entries
   function syncCurrent(newHistory) {
@@ -568,7 +527,7 @@ export default function LiveTournament() {
           {running && (
             editingTime ? (
               <form style={s.timeForm} onSubmit={saveTime}>
-                <input style={{ ...base.input, width: 110, textAlign: 'center' }} type="number" min="0" step="any"
+                <input style={{ ...base.input, width: 110, textAlign: 'center' }} type="number" min="0" max={periodSeconds(tour) / 60} step="any"
                   inputMode="decimal" autoFocus value={timeIn} onChange={e => setTimeIn(e.target.value)}
                   placeholder={t('live.minutes')} />
                 <button style={base.btn} type="submit">{t('common.save')}</button>
@@ -607,23 +566,18 @@ export default function LiveTournament() {
                 disabled={remaining <= 0} onClick={() => adjustTime(-60)} />
               <CtrlButton icon={paused ? '▶\uFE0E' : '⏸\uFE0E'} caption={paused ? t('live.resume') : t('live.pause')}
                 title={paused ? t('live.resume') : t('live.pause')} active={!paused} onClick={togglePause} />
-              <CtrlButton icon={'⏩\uFE0E'} caption="+1 min" title={t('live.plusMinute')} onClick={() => adjustTime(60)} />
+              <CtrlButton icon={'⏩\uFE0E'} caption="+1 min" title={t('live.plusMinute')}
+                disabled={remaining >= periodSeconds(tour)} onClick={() => adjustTime(60)} />
               <CtrlButton icon={'⏭\uFE0E'} caption={breakNext > 0 ? t('live.break') : t('live.structure.level')}
                 title={breakNext > 0 ? t('live.goToBreak') : t('live.nextLevelBtn')} onClick={goNext} />
             </div>
           )}
           {running && (
-            <div style={s.toggles}>
-              {wakeLockSupported() && (
-                <button style={{ ...s.toggle, ...(awake ? s.toggleOn : null) }} onClick={toggleAwake}
-                  aria-pressed={awake} title={t('live.awakeTitle')}>
-                  🔆 {t('live.awake')}
-                </button>
-              )}
-              <button style={{ ...s.toggle, ...(alerts ? s.toggleOn : null) }} onClick={toggleAlerts}
-                aria-pressed={alerts} title={t('live.alertsTitle')}>
-                {alerts ? '🔔' : '🔕'} {t('live.alerts')}
+            <div style={s.clockUpdate}>
+              <button style={{ ...base.btn, ...s.bigBtn }} onClick={() => openUpdate('stack')}>
+                {t('live.update.button')}
               </button>
+              {savedFlash && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
             </div>
           )}
         </div>
@@ -671,12 +625,13 @@ export default function LiveTournament() {
               day: n => t('live.day', { n }),
             }} multiDay={multiDay} selected={editIdx} onSelect={startEdit} />
           )}
-          <div style={s.cardBtnRow}>
-            {savedFlash && <span style={s.saved}>✓ {t('live.update.saved')}</span>}
-            <button style={{ ...base.btn, ...s.bigBtn }} onClick={() => openUpdate('stack')}>
-              {running ? t('live.update.button') : t('live.history.title')}
-            </button>
-          </div>
+          {!running && (
+            <div style={s.cardBtnRow}>
+              <button style={{ ...base.btn, ...s.bigBtn }} onClick={() => openUpdate('stack')}>
+                {t('live.history.title')}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* BREAKS */}
@@ -702,7 +657,7 @@ export default function LiveTournament() {
                     <label key={k} style={{ ...base.field, flex: k === 'stack' ? '1 1 120px' : '1 1 80px', minWidth: 0 }}>
                       <span style={base.label}>{label}</span>
                       <input style={base.input} inputMode="numeric" value={editVals[k]}
-                        autoFocus={k === 'stack'} onFocus={e => e.target.select()} onChange={e => setEditVals(v => ({ ...v, [k]: e.target.value }))} />
+                        autoFocus={k === 'stack'} onFocus={e => e.target.select()} onChange={e => setEditVals(v => ({ ...v, [k]: typeChips(e.target.value) }))} />
                     </label>
                   ))}
                 </div>
@@ -721,44 +676,32 @@ export default function LiveTournament() {
               <form style={s.modalForm} onSubmit={saveUpdate}>
                 <label style={base.field}>
                   <span style={base.label}>{t('live.update.stack')}</span>
-                  <div style={s.inputWithKeys}>
-                    <input style={{ ...base.input, fontSize: 20, fontWeight: 800 }} inputMode="numeric" value={stackIn}
-                      onChange={e => setStackIn(e.target.value)} autoFocus={focusField === 'stack'}
-                      placeholder={tour.my_stack != null ? fmtNumber(tour.my_stack) : ''} />
-                    {/* Stacks are big round numbers: one tap for the thousands (the number pad has no "k") */}
-                    <button type="button" style={s.keyBtn} onClick={() => setStackIn(v => (v ? `${v}000` : v))}
-                      disabled={!stackIn} title={t('live.update.thousands')}>000</button>
-                  </div>
-                  <span style={s.preview}>
-                    {pvStack != null ? (
-                      <>
-                        = <b>{fmtNumber(pvStack)}</b>
-                        {pvBB != null && <> · <b style={{ color: pvBB < 15 ? '#f0a040' : '#50d080' }}>{t('live.stats.bb', { n: fmtBB(pvBB) })}</b></>}
-                        {pvPct != null && <> · {t('live.stats.ofAverage', { pct: pvPct })}</>}
-                      </>
-                    ) : t('live.update.stackHint')}
-                  </span>
+                  <input style={{ ...base.input, fontSize: 20, fontWeight: 800 }} inputMode="numeric" value={stackIn}
+                    onChange={e => setStackIn(typeChips(e.target.value))} autoFocus={focusField === 'stack'}
+                    placeholder={tour.my_stack != null ? fmtNumber(tour.my_stack) : ''} />
+                  {pvBB != null && (
+                    <span style={s.preview}>
+                      <b style={{ color: pvBB < 15 ? '#f0a040' : '#50d080' }}>{t('live.stats.bb', { n: fmtBB(pvBB) })}</b>
+                      {pvPct != null && <> · {t('live.stats.ofAverage', { pct: pvPct })}</>}
+                    </span>
+                  )}
                 </label>
                 <div style={base.row}>
                   <label style={{ ...base.field, flex: '1 1 130px', minWidth: 0 }}>
                     <span style={base.label}>{t('live.update.players')}</span>
-                    <div style={s.inputWithKeys}>
-                      <input style={base.input} inputMode="numeric" value={playersIn} onChange={e => setPlayersIn(e.target.value)}
-                        autoFocus={focusField === 'players'}
-                        placeholder={tour.players_left != null ? String(tour.players_left) : ''} />
-                      <button type="button" style={s.keyBtn} onClick={() => bumpPlayers(-1)}
-                        disabled={tour.players_left == null && !playersIn} title={t('live.update.minusOne')}>−1</button>
-                    </div>
+                    <input style={base.input} inputMode="numeric" value={playersIn} onChange={e => setPlayersIn(typeChips(e.target.value))}
+                      autoFocus={focusField === 'players'}
+                      placeholder={tour.players_left != null ? fmtNumber(tour.players_left) : ''} />
                   </label>
                   <label style={{ ...base.field, flex: '1 1 90px', minWidth: 0 }}>
                     <span style={base.label}>{t('live.update.entries')}</span>
-                    <input style={base.input} inputMode="numeric" value={entriesIn} onChange={e => setEntriesIn(e.target.value)}
+                    <input style={base.input} inputMode="numeric" value={entriesIn} onChange={e => setEntriesIn(typeChips(e.target.value))}
                       autoFocus={focusField === 'entries'}
-                      placeholder={tour.entries != null ? String(tour.entries) : ''} />
+                      placeholder={tour.entries != null ? fmtNumber(tour.entries) : ''} />
                   </label>
                   <label style={{ ...base.field, flex: '1 1 90px', minWidth: 0 }}>
                     <span style={base.label}>{t('live.paid.label')}</span>
-                    <input style={base.input} inputMode="numeric" value={paidIn} onChange={e => setPaidIn(e.target.value)}
+                    <input style={base.input} inputMode="numeric" value={paidIn} onChange={e => setPaidIn(typeChips(e.target.value))}
                       autoFocus={focusField === 'paid'}
                       placeholder={tour.paid_places ? String(tour.paid_places) : t('live.structure.optional')} />
                   </label>
@@ -928,7 +871,7 @@ export default function LiveTournament() {
                       {i + 1}
                     </button>
                     {['sb', 'bb', 'ante'].map(k => (
-                      <input key={k} style={s.cell} inputMode="numeric" value={l[k] ? fmtNumber(l[k]) : ''}
+                      <input key={k} style={s.cell} inputMode="numeric" value={l[k] ? groupDigits(l[k]) : ''}
                         onChange={e => editLevel(i, k, e.target.value)} placeholder="0" />
                     ))}
                     <input style={s.cell} inputMode="numeric" value={l.minutes || tour.level_minutes}
@@ -984,11 +927,11 @@ export default function LiveTournament() {
             <div style={base.row}>
               <label style={{ ...base.field, ...base.half }}>
                 <span style={base.label}>{t('live.finish.positionLabel')}</span>
-                <input style={base.input} inputMode="numeric" value={finishPos} onChange={e => setFinishPos(e.target.value)} />
+                <input style={base.input} inputMode="numeric" value={finishPos} onChange={e => setFinishPos(typeChips(e.target.value))} />
               </label>
               <label style={{ ...base.field, ...base.half }}>
                 <span style={base.label}>{t('live.finish.prize')} ({tour.currency})</span>
-                <input style={base.input} inputMode="decimal" value={finishPrize} onChange={e => setFinishPrize(e.target.value)} placeholder="0" />
+                <input style={base.input} inputMode="decimal" value={finishPrize} onChange={e => setFinishPrize(typeMoney(e.target.value))} placeholder="0" />
               </label>
             </div>
             {rebuyFlash && <div style={s.rebuyFlash}>🔁 {t('live.finish.rebuyDone', { n: rebuyFlash })}</div>}
@@ -1103,12 +1046,7 @@ const s = {
   clockCardBreak: { borderColor: '#6a5420', background: 'linear-gradient(160deg, #241f14 0%, #15130c 100%)' },
   clockCardFlash: { borderColor: '#50d080', boxShadow: '0 0 0 3px rgba(80,208,128,0.45), 0 20px 60px rgba(0,0,0,0.5)', transition: 'box-shadow 0.3s' },
   clockInfo: { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px 14px', fontSize: 12, fontWeight: 700, color: '#7a94b0' },
-  toggles: { display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 8 },
-  toggle: {
-    background: 'none', border: '1px solid #1e3048', borderRadius: 999, color: '#4a6a8a', fontFamily: 'inherit',
-    padding: '8px 14px', minHeight: 36, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-  },
-  toggleOn: { color: '#a0e8b8', borderColor: '#2a6a3a', background: 'rgba(40,120,60,0.18)' },
+  clockUpdate: { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6, marginTop: 10, textAlign: 'center' },
   offlineBox: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 12, lineHeight: 1.4,
     color: '#f0c070', background: 'rgba(240,160,64,0.1)', border: '1px solid rgba(240,160,64,0.35)', borderRadius: 10, padding: '10px 12px',
@@ -1118,12 +1056,7 @@ const s = {
     padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit',
   },
   statBtn: { cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', color: 'inherit', width: '100%' },
-  inputWithKeys: { display: 'flex', gap: 6 },
-  keyBtn: {
-    flexShrink: 0, minWidth: 54, background: '#0a1422', border: '1px solid #24405e', borderRadius: 9,
-    color: '#9ac8f0', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
-  },
-  preview: { fontSize: 12, color: '#7a94b0', minHeight: 16 },
+  preview: { fontSize: 12, color: '#7a94b0' },
   resultSub: { fontSize: 13, color: '#9ab4d0' },
   clockTop: { display: 'flex', alignItems: 'center', gap: 8 },
   levelLabel: { fontSize: 12, fontWeight: 800, color: '#5a8ab0', letterSpacing: '1.5px', textTransform: 'uppercase' },

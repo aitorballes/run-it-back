@@ -410,10 +410,6 @@ export default {
     breakEndsAt: 'Volta às {time}',
     breakIn: 'Intervalo em {d}',
     breakInAt: 'Intervalo em {d} · {time}',
-    awake: 'Tela ligada',
-    awakeTitle: 'Impede que a tela se apague enquanto o torneio está rolando',
-    alerts: 'Avisos',
-    alertsTitle: 'Bipe e vibração com 1 minuto restante e quando começa um nível ou intervalo',
     sync: {
       offline: 'Sem conexão. Tudo fica salvo neste celular e é enviado quando o sinal voltar.',
       retry: 'Tentar de novo',
@@ -461,9 +457,6 @@ export default {
       startingStack: 'Stack inicial {n}',
     },
     update: {
-      stackHint: 'Digite seu stack: o botão 000 adiciona os milhares.',
-      thousands: 'Adicionar 000',
-      minusOne: 'Um jogador a menos',
       title: 'Atualizar',
       button: 'Atualizar stack',
       stack: 'Meu stack',

@@ -410,10 +410,6 @@ export default {
     breakEndsAt: 'Back at {time}',
     breakIn: 'Break in {d}',
     breakInAt: 'Break in {d} · {time}',
-    awake: 'Keep screen on',
-    awakeTitle: 'Stops the screen from turning off while the tournament is running',
-    alerts: 'Alerts',
-    alertsTitle: 'Beep and vibration with 1 minute left and when a level or break starts',
     sync: {
       offline: 'No connection. Everything you do is kept on this phone and uploaded when you get signal back.',
       retry: 'Retry',
@@ -461,9 +457,6 @@ export default {
       startingStack: 'Starting stack {n}',
     },
     update: {
-      stackHint: 'Type your stack: the 000 button adds the thousands.',
-      thousands: 'Add 000',
-      minusOne: 'One player less',
       title: 'Update',
       button: 'Update stack',
       stack: 'My stack',

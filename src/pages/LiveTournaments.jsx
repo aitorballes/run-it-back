@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useI18n, fmtNumber } from '../i18n/core'
 import { fetchLiveTournaments, createLiveTournament, ensureLiveTournamentRow } from '../lib/db'
-import { defaultStructure, levelAt, parseChips, advanceClock, inBigBlinds } from '../lib/liveTournament'
+import { defaultStructure, levelAt, parseChips, advanceClock, inBigBlinds, typeChips, typeMoney, parseMoney } from '../lib/liveTournament'
 import { getCachedList, cacheList } from '../lib/liveOffline'
 import { findStructurePreset, presetStructure, SIDE_EVENT_DEFAULTS } from '../lib/structurePresets'
 import Logo from '../components/Logo'
@@ -40,7 +40,7 @@ export default function LiveTournaments() {
       })
   }, [user.id, t])
 
-  const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }))
+  const set = (key, format) => e => { const v = format ? format(e.target.value) : e.target.value; setForm(f => ({ ...f, [key]: v })) }
 
   // A known tournament also brings its level duration and starting stack (still editable afterwards)
   const setName = e => {
@@ -51,7 +51,7 @@ export default function LiveTournaments() {
       return {
         ...f, name,
         ...(preset.minutes ? { levelMinutes: String(preset.minutes) } : null),
-        ...(preset.startingStack ? { startingStack: String(preset.startingStack) } : null),
+        ...(preset.startingStack ? { startingStack: typeChips(preset.startingStack) } : null),
       }
     })
   }
@@ -91,7 +91,7 @@ export default function LiveTournaments() {
       const row = await createLiveTournament(user.id, {
         venue: form.venue.trim(),
         name: form.name.trim(),
-        buyin: parseFloat(String(form.buyin).replace(',', '.')) || 0,
+        buyin: parseMoney(form.buyin) || 0,
         currency: form.currency,
         level_minutes: levelMinutes,
         starting_stack: startingStack,
@@ -172,14 +172,14 @@ export default function LiveTournaments() {
             <div style={s.row}>
               <Field label={t('live.form.buyin')} half>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <input style={s.input} inputMode="decimal" value={form.buyin} onChange={set('buyin')} placeholder="150" />
+                  <input style={s.input} inputMode="decimal" value={form.buyin} onChange={set('buyin', typeMoney)} placeholder="150" />
                   <select style={{ ...s.input, ...s.select, width: 70, flexShrink: 0 }} value={form.currency} onChange={set('currency')}>
                     {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </Field>
               <Field label={t('live.form.startingStack')} half>
-                <input style={s.input} inputMode="numeric" value={form.startingStack} onChange={set('startingStack')} />
+                <input style={s.input} inputMode="numeric" value={typeChips(form.startingStack)} onChange={set('startingStack', typeChips)} />
               </Field>
             </div>
 
@@ -194,10 +194,10 @@ export default function LiveTournaments() {
 
             <div style={s.row}>
               <Field label={t('live.form.entries')} half>
-                <input style={s.input} inputMode="numeric" value={form.entries} onChange={set('entries')} placeholder="120" />
+                <input style={s.input} inputMode="numeric" value={form.entries} onChange={set('entries', typeChips)} placeholder="120" />
               </Field>
               <Field label={t('live.form.playersLeft')} half>
-                <input style={s.input} inputMode="numeric" value={form.playersLeft} onChange={set('playersLeft')}
+                <input style={s.input} inputMode="numeric" value={form.playersLeft} onChange={set('playersLeft', typeChips)}
                   placeholder={form.entries} />
               </Field>
             </div>
