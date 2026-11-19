@@ -415,13 +415,6 @@ export default {
       retry: 'Tentar de novo',
       offlineList: 'Sem conexão: mostrando a última lista salva neste celular.',
     },
-    paid: {
-      label: 'Vagas pagas',
-      add: 'Toque para informar as vagas pagas',
-      bubble: 'Faltam {n} para o ITM ({paid} pagos)',
-      itm: '💰 No dinheiro ({paid} pagos)',
-      migration: 'Para salvar as vagas pagas, execute scripts/migrate-live-paid-places.sql no Supabase.',
-    },
     summary: {
       title: 'Meus resultados ao vivo',
       tournaments: 'Torneios',

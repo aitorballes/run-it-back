@@ -415,13 +415,6 @@ export default {
       retry: 'Réessayer',
       offlineList: 'Pas de connexion : dernière liste enregistrée sur ce téléphone.',
     },
-    paid: {
-      label: 'Places payées',
-      add: 'Touchez pour indiquer les places payées',
-      bubble: 'Encore {n} avant l’argent ({paid} payés)',
-      itm: '💰 Dans l’argent ({paid} payés)',
-      migration: 'Pour enregistrer les places payées, exécutez scripts/migrate-live-paid-places.sql dans Supabase.',
-    },
     summary: {
       title: 'Mes résultats live',
       tournaments: 'Tournois',

@@ -416,13 +416,6 @@ export default {
       retry: 'Reintentar',
       offlineList: 'Sin conexión: mostrando la última lista guardada en este móvil.',
     },
-    paid: {
-      label: 'Plazas pagadas',
-      add: 'Toca para indicar las plazas pagadas',
-      bubble: 'Faltan {n} para cobrar ({paid} pagados)',
-      itm: '💰 En premios ({paid} pagados)',
-      migration: 'Para guardar las plazas pagadas hay que ejecutar scripts/migrate-live-paid-places.sql en Supabase.',
-    },
     summary: {
       title: 'Mis resultados en vivo',
       tournaments: 'Torneos',

@@ -415,13 +415,6 @@ export default {
       retry: 'Retry',
       offlineList: 'No connection: showing the last list saved on this phone.',
     },
-    paid: {
-      label: 'Places paid',
-      add: 'Tap to add the places paid',
-      bubble: '{n} more to the money ({paid} paid)',
-      itm: '💰 In the money ({paid} paid)',
-      migration: 'To save places paid, run scripts/migrate-live-paid-places.sql in Supabase.',
-    },
     summary: {
       title: 'My live results',
       tournaments: 'Tournaments',

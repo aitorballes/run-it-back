@@ -415,13 +415,6 @@ export default {
       retry: 'Riprova',
       offlineList: 'Nessuna connessione: ultima lista salvata su questo telefono.',
     },
-    paid: {
-      label: 'Posti pagati',
-      add: 'Tocca per indicare i posti pagati',
-      bubble: 'Mancano {n} ai premi ({paid} pagati)',
-      itm: '💰 A premio ({paid} pagati)',
-      migration: 'Per salvare i posti pagati esegui scripts/migrate-live-paid-places.sql su Supabase.',
-    },
     summary: {
       title: 'I miei risultati live',
       tournaments: 'Tornei',

@@ -415,13 +415,6 @@ export default {
       retry: 'Erneut versuchen',
       offlineList: 'Keine Verbindung: zuletzt auf diesem Handy gespeicherte Liste.',
     },
-    paid: {
-      label: 'Bezahlte Plätze',
-      add: 'Tippen, um die bezahlten Plätze einzutragen',
-      bubble: 'Noch {n} bis ins Geld ({paid} bezahlt)',
-      itm: '💰 Im Geld ({paid} bezahlt)',
-      migration: 'Um bezahlte Plätze zu speichern, scripts/migrate-live-paid-places.sql in Supabase ausführen.',
-    },
     summary: {
       title: 'Meine Live-Ergebnisse',
       tournaments: 'Turniere',

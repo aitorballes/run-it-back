@@ -55,7 +55,6 @@ export default function LiveTournament() {
   const editRef = useRef(null)
   const [finishPos, setFinishPos]     = useState('')
   const [finishPrize, setFinishPrize] = useState('')
-  const [paidIn, setPaidIn]           = useState('')
   const [focusField, setFocusField]   = useState('stack') // field focused when the update modal opens
 
   // The clock card flashes when a level or break starts
@@ -183,15 +182,6 @@ export default function LiveTournament() {
     return flush()
   }
 
-  // Paid places need their own column (scripts/migrate-live-paid-places.sql), so they're saved
-  // on their own: if the column is missing, nothing else is held back
-  function savePaidPlaces(n) {
-    setTour(prev => ({ ...prev, paid_places: n }))
-    updateLiveTournament(id, { paid_places: n }).catch(e => {
-      setError(e?.code === 'PGRST204' || /paid_places/.test(e?.message ?? '') ? t('live.paid.migration') : t('live.saveError'))
-    })
-  }
-
   if (status !== 'ready') {
     return (
       <div style={base.page}>
@@ -224,8 +214,6 @@ export default function LiveTournament() {
   const clockTime = secs => new Date(now + secs * 1000).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
   const endsAt    = running && !paused ? clockTime(remaining) : null
   const breakIn   = running && breakNext === 0 ? nextBreakIn(tour, now) : null // a break right after this level already shows above
-  const paid      = tour.paid_places || null
-  const toCash    = paid && tour.players_left != null ? tour.players_left - paid : null
   const invested  = (Number(tour.buyin) || 0) * myEntries
   const net       = (Number(tour.prize_won) || 0) - invested
 
@@ -276,17 +264,13 @@ export default function LiveTournament() {
     const stack   = parseChips(stackIn)   ?? tour.my_stack
     const players = parseChips(playersIn) ?? tour.players_left
     const entries = parseChips(entriesIn) ?? tour.entries
-    const paidPlaces = parseChips(paidIn)
-    if (paidPlaces != null && paidPlaces !== tour.paid_places) savePaidPlaces(paidPlaces)
-    if (stackIn || playersIn || entriesIn) {
-      patch({
-        my_stack: stack,
-        players_left: players,
-        entries,
-        history: [...tour.history, { at: new Date().toISOString(), day, level: playLevel, stack, players, entries }],
-      })
-    }
-    setStackIn(''); setPlayersIn(''); setEntriesIn(''); setPaidIn('')
+    patch({
+      my_stack: stack,
+      players_left: players,
+      entries,
+      history: [...tour.history, { at: new Date().toISOString(), day, level: playLevel, stack, players, entries }],
+    })
+    setStackIn(''); setPlayersIn(''); setEntriesIn('')
     closeUpdate()
     setSavedFlash(true)
     setTimeout(() => setSavedFlash(false), 1500)
@@ -604,11 +588,7 @@ export default function LiveTournament() {
             onClick={running ? () => openUpdate('players') : null} />
           <Stat label={t('live.stats.players')}
             value={tour.players_left != null ? `${fmtNumber(tour.players_left)}${tour.entries ? ` / ${fmtNumber(tour.entries)}` : ''}` : '—'}
-            sub={toCash == null ? (running ? t('live.paid.add') : null)
-              : toCash > 0 ? t('live.paid.bubble', { n: fmtNumber(toCash), paid: fmtNumber(paid) })
-              : t('live.paid.itm', { paid: fmtNumber(paid) })}
-            subColor={toCash == null ? null : toCash > 0 ? (toCash <= Math.max(3, paid * 0.1) ? '#f0a040' : null) : '#50d080'}
-            onClick={running ? () => openUpdate(paid ? 'players' : 'paid') : null} />
+            onClick={running ? () => openUpdate('players') : null} />
           <Stat label={t('live.stats.chips')} value={totalChips != null ? fmtNumber(totalChips) : '—'}
             sub={t('live.stats.startingStack', { n: fmtNumber(tour.starting_stack) })}
             onClick={running ? () => openUpdate('entries') : null} />
@@ -699,16 +679,10 @@ export default function LiveTournament() {
                       autoFocus={focusField === 'entries'}
                       placeholder={tour.entries != null ? fmtNumber(tour.entries) : ''} />
                   </label>
-                  <label style={{ ...base.field, flex: '1 1 90px', minWidth: 0 }}>
-                    <span style={base.label}>{t('live.paid.label')}</span>
-                    <input style={base.input} inputMode="numeric" value={paidIn} onChange={e => setPaidIn(typeChips(e.target.value))}
-                      autoFocus={focusField === 'paid'}
-                      placeholder={tour.paid_places ? String(tour.paid_places) : t('live.structure.optional')} />
-                  </label>
                 </div>
                 <div style={base.actions}>
                   <button style={base.ghostBtn} type="button" onClick={closeUpdate}>{t('common.cancel')}</button>
-                  <button style={base.btn} type="submit" disabled={!stackIn && !playersIn && !entriesIn && !paidIn}>
+                  <button style={base.btn} type="submit" disabled={!stackIn && !playersIn && !entriesIn}>
                     {t('live.update.save')}
                   </button>
                 </div>
@@ -1026,14 +1000,14 @@ function Modal({ title, onClose, closeLabel, children }) {
   )
 }
 
-function Stat({ label, value, big, sub, subColor, accent, onClick }) {
+function Stat({ label, value, big, sub, accent, onClick }) {
   const Tag = onClick ? 'button' : 'div'
   return (
     <Tag style={{ ...s.stat, ...(onClick ? s.statBtn : null) }} onClick={onClick ?? undefined}>
       <div style={base.label}>{label}</div>
       {big && <div style={{ ...s.statBig, color: accent }}>{big}</div>}
       <div style={big ? s.statValueSmall : s.statValue}>{value}</div>
-      {sub && <div style={{ ...s.statSub, ...(subColor ? { color: subColor, fontWeight: 700 } : null) }}>{sub}</div>}
+      {sub && <div style={s.statSub}>{sub}</div>}
     </Tag>
   )
 }
